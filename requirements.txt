@@ -1,0 +1,5 @@
+pymavlink
+PyQt5
+dronekit-sitl
+pyqtgraph
+folium
