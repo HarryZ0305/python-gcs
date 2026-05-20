@@ -1,10 +1,10 @@
 import sys
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QGridLayout, QLabel, QFrame
 )
-from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QFont
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QFont
 from telemetry import telemetry_data # imports the shared dict so GUI can read latest values
 
 
@@ -87,4 +87,4 @@ def launch_gui():
     app = QApplication(sys.argv)
     window = GCSWindow()
     window.show()
-    app.exec_() 
+    app.exec()
