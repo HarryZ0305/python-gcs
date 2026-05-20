@@ -9,13 +9,14 @@ telemetry_data = { # dictionary that holds the latest values from the drone
     'throttle': 0,
     'battery': 0,
     'satellites': 0,
-    'fix_type': 0
+    'fix_type': 0,
+    'armed': False # tracks whether drone is armed, updated by HEARTBEAT messages from the drone
 }
 
 def read_telemetry(vehicle):
     while True: # constantly updating the dictionary
         msg = vehicle.recv_match(  # type: ignore
-            type=['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT'],
+            type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT'],
             blocking = True,
             timeout = 5
         )
@@ -41,23 +42,24 @@ def read_telemetry(vehicle):
             telemetry_data['satellites'] = msg.satellites_visible
             telemetry_data['fix_type'] = msg.fix_type
 
-def wait_for_arm(vehicle, timeout = 10):
+        elif msg_type == 'HEARTBEAT':
+            telemetry_data['armed'] = bool(
+                msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED # bitmask check that isolates the arm bit
+            )
+
+def wait_for_arm(timeout = 10):
     print("Waiting for drone to arm...")
     start_time = time.time()
-    
+
     while True:
-        msg = vehicle.recv_match(type = 'HEARTBEAT', blocking = True, timeout = 3)  
-        
-        if msg:
-            armed = bool(msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
-            if armed:
-                print("Drone is armed!")
-                return True
-        
+        if telemetry_data['armed']:
+            print("Drone is armed!")
+            return True
+
         if time.time() - start_time > timeout:
             print("Timeout! Drone did not arm")
             return False
-        
+
         time.sleep(0.5)
 
 def wait_for_altitude(target_alt, tolerance = 0.95, timeout = 30): # tolerance = 0.95 rather than 1 since drone might hover slightly below
