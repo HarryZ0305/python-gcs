@@ -79,3 +79,18 @@ def wait_for_altitude(target_alt, tolerance = 0.95, timeout = 30): # tolerance =
             return False
         
         time.sleep(0.5)
+
+def wait_for_gps(timeout = 60): # waits for valid 3D GPS fix              
+    print("Waiting for 3D GPS fix...")
+    start_time = time.time()
+
+    while True:
+        if telemetry_data['fix_type'] >= 3:
+            print("3D GPS fix acquired!")
+            return True
+
+        if time.time() - start_time > timeout:
+            print("Timeout! Could not acquire GPS fix.")
+            return False
+
+        time.sleep(0.5)
