@@ -1,5 +1,6 @@
 pymavlink
 PyQt6
+PyQt6-WebEngine
 dronekit-sitl
 pyqtgraph
 folium

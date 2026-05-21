@@ -1,7 +1,7 @@
 import sys
 import threading
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget,
+    QApplication, QMainWindow, QWidget, QTabWidget,
     QGridLayout, QLabel, QFrame, QMessageBox,
     QPushButton, QComboBox, QSpinBox, QHBoxLayout
 )
@@ -10,6 +10,7 @@ from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
 from telemetry import telemetry_data # imports the shared dict so GUI can read latest values
 from commands import arm, disarm, set_mode, takeoff
+from ui.map_view import MapView
 
 
 class TelemetryCard(QFrame): # reusable widget for each data field, takes a title and displays a live updating value
@@ -47,11 +48,29 @@ class GCSWindow(QMainWindow):
         self.setStyleSheet("background-color: #0d1b2a;")
         self.resize(700, 420)
 
+        # Tab widget holds Telemetry and Map tabs
+        tabs = QTabWidget()
+        tabs.setStyleSheet("""
+            QTabWidget::pane { border: none; background: #0d1b2a; }
+            QTabBar::tab {
+                background: #1e2d3d; color: #7a9cc4;
+                padding: 8px 20px; font-family: Courier New;
+            }
+            QTabBar::tab:selected { background: #0d1b2a; color: #00e5ff; }
+        """)
+        self.setCentralWidget(tabs)
+
+        # Telemetry tab 
         central = QWidget()
-        self.setCentralWidget(central)
+        central.setStyleSheet("background-color: #0d1b2a;")
+        tabs.addTab(central, "TELEMETRY")
         grid = QGridLayout(central)
         grid.setSpacing(12)
         grid.setContentsMargins(16, 16, 16, 16)
+
+        # Map tab 
+        self.map_view = MapView()
+        tabs.addTab(self.map_view, "MAP")
 
         self.cards = { # one card per telemetry field 
             'alt':         TelemetryCard("ALTITUDE (m)"),
@@ -167,6 +186,8 @@ class GCSWindow(QMainWindow):
         else:
             self.arm_btn.setText("ARM")
             self.arm_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+        
+        self.map_view.update_position(d['lat'], d['lon'])
 
     def _btn_style(self, color, bg):
         return f"""
