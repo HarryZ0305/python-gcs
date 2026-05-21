@@ -16,7 +16,7 @@ telemetry_data = { # dictionary that holds the latest values from the drone
 def read_telemetry(vehicle):
     while True: # constantly updating the dictionary
         msg = vehicle.recv_match(  # type: ignore
-            type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT'],
+            type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT'],
             blocking = True,
             timeout = 5
         )
@@ -46,6 +46,9 @@ def read_telemetry(vehicle):
             telemetry_data['armed'] = bool(
                 msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED # bitmask check that isolates the arm bit
             )
+        
+        elif msg_type == 'STATUSTEXT':
+            print(f"FCU Message: {msg.text}")
 
 def wait_for_arm(timeout = 10):
     print("Waiting for drone to arm...")
