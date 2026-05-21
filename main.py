@@ -34,4 +34,4 @@ flight_thread = threading.Thread(target = flight_sequence, args = (vehicle,))
 flight_thread.daemon = True # dies automatically when main program exits
 flight_thread.start()
 
-launch_gui()
+launch_gui(vehicle)
