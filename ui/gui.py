@@ -1,11 +1,13 @@
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
-    QGridLayout, QLabel, QFrame
+    QGridLayout, QLabel, QFrame, QMessageBox
 )
+
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
 from telemetry import telemetry_data # imports the shared dict so GUI can read latest values
+
 
 
 class TelemetryCard(QFrame): # reusable widget for each data field, takes a title and displays a live updating value
@@ -82,6 +84,23 @@ class GCSWindow(QMainWindow):
             "ARMED" if d['armed'] else "DISARMED",
             color="#ff4444" if d['armed'] else "#44ff88" # red when armed, green when disarmed
         )
+
+    def closeEvent(self, event): # Prevent accidental closure while the drone is active # type: ignore
+        if telemetry_data['armed']:
+            reply = QMessageBox.question(
+                self, 'Warning', 
+                "Drone is still ARMED! Are you sure you want to exit the GCS?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+                QMessageBox.StandardButton.No
+            )
+
+            if reply == QMessageBox.StandardButton.Yes:
+                print("Closing GCS...")
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            event.accept()
 
 def launch_gui():
     app = QApplication(sys.argv)

@@ -1,4 +1,5 @@
 from pymavlink import mavutil
+import time
 
 def arm(vehicle):
     print("Arming...")
@@ -25,6 +26,14 @@ def disarm(vehicle):
 def set_mode(vehicle, mode_name):
     print(f"Setting mode to {mode_name}...")
     
+    timeout = time.time() + 2
+    while not vehicle.mode_mapping() and time.time() < timeout:
+        time.sleep(0.1)
+
+    if not vehicle.mode_mapping():
+        print("Error: Flight controller has not transmitted mode mapping yet.")
+        return
+
     if mode_name not in vehicle.mode_mapping(): # returns a dictionary of all available modes  
         print(f"Unknown mode: {mode_name}")
         print(f"Available modes: {list(vehicle.mode_mapping().keys())}")  

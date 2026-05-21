@@ -47,7 +47,7 @@ def read_telemetry(vehicle):
                 msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED # bitmask check that isolates the arm bit
             )
         
-        elif msg_type == 'STATUSTEXT':
+        elif msg_type == 'STATUSTEXT': # error logs
             print(f"FCU Message: {msg.text}")
 
 def wait_for_arm(timeout = 10):
