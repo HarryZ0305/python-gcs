@@ -13,6 +13,7 @@ from commands import arm, disarm, set_mode, takeoff
 from ui.map_view import MapView
 from ui.attitude_view import AttitudeView
 from ui.console_view import ConsoleView
+from ui.camera_view import CameraView
 
 
 class TelemetryCard(QFrame): # reusable widget for each data field, takes a title and displays a live updating value
@@ -81,6 +82,10 @@ class GCSWindow(QMainWindow):
         # Console tab
         self.console_view = ConsoleView()
         tabs.addTab(self.console_view, "CONSOLE")
+
+        # Camera tab (placeholder for future live video feed)
+        self.front_cam = CameraView("FRONT VIEW")
+        tabs.addTab(self.front_cam, "CAM")
 
         self.cards = { # one card per telemetry field 
             'alt':         TelemetryCard("ALTITUDE (m)"),
@@ -231,6 +236,14 @@ class GCSWindow(QMainWindow):
         alt = self.alt_spin.value()
         threading.Thread(target = takeoff, args = (self.vehicle, alt), daemon = True).start()
         self.set_status(f"Takeoff command sent — target {alt}m")
+
+    def on_rtl(self):
+        threading.Thread(target=set_mode, args=(self.vehicle, 'RTL'), daemon=True).start()
+        self.set_status("RTL command sent...")
+
+    def on_land(self):
+        threading.Thread(target=set_mode, args=(self.vehicle, 'LAND'), daemon=True).start()
+        self.set_status("LAND command sent...")
 
     def set_status(self, msg):
         self.status_label.setText(msg)
