@@ -12,6 +12,7 @@ from telemetry import telemetry_data # imports the shared dict so GUI can read l
 from commands import arm, disarm, set_mode, takeoff
 from ui.map_view import MapView
 from ui.attitude_view import AttitudeView
+from ui.console_view import ConsoleView
 
 
 class TelemetryCard(QFrame): # reusable widget for each data field, takes a title and displays a live updating value
@@ -76,6 +77,10 @@ class GCSWindow(QMainWindow):
         # Attitude tab
         self.attitude_view = AttitudeView()
         tabs.addTab(self.attitude_view, "3D")
+
+        # Console tab
+        self.console_view = ConsoleView()
+        tabs.addTab(self.console_view, "CONSOLE")
 
         self.cards = { # one card per telemetry field 
             'alt':         TelemetryCard("ALTITUDE (m)"),
@@ -194,6 +199,7 @@ class GCSWindow(QMainWindow):
         
         self.map_view.update_position(d['lat'], d['lon'])
         self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'])
+        self.console_view.refresh_logs()
 
     def _btn_style(self, color, bg):
         return f"""

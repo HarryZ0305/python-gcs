@@ -1,5 +1,6 @@
 import time
 from pymavlink import mavutil
+from logs import log
 
 telemetry_data = { # dictionary that holds the latest values from the drone
     'lat': 0.0,
@@ -53,7 +54,7 @@ def read_telemetry(vehicle):
             )
         
         elif msg_type == 'STATUSTEXT': # error logs
-            print(f"FCU Message: {msg.text}")
+            print(f"FCU: {msg.text}")
         
         elif msg_type == 'ATTITUDE':
             telemetry_data['roll'] = msg.roll
