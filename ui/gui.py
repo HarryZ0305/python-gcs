@@ -11,6 +11,7 @@ from PyQt6.QtGui import QFont
 from telemetry import telemetry_data # imports the shared dict so GUI can read latest values
 from commands import arm, disarm, set_mode, takeoff
 from ui.map_view import MapView
+from ui.attitude_view import AttitudeView
 
 
 class TelemetryCard(QFrame): # reusable widget for each data field, takes a title and displays a live updating value
@@ -71,6 +72,10 @@ class GCSWindow(QMainWindow):
         # Map tab 
         self.map_view = MapView()
         tabs.addTab(self.map_view, "MAP")
+
+        # Attitude tab
+        self.attitude_view = AttitudeView()
+        tabs.addTab(self.attitude_view, "3D")
 
         self.cards = { # one card per telemetry field 
             'alt':         TelemetryCard("ALTITUDE (m)"),
@@ -188,6 +193,7 @@ class GCSWindow(QMainWindow):
             self.arm_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
         
         self.map_view.update_position(d['lat'], d['lon'])
+        self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'])
 
     def _btn_style(self, color, bg):
         return f"""
