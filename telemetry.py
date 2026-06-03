@@ -10,13 +10,17 @@ telemetry_data = { # dictionary that holds the latest values from the drone
     'battery': 0,
     'satellites': 0,
     'fix_type': 0,
-    'armed': False # tracks whether drone is armed, updated by HEARTBEAT messages from the drone
+    'armed': False, # tracks whether drone is armed, updated by HEARTBEAT messages from the drone
+    'voltage': 0.0, # battery voltage
+    'roll': 0.0,      
+    'pitch': 0.0,     
+    'yaw': 0.0
 }
 
 def read_telemetry(vehicle):
     while True: # constantly updating the dictionary
         msg = vehicle.recv_match(  # type: ignore
-            type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT'],
+            type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE'],
             blocking = True,
             timeout = 5
         )
@@ -37,6 +41,7 @@ def read_telemetry(vehicle):
 
         elif msg_type == 'SYS_STATUS':
             telemetry_data['battery'] = msg.battery_remaining
+            telemetry_data['voltage'] = msg.voltage_battery / 1000
 
         elif msg_type == 'GPS_RAW_INT':
             telemetry_data['satellites'] = msg.satellites_visible
@@ -49,6 +54,11 @@ def read_telemetry(vehicle):
         
         elif msg_type == 'STATUSTEXT': # error logs
             print(f"FCU Message: {msg.text}")
+        
+        elif msg_type == 'ATTITUDE':
+            telemetry_data['roll'] = msg.roll
+            telemetry_data['pitch'] = msg.pitch
+            telemetry_data['yaw'] = msg.yaw
 
 def wait_for_arm(timeout = 10):
     print("Waiting for drone to arm...")
