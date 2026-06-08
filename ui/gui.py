@@ -1,14 +1,14 @@
 import sys
+import math
 import threading
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QTabWidget,
-    QGridLayout, QLabel, QFrame, QMessageBox,
-    QPushButton, QComboBox, QSpinBox, QHBoxLayout
+    QApplication, QMainWindow, QWidget,
+    QVBoxLayout, QHBoxLayout, QLabel, QFrame, QMessageBox,
+    QPushButton, QComboBox, QSpinBox
 )
-
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
-from telemetry import telemetry_data # imports the shared dict so GUI can read latest values
+from telemetry import telemetry_data
 from commands import arm, disarm, set_mode, takeoff
 from ui.map_view import MapView
 from ui.attitude_view import AttitudeView
@@ -16,30 +16,39 @@ from ui.console_view import ConsoleView
 from ui.camera_view import CameraView
 
 
-class TelemetryCard(QFrame): # reusable widget for each data field, takes a title and displays a live updating value
+class StatPanel(QFrame):
+    """A titled panel holding label:value rows that update live."""
     def __init__(self, title):
         super().__init__()
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setStyleSheet("background-color: #1e2d3d; border-radius: 8px; padding: 8px;")
+        self.setStyleSheet("background-color: #1e2d3d; border-radius: 8px;")
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(10, 8, 10, 8)
+        self._layout.setSpacing(4)
 
-        layout = QGridLayout(self)
+        t = QLabel(title)
+        t.setStyleSheet("color: #7a9cc4; font-size: 11px; font-weight: bold; border: none;")
+        self._layout.addWidget(t)
 
-        self.title_label = QLabel(title)
-        self.title_label.setStyleSheet("color: #7a9cc4; font-size: 11px;")
-        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.rows = {}
 
-        self.value_label = QLabel("---")        
-        self.value_label.setFont(QFont("Courier New", 22, QFont.Weight.Bold))
-        self.value_label.setStyleSheet("color: #00e5ff;")
-        self.value_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    def add_row(self, key, label):
+        row = QHBoxLayout()
+        lbl = QLabel(label)
+        lbl.setStyleSheet("color: #5a7a9a; font-size: 12px; border: none;")
+        val = QLabel("---")
+        val.setFont(QFont("Courier New", 13, QFont.Weight.Bold))
+        val.setStyleSheet("color: #00e5ff; border: none;")
+        val.setAlignment(Qt.AlignmentFlag.AlignRight)
+        row.addWidget(lbl)
+        row.addStretch()
+        row.addWidget(val)
+        self._layout.addLayout(row)
+        self.rows[key] = val
 
-        layout.addWidget(self.title_label, 0, 0)
-        layout.addWidget(self.value_label, 1, 0)
-
-    def update_value(self, text, color="#00e5ff"):
-        """updates the displayed value and optionally changes color e.g. red for low battery"""
-        self.value_label.setText(text)
-        self.value_label.setStyleSheet(f"color: {color};")
+    def set(self, key, text, color="#00e5ff"):
+        if key in self.rows:
+            self.rows[key].setText(text)
+            self.rows[key].setStyleSheet(f"color: {color}; border: none;")
 
 
 class GCSWindow(QMainWindow):
@@ -47,81 +56,153 @@ class GCSWindow(QMainWindow):
         super().__init__()
         self.vehicle = vehicle
 
-        self.setWindowTitle("Python GCS — Live Telemetry")
-        self.setStyleSheet("background-color: #0d1b2a;")
-        self.resize(700, 420)
+        self.setWindowTitle("Python GCS")
+        self.resize(1280, 800)
 
-        # Tab widget holds Telemetry and Map tabs
-        tabs = QTabWidget()
-        tabs.setStyleSheet("""
-            QTabWidget::pane { border: none; background: #0d1b2a; }
-            QTabBar::tab {
-                background: #1e2d3d; color: #7a9cc4;
-                padding: 8px 20px; font-family: Courier New;
-            }
-            QTabBar::tab:selected { background: #0d1b2a; color: #00e5ff; }
-        """)
-        self.setCentralWidget(tabs)
+        root = QWidget()
+        root.setStyleSheet("background-color: #0d1b2a;")
+        self.setCentralWidget(root)
+        outer = QVBoxLayout(root)
+        outer.setSpacing(8)
+        outer.setContentsMargins(10, 10, 10, 10)
 
-        # Telemetry tab 
-        central = QWidget()
-        central.setStyleSheet("background-color: #0d1b2a;")
-        tabs.addTab(central, "TELEMETRY")
-        grid = QGridLayout(central)
-        grid.setSpacing(12)
-        grid.setContentsMargins(16, 16, 16, 16)
+        # ===== Build all widgets =====
 
-        # Map tab 
-        self.map_view = MapView()
-        tabs.addTab(self.map_view, "MAP")
+        # Power Metrics
+        self.power_panel = StatPanel("POWER METRICS")
+        self.power_panel.add_row('battery', 'Battery')
+        self.power_panel.add_row('voltage', 'Voltage')
 
-        # Attitude tab
-        self.attitude_view = AttitudeView()
-        tabs.addTab(self.attitude_view, "3D")
+        # GNSS & Spatial
+        self.gnss_panel = StatPanel("GNSS & SPATIAL")
+        self.gnss_panel.add_row('fix', 'GPS Fix')
+        self.gnss_panel.add_row('sats', 'Satellites')
+        self.gnss_panel.add_row('lat', 'Latitude')
+        self.gnss_panel.add_row('lon', 'Longitude')
+        self.gnss_panel.add_row('alt', 'Altitude')
 
-        # Console tab
-        self.console_view = ConsoleView()
-        tabs.addTab(self.console_view, "CONSOLE")
+        # Attitude / Speed
+        self.attspeed_panel = StatPanel("ATTITUDE / SPEED")
+        self.attspeed_panel.add_row('roll', 'Roll')
+        self.attspeed_panel.add_row('pitch', 'Pitch')
+        self.attspeed_panel.add_row('speed', 'Speed')
 
-        # Camera tab (placeholder for future live video feed)
-        self.front_cam = CameraView("FRONT VIEW")
-        tabs.addTab(self.front_cam, "CAM")
-
-        self.cards = { # one card per telemetry field 
-            'alt':         TelemetryCard("ALTITUDE (m)"),
-            'groundspeed': TelemetryCard("SPEED (m/s)"),
-            'battery':     TelemetryCard("BATTERY (%)"),
-            'satellites':  TelemetryCard("SATELLITES"),
-            'throttle':    TelemetryCard("THROTTLE (%)"),
-            'armed':       TelemetryCard("ARMED"),
-        }
-
-        positions = [ # position each card in the grid layout
-            ('alt', 0, 0), ('groundspeed', 0, 1), ('battery', 0, 2),
-            ('satellites', 1, 0), ('throttle', 1, 1), ('armed', 1, 2),
-        ]
-        for key, row, col in positions:
-            grid.addWidget(self.cards[key], row, col)
-
-        # Command panel
-        cmd_panel = QFrame()
-        cmd_panel.setStyleSheet("background-color: #1e2d3d; border-radius: 8px; padding: 4px;")
-        cmd_layout = QHBoxLayout(cmd_panel)
-        cmd_layout.setSpacing(10)
-
-        # Arm / Disarm button
+        # Arm button
         self.arm_btn = QPushButton("ARM")
-        self.arm_btn.setFixedHeight(48)
+        self.arm_btn.setFixedHeight(44)
         self.arm_btn.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
         self.arm_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
         self.arm_btn.clicked.connect(self.on_arm_disarm)
 
-        # Mode selector
+        # Cameras
+        self.front_cam = CameraView("FRONT VIEW CAMERA")
+        self.bottom_cam = CameraView("BOTTOM VIEW CAMERA")
+
+        # Map + 3D
+        self.map_view = MapView()
+        self.attitude_view = AttitudeView()
+
+        # Console
+        self.console_view = ConsoleView()
+
+        # Action buttons
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(['GUIDED', 'LOITER', 'RTL', 'LAND', 'STABILIZE'])
-        self.mode_combo.setFixedHeight(36)
-        self.mode_combo.setStyleSheet("""
-            QComboBox {
+        self.mode_combo.setFixedHeight(34)
+        self.mode_combo.setStyleSheet(self._input_style())
+
+        self.mode_btn = QPushButton("SET MODE")
+        self.mode_btn.setFixedHeight(34)
+        self.mode_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.mode_btn.clicked.connect(self.on_set_mode)
+
+        self.alt_spin = QSpinBox()
+        self.alt_spin.setRange(1, 100)
+        self.alt_spin.setValue(10)
+        self.alt_spin.setFixedHeight(34)
+        self.alt_spin.setStyleSheet(self._input_style())
+
+        self.takeoff_btn = QPushButton("TAKEOFF")
+        self.takeoff_btn.setFixedHeight(34)
+        self.takeoff_btn.setStyleSheet(self._btn_style("#ffaa00", "#0d1b2a"))
+        self.takeoff_btn.clicked.connect(self.on_takeoff)
+
+        self.rtl_btn = QPushButton("RTL")
+        self.rtl_btn.setFixedHeight(34)
+        self.rtl_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.rtl_btn.clicked.connect(self.on_rtl)
+
+        self.land_btn = QPushButton("LAND")
+        self.land_btn.setFixedHeight(34)
+        self.land_btn.setStyleSheet(self._btn_style("#ffaa00", "#0d1b2a"))
+        self.land_btn.clicked.connect(self.on_land)
+
+        self.status_label = QLabel("Ready")
+        self.status_label.setStyleSheet("color: #7a9cc4; font-size: 11px; border: none;")
+
+        # Action panel container
+        self.action_panel = QFrame()
+        self.action_panel.setStyleSheet("background-color: #1e2d3d; border-radius: 8px;")
+        ap = QVBoxLayout(self.action_panel)
+        ap.setContentsMargins(10, 8, 10, 8)
+        ap.setSpacing(8)
+        ap_title = QLabel("ACTION BUTTONS")
+        ap_title.setStyleSheet("color: #7a9cc4; font-size: 11px; font-weight: bold; border: none;")
+        ap.addWidget(ap_title)
+        r1 = QHBoxLayout(); r1.addWidget(self.mode_combo); r1.addWidget(self.mode_btn); ap.addLayout(r1)
+        r2 = QHBoxLayout(); r2.addWidget(self.alt_spin); r2.addWidget(self.takeoff_btn); ap.addLayout(r2)
+        r3 = QHBoxLayout(); r3.addWidget(self.rtl_btn); r3.addWidget(self.land_btn); ap.addLayout(r3)
+        ap.addWidget(self.status_label)
+
+        # ===== Assemble layout (3 columns + bottom bar) =====
+        top = QHBoxLayout()
+        top.setSpacing(8)
+
+        left = QVBoxLayout(); left.setSpacing(8)
+        left.addWidget(self.power_panel, stretch=3)
+        left.addWidget(self.gnss_panel, stretch=4)
+        left.addWidget(self.arm_btn, stretch=1)
+
+        center = QVBoxLayout(); center.setSpacing(8)
+        center.addWidget(self.front_cam, stretch=1)
+        center.addWidget(self.bottom_cam, stretch=1)
+
+        right = QVBoxLayout(); right.setSpacing(8)
+        right.addWidget(self.map_view, stretch=3)
+        right.addWidget(self.attitude_view, stretch=3)
+        right.addWidget(self.attspeed_panel, stretch=2)
+
+        top.addLayout(left, stretch=2)
+        top.addLayout(center, stretch=4)
+        top.addLayout(right, stretch=2)
+
+        outer.addLayout(top, stretch=5)
+
+        bottom = QHBoxLayout(); bottom.setSpacing(8)
+        bottom.addWidget(self.action_panel, stretch=1)
+        bottom.addWidget(self.console_view, stretch=1)
+        outer.addLayout(bottom, stretch=2)
+
+        # ===== Refresh timer =====
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.refresh)
+        self.timer.start(500)
+
+    # ---- styling helpers ----
+    def _btn_style(self, color, bg):
+        return f"""
+            QPushButton {{
+                background-color: {bg}; color: {color};
+                border: 2px solid {color}; border-radius: 6px;
+                font-family: Courier New; font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {color}; color: {bg}; }}
+            QPushButton:disabled {{ border-color: #2a4a6a; color: #2a4a6a; }}
+        """
+
+    def _input_style(self):
+        return """
+            QComboBox, QSpinBox {
                 background-color: #0d1b2a; color: #00e5ff;
                 border: 1px solid #2a4a6a; border-radius: 4px;
                 padding: 4px 8px; font-family: Courier New; font-size: 12px;
@@ -130,103 +211,20 @@ class GCSWindow(QMainWindow):
                 background-color: #0d1b2a; color: #00e5ff;
                 selection-background-color: #2a4a6a;
             }
-        """)
-
-        self.mode_btn = QPushButton("SET MODE")
-        self.mode_btn.setFixedHeight(48)
-        self.mode_btn.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
-        self.mode_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
-        self.mode_btn.clicked.connect(self.on_set_mode)
-
-        # Takeoff — altitude spinbox + button
-        self.alt_spin = QSpinBox()
-        self.alt_spin.setRange(1, 100)
-        self.alt_spin.setValue(10)  # default takeoff altitude
-        self.alt_spin.setFixedHeight(36)
-        self.alt_spin.setStyleSheet("""
-            QSpinBox {
-                background-color: #0d1b2a; color: #00e5ff;
-                border: 1px solid #2a4a6a; border-radius: 4px;
-                padding: 4px 8px; font-family: Courier New; font-size: 12px;
-            }
-            QSpinBox::up-button, QSpinBox::down-button { width: 20px; }
-        """)
-
-        self.takeoff_btn = QPushButton("TAKEOFF")
-        self.takeoff_btn.setFixedHeight(48)
-        self.takeoff_btn.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
-        self.takeoff_btn.setStyleSheet(self._btn_style("#ffaa00", "#0d1b2a"))
-        self.takeoff_btn.clicked.connect(self.on_takeoff)
-
-        # command panel
-        cmd_layout.addWidget(self.arm_btn, stretch=2)
-        cmd_layout.addSpacing(10)
-        cmd_layout.addWidget(self.mode_combo, stretch=2)
-        cmd_layout.addWidget(self.mode_btn, stretch=2)
-        cmd_layout.addSpacing(10)
-        cmd_layout.addWidget(self.alt_spin, stretch=1)
-        cmd_layout.addWidget(self.takeoff_btn, stretch=2)
-
-        grid.addWidget(cmd_panel, 2, 0, 1, 3)  # row 2, spans all 3 columns
-
-        # Status bar 
-        self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: #7a9cc4; font-size: 11px; padding: 2px 4px;")
-        grid.addWidget(self.status_label, 3, 0, 1, 3)
-
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.refresh) # calls refresh every 500ms on the main thread
-        self.timer.start(500)
-
-    def refresh(self):
-        d = telemetry_data
-
-        self.cards['alt'].update_value(f"{d['alt']:.1f}")
-        self.cards['groundspeed'].update_value(f"{d['groundspeed']:.1f}")
-        self.cards['battery'].update_value(
-            str(d['battery']),
-            color="#ff4444" if d['battery'] < 20 else "#00e5ff" # turns red when battery under 20%
-        )
-        self.cards['satellites'].update_value(str(d['satellites']))
-        self.cards['throttle'].update_value(str(d['throttle']))
-        self.cards['armed'].update_value(
-            "ARMED" if d['armed'] else "DISARMED",
-            color="#ff4444" if d['armed'] else "#44ff88" # red when armed, green when disarmed
-        )
-
-        # Arm button label and color flips
-        if d['armed']:
-            self.arm_btn.setText("DISARM")
-            self.arm_btn.setStyleSheet(self._btn_style("#ff4444", "#0d1b2a"))
-        else:
-            self.arm_btn.setText("ARM")
-            self.arm_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
-        
-        self.map_view.update_position(d['lat'], d['lon'])
-        self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'])
-        self.console_view.refresh_logs()
-
-    def _btn_style(self, color, bg):
-        return f"""
-            QPushButton {{
-                background-color: {bg}; color: {color};
-                border: 2px solid {color}; border-radius: 6px;
-            }}
-            QPushButton:hover {{ background-color: {color}; color: {bg}; }}
-            QPushButton:disabled {{ border-color: #2a4a6a; color: #2a4a6a; }}
         """
 
+    # ---- command handlers ----
     def on_arm_disarm(self):
         if telemetry_data['armed']:
-            threading.Thread(target = disarm, args = (self.vehicle,), daemon = True).start()
+            threading.Thread(target=disarm, args=(self.vehicle,), daemon=True).start()
             self.set_status("Disarm command sent...")
         else:
-            threading.Thread(target = arm, args = (self.vehicle,), daemon = True).start()
+            threading.Thread(target=arm, args=(self.vehicle,), daemon=True).start()
             self.set_status("Arm command sent...")
 
     def on_set_mode(self):
         mode = self.mode_combo.currentText()
-        threading.Thread(target = set_mode, args = (self.vehicle, mode), daemon = True).start()
+        threading.Thread(target=set_mode, args=(self.vehicle, mode), daemon=True).start()
         self.set_status(f"Setting mode to {mode}...")
 
     def on_takeoff(self):
@@ -234,7 +232,7 @@ class GCSWindow(QMainWindow):
             QMessageBox.warning(self, "Not Armed", "Arm the drone before takeoff.")
             return
         alt = self.alt_spin.value()
-        threading.Thread(target = takeoff, args = (self.vehicle, alt), daemon = True).start()
+        threading.Thread(target=takeoff, args=(self.vehicle, alt), daemon=True).start()
         self.set_status(f"Takeoff command sent — target {alt}m")
 
     def on_rtl(self):
@@ -248,15 +246,47 @@ class GCSWindow(QMainWindow):
     def set_status(self, msg):
         self.status_label.setText(msg)
 
-    def closeEvent(self, event): # Prevent accidental closure while the drone is active # type: ignore
+    # ---- live refresh ----
+    def refresh(self):
+        d = telemetry_data
+
+        self.power_panel.set('battery', f"{d['battery']}%",
+            "#ff4444" if d['battery'] < 20 else "#00e5ff")
+        self.power_panel.set('voltage', f"{d['voltage']:.1f}V")
+
+        fix_labels = {0: "NO FIX", 1: "NO FIX", 2: "2D", 3: "3D",
+                      4: "DGPS", 5: "RTK-FLT", 6: "RTK-FIX"}
+        fix = d['fix_type']
+        self.gnss_panel.set('fix', fix_labels.get(fix, str(fix)),
+            "#44ff88" if fix >= 3 else "#ff4444")
+        self.gnss_panel.set('sats', str(d['satellites']))
+        self.gnss_panel.set('lat', f"{d['lat']:.6f}")
+        self.gnss_panel.set('lon', f"{d['lon']:.6f}")
+        self.gnss_panel.set('alt', f"{d['alt']:.1f} m")
+
+        self.attspeed_panel.set('roll', f"{math.degrees(d['roll']):.0f}\u00b0")
+        self.attspeed_panel.set('pitch', f"{math.degrees(d['pitch']):.0f}\u00b0")
+        self.attspeed_panel.set('speed', f"{d['groundspeed']:.1f} m/s")
+
+        if d['armed']:
+            self.arm_btn.setText("DISARM")
+            self.arm_btn.setStyleSheet(self._btn_style("#ff4444", "#0d1b2a"))
+        else:
+            self.arm_btn.setText("ARM")
+            self.arm_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+
+        self.map_view.update_position(d['lat'], d['lon'])
+        self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'])
+        self.console_view.refresh_logs()
+
+    def closeEvent(self, event):  # type: ignore
         if telemetry_data['armed']:
             reply = QMessageBox.question(
-                self, 'Warning', 
+                self, 'Warning',
                 "Drone is still ARMED! Are you sure you want to exit the GCS?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
-
             if reply == QMessageBox.StandardButton.Yes:
                 print("Closing GCS...")
                 event.accept()
@@ -264,6 +294,7 @@ class GCSWindow(QMainWindow):
                 event.ignore()
         else:
             event.accept()
+
 
 def launch_gui(vehicle):
     app = QApplication(sys.argv)
