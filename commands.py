@@ -78,3 +78,60 @@ def goto(vehicle, lat, lon, alt):
         )
     )
     log("Goto command sent!")
+
+def move_body(vehicle, vx=0.0, vy=0.0, vz=0.0, duration=3.0, rate_hz=5):
+    """Body-frame velocity setpoint (m/s) held for `duration` seconds.
+
+    x = forward, y = right, z = down. ArduCopter in GUIDED stops if it
+    doesn't receive a fresh setpoint within ~3s, so we resend at rate_hz.
+    Drone must be ARMED, in GUIDED, and airborne for this to do anything.
+    """
+    log(f"Moving body vx={vx} vy={vy} vz={vz} for {duration}s...")
+    interval = 1.0 / rate_hz
+    end = time.time() + duration
+    while time.time() < end:
+        vehicle.mav.send(
+            mavutil.mavlink.MAVLink_set_position_target_local_ned_message(
+                0,
+                vehicle.target_system,
+                vehicle.target_component,
+                mavutil.mavlink.MAV_FRAME_BODY_NED,
+                0b0000111111000111,   # velocity only; ignore pos/accel/yaw
+                0, 0, 0,              # x, y, z position (ignored)
+                vx, vy, vz,           # velocity m/s, body frame
+                0, 0, 0,              # acceleration (ignored)
+                0, 0                  # yaw, yaw_rate (ignored)
+            )
+        )
+        time.sleep(interval)
+    # one zero-velocity setpoint so it stops cleanly instead of drifting
+    vehicle.mav.send(
+        mavutil.mavlink.MAVLink_set_position_target_local_ned_message(
+            0, vehicle.target_system, vehicle.target_component,
+            mavutil.mavlink.MAV_FRAME_BODY_NED,
+            0b0000111111000111,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        )
+    )
+    log("Move complete.")
+
+
+def condition_yaw(vehicle, angle_deg=30, speed_deg_s=25, direction=1):
+    """Rotate heading by angle_deg relative to current, via CONDITION_YAW.
+
+    direction: 1 = clockwise / right, -1 = counter-clockwise / left.
+    Works in GUIDED while airborne; reliable across ArduCopter versions.
+    """
+    log(f"Yaw {'right' if direction > 0 else 'left'} {angle_deg} deg...")
+    vehicle.mav.command_long_send(
+        vehicle.target_system,
+        vehicle.target_component,
+        mavutil.mavlink.MAV_CMD_CONDITION_YAW,
+        0,
+        angle_deg,      # param1: angle (deg)
+        speed_deg_s,    # param2: yaw speed (deg/s)
+        direction,      # param3: 1 = CW, -1 = CCW
+        1,              # param4: 1 = relative to current heading
+        0, 0, 0
+    )
+    log("Yaw command sent!")

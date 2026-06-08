@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
 from telemetry import telemetry_data
-from commands import arm, disarm, set_mode, takeoff
+from commands import arm, disarm, set_mode, takeoff, move_body, condition_yaw
 from ui.map_view import MapView
 from ui.attitude_view import AttitudeView
 from ui.console_view import ConsoleView
@@ -137,6 +137,22 @@ class GCSWindow(QMainWindow):
         self.land_btn.setStyleSheet(self._btn_style("#ffaa00", "#0d1b2a"))
         self.land_btn.clicked.connect(self.on_land)
 
+        # Manual movement (sim testing: tilt the drone, watch the 3D model)
+        self.yawl_btn = QPushButton("YAW L")
+        self.yawl_btn.setFixedHeight(34)
+        self.yawl_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.yawl_btn.clicked.connect(self.on_yaw_left)
+
+        self.fwd_btn = QPushButton("FORWARD")
+        self.fwd_btn.setFixedHeight(34)
+        self.fwd_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+        self.fwd_btn.clicked.connect(self.on_forward)
+
+        self.yawr_btn = QPushButton("YAW R")
+        self.yawr_btn.setFixedHeight(34)
+        self.yawr_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.yawr_btn.clicked.connect(self.on_yaw_right)
+
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet("color: #7a9cc4; font-size: 11px; border: none;")
 
@@ -152,6 +168,7 @@ class GCSWindow(QMainWindow):
         r1 = QHBoxLayout(); r1.addWidget(self.mode_combo); r1.addWidget(self.mode_btn); ap.addLayout(r1)
         r2 = QHBoxLayout(); r2.addWidget(self.alt_spin); r2.addWidget(self.takeoff_btn); ap.addLayout(r2)
         r3 = QHBoxLayout(); r3.addWidget(self.rtl_btn); r3.addWidget(self.land_btn); ap.addLayout(r3)
+        r4 = QHBoxLayout(); r4.addWidget(self.yawl_btn); r4.addWidget(self.fwd_btn); r4.addWidget(self.yawr_btn); ap.addLayout(r4)
         ap.addWidget(self.status_label)
 
         # ===== Assemble layout (3 columns + bottom bar) =====
@@ -168,13 +185,13 @@ class GCSWindow(QMainWindow):
         center.addWidget(self.bottom_cam, stretch=1)
 
         right = QVBoxLayout(); right.setSpacing(8)
-        right.addWidget(self.map_view, stretch=3)
+        right.addWidget(self.map_view, stretch=5)
         right.addWidget(self.attitude_view, stretch=3)
         right.addWidget(self.attspeed_panel, stretch=2)
 
         top.addLayout(left, stretch=2)
-        top.addLayout(center, stretch=4)
-        top.addLayout(right, stretch=2)
+        top.addLayout(center, stretch=3)
+        top.addLayout(right, stretch=4)
 
         outer.addLayout(top, stretch=5)
 
@@ -242,6 +259,21 @@ class GCSWindow(QMainWindow):
     def on_land(self):
         threading.Thread(target=set_mode, args=(self.vehicle, 'LAND'), daemon=True).start()
         self.set_status("LAND command sent...")
+
+    def on_forward(self):
+        threading.Thread(target=move_body, args=(self.vehicle,),
+                         kwargs={'vx': 3.0, 'duration': 3.0}, daemon=True).start()
+        self.set_status("Forward nudge sent (needs GUIDED + airborne)")
+
+    def on_yaw_left(self):
+        threading.Thread(target=condition_yaw, args=(self.vehicle,),
+                         kwargs={'direction': -1}, daemon=True).start()
+        self.set_status("Yaw left command sent...")
+
+    def on_yaw_right(self):
+        threading.Thread(target=condition_yaw, args=(self.vehicle,),
+                         kwargs={'direction': 1}, daemon=True).start()
+        self.set_status("Yaw right command sent...")
 
     def set_status(self, msg):
         self.status_label.setText(msg)
