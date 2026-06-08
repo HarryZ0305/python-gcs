@@ -1,0 +1,76 @@
+# python-gcs — project rules for the agent
+
+## What this is
+A MAVLink ground control station. PyQt6 desktop app, single screen, no tabs.
+SIM: PX4 SITL (Gazebo, gz_x500 = the Holybro X500/S500 quad model).
+REAL TARGET: Holybro S500 + Pixhawk 6C, which ships with PX4 firmware.
+Sim and target firmware now MATCH (both PX4). The codebase is being ported
+FROM its old ArduCopter conventions TO PX4 — see "PX4 specifics" below.
+
+## Stack
+- Python 3, PyQt6, pymavlink (raw — not dronekit, not MAVSDK)
+- 3D attitude viewer and map are QWebEngineView widgets running three.js /
+  Leaflet from CDN inside Python HTML strings. Do NOT add external model files.
+
+## File responsibilities
+- main.py             entry point: connect, request telemetry, launch GUI
+- connection.py       connect(conn_str) + telemetry setup
+- telemetry.py        pymavlink recv loop -> telemetry_data dict + msg handlers
+- commands.py         flight commands, each a function taking `vehicle` first
+- logs.py             log() writes to a shared buffer the console panel reads
+- ui/gui.py           GCSWindow, StatPanel, 3-column + bottom-bar layout, refresh
+- ui/map_view.py      Leaflet map
+- ui/attitude_view.py three.js quad, update_attitude(roll,pitch,yaw) in RADIANS
+- ui/console_view.py  reads the log buffer
+- ui/camera_view.py   "NO SIGNAL" placeholders (no camera hardware yet)
+
+## Conventions — follow these exactly
+- vehicle is a pymavlink mavutil connection. Commands send via
+  vehicle.mav.*_send / vehicle.mav.send(...). Log start+end with log().
+- GUI button handlers run commands in a daemon thread; never block the Qt
+  main thread.
+- Adding telemetry = add key to telemetry_data, add the message type to the
+  recv filter, add a handler, then display it in GCSWindow.refresh().
+- refresh() runs on a 500ms QTimer.
+- Angles are radians internally, shown in degrees in the UI.
+- Style buttons with self._btn_style(color, bg), inputs with _input_style().
+  Palette: bg #0d1b2a, panel #1e2d3d, cyan #00e5ff, green #44ff88,
+  amber #ffaa00, red #ff4444, muted #7a9cc4/#5a7a9a. Font: Courier New.
+
+## How to run / verify
+- Sim, easy path (Windows-friendly, Docker):
+    docker run --rm -it jonasvautherin/px4-gazebo-headless:1.16.1
+  Forwards MAVLink to the host on 14550 (QGC) and 14540 (our app).
+- Sim, from source: in PX4-Autopilot, `make px4_sitl gz_x500`.
+- GCS connects to PX4's offboard/API port over UDP: udpin:localhost:14540
+  (14550 is reserved for QGroundControl). NOT tcp:127.0.0.1:5760 anymore.
+- The agent CANNOT fly the sim or watch the 3D model. Flight behavior is
+  verified by the human running SITL and clicking buttons. Never claim a
+  movement/attitude feature works without human confirmation in the sim.
+
+## PX4 specifics — this is PX4, NOT ArduPilot. Do not reuse ArduPilot patterns.
+- MODES: names differ. PX4 modes via pymavlink mode_mapping() include MANUAL,
+  STABILIZED, ALTCTL, POSCTL, OFFBOARD, AUTO.LOITER, AUTO.RTL, AUTO.LAND,
+  AUTO.TAKEOFF, AUTO.MISSION. There is NO "GUIDED". Update the mode dropdown to
+  PX4 names. PX4 custom_mode is bit-packed (main + sub mode), so verify mode
+  setting actually works; may require MAV_CMD_DO_SET_MODE instead of
+  set_mode_send.
+- TELEMETRY: PX4 ignores REQUEST_DATA_STREAM (that was ArduPilot). Either rely
+  on PX4's default onboard stream on 14540, or request per-message rates with
+  MAV_CMD_SET_MESSAGE_INTERVAL. The same message types still arrive (ATTITUDE,
+  GLOBAL_POSITION_INT, SYS_STATUS, GPS_RAW_INT, VFR_HUD, HEARTBEAT, STATUSTEXT).
+- YAW: MAV_CMD_CONDITION_YAW does not exist on PX4. Delete condition_yaw. Yaw is
+  commanded via the yaw / yaw_rate field of the OFFBOARD setpoint.
+- MOVEMENT: requires OFFBOARD mode, which requires, in order:
+    1) stream setpoints (SET_POSITION_TARGET_LOCAL_NED) at >2 Hz (use ~10-20 Hz)
+       BEFORE switching to OFFBOARD,
+    2) switch to OFFBOARD,
+    3) keep streaming — if the stream stops for ~0.5 s PX4 drops out of OFFBOARD.
+  Implement a persistent background "offboard streamer" thread that always
+  publishes the current desired body velocity + yaw_rate. FORWARD / YAW buttons
+  just change those target values. This REPLACES the old one-shot move_body and
+  condition_yaw.
+- TAKEOFF: arm, then AUTO.TAKEOFF mode (or MAV_CMD_NAV_TAKEOFF). PX4 preflight
+  checks (EKF/GPS) may block arming until the sim has a position fix.
+- ARMING: MAV_CMD_COMPONENT_ARM_DISARM (param1 = 1 arm / 0 disarm), unchanged.
+- RTL / LAND buttons map to AUTO.RTL / AUTO.LAND modes.

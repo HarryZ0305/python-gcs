@@ -5,6 +5,8 @@ from ui.gui import launch_gui
 import time
 import threading
 
+SIMULATION = False
+
 def flight_sequence(vehicle):
     if wait_for_gps():
         set_mode(vehicle, 'GUIDED')
@@ -30,8 +32,9 @@ telemetry_thread.daemon = True # thread will automatically stop when the main pr
 telemetry_thread.start()
 
 # start flight logic in background thread before GUI takes over the main thread
-flight_thread = threading.Thread(target = flight_sequence, args = (vehicle,))
-flight_thread.daemon = True # dies automatically when main program exits
-flight_thread.start()
+if SIMULATION:
+    flight_thread = threading.Thread(target = flight_sequence, args = (vehicle,))
+    flight_thread.daemon = True # dies automatically when main program exits
+    flight_thread.start()
 
 launch_gui(vehicle)

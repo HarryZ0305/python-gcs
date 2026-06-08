@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
 from telemetry import telemetry_data
-from commands import arm, disarm, set_mode, takeoff, move_body, condition_yaw
+from commands import arm, disarm, set_mode, takeoff, set_offboard_targets, reset_offboard_targets
 from ui.map_view import MapView
 from ui.attitude_view import AttitudeView
 from ui.console_view import ConsoleView
@@ -55,6 +55,9 @@ class GCSWindow(QMainWindow):
     def __init__(self, vehicle):
         super().__init__()
         self.vehicle = vehicle
+        
+        from commands import _ensure_streamer
+        _ensure_streamer(self.vehicle)
 
         self.setWindowTitle("Python GCS")
         self.resize(1280, 800)
@@ -107,7 +110,10 @@ class GCSWindow(QMainWindow):
 
         # Action buttons
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(['GUIDED', 'LOITER', 'RTL', 'LAND', 'STABILIZE'])
+        self.mode_combo.addItems([
+            'MANUAL', 'STABILIZED', 'ALTCTL', 'POSCTL', 'OFFBOARD',
+            'AUTO.LOITER', 'AUTO.RTL', 'AUTO.LAND', 'AUTO.TAKEOFF', 'AUTO.MISSION'
+        ])
         self.mode_combo.setFixedHeight(34)
         self.mode_combo.setStyleSheet(self._input_style())
 
@@ -153,6 +159,11 @@ class GCSWindow(QMainWindow):
         self.yawr_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
         self.yawr_btn.clicked.connect(self.on_yaw_right)
 
+        self.hover_btn = QPushButton("HOVER")
+        self.hover_btn.setFixedHeight(34)
+        self.hover_btn.setStyleSheet(self._btn_style("#ffaa00", "#0d1b2a"))
+        self.hover_btn.clicked.connect(self.on_hover)
+
         self.status_label = QLabel("Ready")
         self.status_label.setStyleSheet("color: #7a9cc4; font-size: 11px; border: none;")
 
@@ -168,7 +179,12 @@ class GCSWindow(QMainWindow):
         r1 = QHBoxLayout(); r1.addWidget(self.mode_combo); r1.addWidget(self.mode_btn); ap.addLayout(r1)
         r2 = QHBoxLayout(); r2.addWidget(self.alt_spin); r2.addWidget(self.takeoff_btn); ap.addLayout(r2)
         r3 = QHBoxLayout(); r3.addWidget(self.rtl_btn); r3.addWidget(self.land_btn); ap.addLayout(r3)
-        r4 = QHBoxLayout(); r4.addWidget(self.yawl_btn); r4.addWidget(self.fwd_btn); r4.addWidget(self.yawr_btn); ap.addLayout(r4)
+        r4 = QHBoxLayout()
+        r4.addWidget(self.yawl_btn)
+        r4.addWidget(self.fwd_btn)
+        r4.addWidget(self.yawr_btn)
+        r4.addWidget(self.hover_btn)
+        ap.addLayout(r4)
         ap.addWidget(self.status_label)
 
         # ===== Assemble layout (3 columns + bottom bar) =====
@@ -245,35 +261,33 @@ class GCSWindow(QMainWindow):
         self.set_status(f"Setting mode to {mode}...")
 
     def on_takeoff(self):
-        if not telemetry_data['armed']:
-            QMessageBox.warning(self, "Not Armed", "Arm the drone before takeoff.")
-            return
         alt = self.alt_spin.value()
         threading.Thread(target=takeoff, args=(self.vehicle, alt), daemon=True).start()
-        self.set_status(f"Takeoff command sent — target {alt}m")
+        self.set_status(f"Takeoff sequence initiated — target {alt}m")
 
     def on_rtl(self):
-        threading.Thread(target=set_mode, args=(self.vehicle, 'RTL'), daemon=True).start()
+        threading.Thread(target=set_mode, args=(self.vehicle, 'AUTO.RTL'), daemon=True).start()
         self.set_status("RTL command sent...")
 
     def on_land(self):
-        threading.Thread(target=set_mode, args=(self.vehicle, 'LAND'), daemon=True).start()
+        threading.Thread(target=set_mode, args=(self.vehicle, 'AUTO.LAND'), daemon=True).start()
         self.set_status("LAND command sent...")
 
     def on_forward(self):
-        threading.Thread(target=move_body, args=(self.vehicle,),
-                         kwargs={'vx': 3.0, 'duration': 3.0}, daemon=True).start()
-        self.set_status("Forward nudge sent (needs GUIDED + airborne)")
+        set_offboard_targets(vx=2.0, yaw_rate=0.0)
+        self.set_status("Offboard target: Forward (2.0 m/s)")
 
     def on_yaw_left(self):
-        threading.Thread(target=condition_yaw, args=(self.vehicle,),
-                         kwargs={'direction': -1}, daemon=True).start()
-        self.set_status("Yaw left command sent...")
+        set_offboard_targets(vx=0.0, yaw_rate=-0.5)
+        self.set_status("Offboard target: Yaw Left (-0.5 rad/s)")
 
     def on_yaw_right(self):
-        threading.Thread(target=condition_yaw, args=(self.vehicle,),
-                         kwargs={'direction': 1}, daemon=True).start()
-        self.set_status("Yaw right command sent...")
+        set_offboard_targets(vx=0.0, yaw_rate=0.5)
+        self.set_status("Offboard target: Yaw Right (0.5 rad/s)")
+
+    def on_hover(self):
+        reset_offboard_targets()
+        self.set_status("Offboard target: Hover")
 
     def set_status(self, msg):
         self.status_label.setText(msg)

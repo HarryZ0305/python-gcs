@@ -54,7 +54,7 @@ def read_telemetry(vehicle):
             )
         
         elif msg_type == 'STATUSTEXT': # error logs
-            print(f"FCU: {msg.text}")
+            log(f"FCU: {msg.text}")
         
         elif msg_type == 'ATTITUDE':
             telemetry_data['roll'] = msg.roll

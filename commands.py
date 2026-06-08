@@ -1,30 +1,112 @@
 from pymavlink import mavutil
 import time
+import threading
 from logs import log
 
+# Lock for all vehicle.mav calls to prevent packet corruption from concurrent writes
+mav_lock = threading.Lock()
+
+# Target values for the offboard streamer
+target_vx = 0.0
+target_vy = 0.0
+target_vz = 0.0
+target_yaw_rate = 0.0  # rad/s
+
+# Background thread management
+_streamer_thread = None
+_streamer_vehicle = None
+
+def _ensure_streamer(vehicle):
+    global _streamer_thread, _streamer_vehicle
+    if _streamer_thread is None:
+        _streamer_vehicle = vehicle
+        _streamer_thread = threading.Thread(target=_offboard_streamer_loop, daemon=True)
+        _streamer_thread.start()
+
+def _offboard_streamer_loop():
+    global _streamer_vehicle, target_vx, target_vy, target_vz, target_yaw_rate
+    log("Offboard streamer thread active.")
+    count = 0
+    while True:
+        if _streamer_vehicle is not None:
+            # Send setpoint at 10 Hz (every 0.1 seconds)
+            send_offboard_setpoint(_streamer_vehicle, target_vx, target_vy, target_vz, target_yaw_rate)
+            
+            # Send GCS Heartbeat at 1 Hz (every 10 ticks)
+            if count % 10 == 0:
+                send_gcs_heartbeat(_streamer_vehicle)
+            count += 1
+        time.sleep(0.1)
+
+def send_gcs_heartbeat(vehicle):
+    with mav_lock:
+        vehicle.mav.heartbeat_send(
+            mavutil.mavlink.MAV_TYPE_GCS,
+            mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+            0, 0, 0
+        )
+
+def send_offboard_setpoint(vehicle, vx, vy, vz, yaw_rate):
+    with mav_lock:
+        vehicle.mav.send(
+            mavutil.mavlink.MAVLink_set_position_target_local_ned_message(
+                0, # time_boot_ms
+                vehicle.target_system,
+                vehicle.target_component,
+                mavutil.mavlink.MAV_FRAME_BODY_NED, # body frame (forward, right, down)
+                0b0000101111000111, # ignore pos, accel, and absolute yaw; use velocity and yaw rate
+                0, 0, 0, # x, y, z position (ignored)
+                vx, vy, vz, # velocity m/s
+                0, 0, 0, # acceleration (ignored)
+                0, # yaw (ignored)
+                yaw_rate # yaw_rate (rad/s)
+            )
+        )
+
+def set_offboard_targets(vx=0.0, vy=0.0, vz=0.0, yaw_rate=0.0):
+    global target_vx, target_vy, target_vz, target_yaw_rate
+    target_vx = vx
+    target_vy = vy
+    target_vz = vz
+    target_yaw_rate = yaw_rate
+    log(f"Offboard target updated: vx={vx:.1f}, yaw_rate={yaw_rate:.2f}")
+
+def reset_offboard_targets():
+    global target_vx, target_vy, target_vz, target_yaw_rate
+    target_vx = 0.0
+    target_vy = 0.0
+    target_vz = 0.0
+    target_yaw_rate = 0.0
+    log("Offboard targets reset to hover.")
+
 def arm(vehicle):
+    _ensure_streamer(vehicle)
     log("Arming...")
-    vehicle.mav.command_long_send( # sends MAVLink command to drone  
-        vehicle.target_system,  
-        vehicle.target_component,  
-        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-        0,
-        1, 0, 0, 0, 0, 0, 0
-    )
+    with mav_lock:
+        vehicle.mav.command_long_send( # sends MAVLink command to drone  
+            vehicle.target_system,  
+            vehicle.target_component,  
+            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+            0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        )
     log("Arm command sent!")
 
 def disarm(vehicle):
+    _ensure_streamer(vehicle)
     log("Disarming...")
-    vehicle.mav.command_long_send(  
-        vehicle.target_system,  
-        vehicle.target_component,  
-        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-        0,
-        0, 0, 0, 0, 0, 0, 0
-    )
+    with mav_lock:
+        vehicle.mav.command_long_send(  
+            vehicle.target_system,  
+            vehicle.target_component,  
+            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+            0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        )
     log("Disarm command sent!")
 
 def set_mode(vehicle, mode_name):
+    _ensure_streamer(vehicle)
     log(f"Setting mode to {mode_name}...")
     
     timeout = time.time() + 2
@@ -35,103 +117,90 @@ def set_mode(vehicle, mode_name):
         log("Error: Flight controller has not transmitted mode mapping yet.")
         return
 
-    if mode_name not in vehicle.mode_mapping(): # returns a dictionary of all available modes  
-        log(f"Unknown mode: {mode_name}")
+    # Normalize mode name for PX4 mapping
+    lookup_name = mode_name.upper()
+    if lookup_name.startswith("AUTO."):
+        lookup_name = lookup_name[5:] # e.g. "AUTO.RTL" -> "RTL"
+    if lookup_name == "STABILIZE":
+        lookup_name = "STABILIZED"
+
+    if lookup_name not in vehicle.mode_mapping(): # returns a dictionary of all available modes  
+        log(f"Unknown mode: {mode_name} (resolved to: {lookup_name})")
         log(f"Available modes: {list(vehicle.mode_mapping().keys())}")  
         return
 
-    mode_id = vehicle.mode_mapping()[mode_name] # MAVLink number for the mode
-    vehicle.mav.set_mode_send(  
-        vehicle.target_system, 
-        mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED, # Custom flight mode flag
-        mode_id
-    )
+    mode_id = vehicle.mode_mapping()[lookup_name] # MAVLink number for the mode
+    
+    # PX4 custom_mode is bit-packed. Send using MAV_CMD_DO_SET_MODE command.
+    with mav_lock:
+        vehicle.mav.command_long_send(
+            vehicle.target_system,
+            vehicle.target_component,
+            mavutil.mavlink.MAV_CMD_DO_SET_MODE,
+            0, # confirmation
+            float(mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED), # param 1: base_mode
+            float(mode_id), # param 2: custom_mode
+            0.0, # param 3: custom_sub_mode
+            0.0, 0.0, 0.0, 0.0 # param 4-7
+        )
     log(f"Mode {mode_name} set!")
 
 def takeoff(vehicle, altitude_m):
+    _ensure_streamer(vehicle)
+    from telemetry import telemetry_data, wait_for_arm
+    
+    # PX4 takeoff flow: Arm the vehicle first if not already armed
+    if not telemetry_data['armed']:
+        log("Takeoff initiated: Arming vehicle...")
+        with mav_lock:
+            vehicle.mav.command_long_send(
+                vehicle.target_system,
+                vehicle.target_component,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                0,
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+            )
+        log("Arm command sent, waiting for confirmation...")
+        # Note: PX4 preflight checks (EKF/GPS) may block arming until the sim has a position fix
+        if not wait_for_arm(timeout=10):
+            log("Takeoff aborted: Drone failed to arm. EKF/GPS preflight checks may be blocking arming.")
+            return
+            
     log(f"Taking off to {altitude_m}m...")
-    vehicle.mav.command_long_send(  
-        vehicle.target_system,  
-        vehicle.target_component,  
-        mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, # MAVLink command for takeoff, altitude_m is the target height in meters
-        0,
-        0, 0, 0, 0, 0, 0,
-        altitude_m
-    )
+    nan = float('nan')
+    with mav_lock:
+        vehicle.mav.command_long_send(
+            vehicle.target_system,
+            vehicle.target_component,
+            mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+            0,
+            0.0,       # param 1: pitch
+            0.0,       # param 2: empty
+            0.0,       # param 3: empty
+            nan,       # param 4: yaw (NaN uses current heading)
+            nan,       # param 5: latitude (NaN uses current position)
+            nan,       # param 6: longitude (NaN uses current position)
+            float(altitude_m) # param 7: altitude
+        )
     log("Takeoff command sent!")
 
 def goto(vehicle, lat, lon, alt):
+    _ensure_streamer(vehicle)
     log(f"Flying to {lat}, {lon} @ {alt}m...")
-    vehicle.mav.send(  
-        mavutil.mavlink.MAVLink_set_position_target_global_int_message( # drone's target position
-            0,
-            vehicle.target_system,  
-            vehicle.target_component,  
-            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, # drone's relative height to launch point
-            0b0000111111111000, # bitmask for position
-            int(lat * 1e7),
-            int(lon * 1e7),
-            alt,
-            0, 0, 0,
-            0, 0, 0,
-            0, 0
-        )
-    )
-    log("Goto command sent!")
-
-def move_body(vehicle, vx=0.0, vy=0.0, vz=0.0, duration=3.0, rate_hz=5):
-    """Body-frame velocity setpoint (m/s) held for `duration` seconds.
-
-    x = forward, y = right, z = down. ArduCopter in GUIDED stops if it
-    doesn't receive a fresh setpoint within ~3s, so we resend at rate_hz.
-    Drone must be ARMED, in GUIDED, and airborne for this to do anything.
-    """
-    log(f"Moving body vx={vx} vy={vy} vz={vz} for {duration}s...")
-    interval = 1.0 / rate_hz
-    end = time.time() + duration
-    while time.time() < end:
-        vehicle.mav.send(
-            mavutil.mavlink.MAVLink_set_position_target_local_ned_message(
+    with mav_lock:
+        vehicle.mav.send(  
+            mavutil.mavlink.MAVLink_set_position_target_global_int_message( # drone's target position
                 0,
-                vehicle.target_system,
-                vehicle.target_component,
-                mavutil.mavlink.MAV_FRAME_BODY_NED,
-                0b0000111111000111,   # velocity only; ignore pos/accel/yaw
-                0, 0, 0,              # x, y, z position (ignored)
-                vx, vy, vz,           # velocity m/s, body frame
-                0, 0, 0,              # acceleration (ignored)
-                0, 0                  # yaw, yaw_rate (ignored)
+                vehicle.target_system,  
+                vehicle.target_component,  
+                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, # drone's relative height to launch point
+                0b0000111111111000, # bitmask for position
+                int(lat * 1e7),
+                int(lon * 1e7),
+                alt,
+                0, 0, 0,
+                0, 0, 0,
+                0, 0
             )
         )
-        time.sleep(interval)
-    # one zero-velocity setpoint so it stops cleanly instead of drifting
-    vehicle.mav.send(
-        mavutil.mavlink.MAVLink_set_position_target_local_ned_message(
-            0, vehicle.target_system, vehicle.target_component,
-            mavutil.mavlink.MAV_FRAME_BODY_NED,
-            0b0000111111000111,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-        )
-    )
-    log("Move complete.")
-
-
-def condition_yaw(vehicle, angle_deg=30, speed_deg_s=25, direction=1):
-    """Rotate heading by angle_deg relative to current, via CONDITION_YAW.
-
-    direction: 1 = clockwise / right, -1 = counter-clockwise / left.
-    Works in GUIDED while airborne; reliable across ArduCopter versions.
-    """
-    log(f"Yaw {'right' if direction > 0 else 'left'} {angle_deg} deg...")
-    vehicle.mav.command_long_send(
-        vehicle.target_system,
-        vehicle.target_component,
-        mavutil.mavlink.MAV_CMD_CONDITION_YAW,
-        0,
-        angle_deg,      # param1: angle (deg)
-        speed_deg_s,    # param2: yaw speed (deg/s)
-        direction,      # param3: 1 = CW, -1 = CCW
-        1,              # param4: 1 = relative to current heading
-        0, 0, 0
-    )
-    log("Yaw command sent!")
+    log("Goto command sent!")
