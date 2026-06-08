@@ -54,7 +54,7 @@ def send_offboard_setpoint(vehicle, vx, vy, vz, yaw_rate):
                 vehicle.target_system,
                 vehicle.target_component,
                 mavutil.mavlink.MAV_FRAME_BODY_NED, # body frame (forward, right, down)
-                0b0000101111000111, # ignore pos, accel, and absolute yaw; use velocity and yaw rate
+                0b0000010111000111, # use velocity and yaw rate; ignore pos, accel, and absolute yaw
                 0, 0, 0, # x, y, z position (ignored)
                 vx, vy, vz, # velocity m/s
                 0, 0, 0, # acceleration (ignored)
@@ -119,8 +119,6 @@ def set_mode(vehicle, mode_name):
 
     # Normalize mode name for PX4 mapping
     lookup_name = mode_name.upper()
-    if lookup_name.startswith("AUTO."):
-        lookup_name = lookup_name[5:] # e.g. "AUTO.RTL" -> "RTL"
     if lookup_name == "STABILIZE":
         lookup_name = "STABILIZED"
 
@@ -131,15 +129,15 @@ def set_mode(vehicle, mode_name):
 
     mode_id = vehicle.mode_mapping()[lookup_name] # MAVLink number or tuple for the mode
     
-    # PX4 custom_mode is bit-packed: (main_mode << 16) | (sub_mode << 24)
+    # PX4 custom mode consists of main_mode and sub_mode
     if isinstance(mode_id, tuple):
         main_mode = mode_id[0]
         sub_mode = mode_id[1]
-        custom_mode = (main_mode << 16) | (sub_mode << 24)
     else:
-        custom_mode = mode_id
+        main_mode = mode_id
+        sub_mode = 0
         
-    # PX4 custom_mode is bit-packed. Send using MAV_CMD_DO_SET_MODE command.
+    # Send using MAV_CMD_DO_SET_MODE command.
     with mav_lock:
         vehicle.mav.command_long_send(
             vehicle.target_system,
@@ -147,8 +145,8 @@ def set_mode(vehicle, mode_name):
             mavutil.mavlink.MAV_CMD_DO_SET_MODE,
             0, # confirmation
             float(mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED), # param 1: base_mode
-            float(custom_mode), # param 2: custom_mode (bit-packed)
-            0.0, # param 3: custom_sub_mode (0.0 or ignored)
+            float(main_mode), # param 2: custom main mode
+            float(sub_mode),  # param 3: custom sub mode
             0.0, 0.0, 0.0, 0.0 # param 4-7
         )
     log(f"Mode {mode_name} set!")
