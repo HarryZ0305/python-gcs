@@ -55,4 +55,4 @@ class MapView(QWebEngineView):
         if (lat, lon) == self._last_pos or (lat == 0.0 and lon == 0.0):
             return
         self._last_pos = (lat, lon)
-        self.page().runJavaScript(f"updateDrone({lat}, {lon});") # type: ignore
+        self.page().runJavaScript(f"if (typeof updateDrone === 'function') updateDrone({lat}, {lon});")

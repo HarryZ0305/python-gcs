@@ -119,5 +119,5 @@ class AttitudeView(QWebEngineView):
 
     def update_attitude(self, roll, pitch, yaw):
         self.page().runJavaScript(  # type: ignore
-            f"updateAttitude({roll}, {pitch}, {yaw});"
+            f"if (typeof updateAttitude === 'function') updateAttitude({roll}, {pitch}, {yaw});"
         )

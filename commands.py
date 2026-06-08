@@ -129,8 +129,16 @@ def set_mode(vehicle, mode_name):
         log(f"Available modes: {list(vehicle.mode_mapping().keys())}")  
         return
 
-    mode_id = vehicle.mode_mapping()[lookup_name] # MAVLink number for the mode
+    mode_id = vehicle.mode_mapping()[lookup_name] # MAVLink number or tuple for the mode
     
+    # PX4 custom_mode is bit-packed: (main_mode << 16) | (sub_mode << 24)
+    if isinstance(mode_id, tuple):
+        main_mode = mode_id[0]
+        sub_mode = mode_id[1]
+        custom_mode = (main_mode << 16) | (sub_mode << 24)
+    else:
+        custom_mode = mode_id
+        
     # PX4 custom_mode is bit-packed. Send using MAV_CMD_DO_SET_MODE command.
     with mav_lock:
         vehicle.mav.command_long_send(
@@ -139,8 +147,8 @@ def set_mode(vehicle, mode_name):
             mavutil.mavlink.MAV_CMD_DO_SET_MODE,
             0, # confirmation
             float(mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED), # param 1: base_mode
-            float(mode_id), # param 2: custom_mode
-            0.0, # param 3: custom_sub_mode
+            float(custom_mode), # param 2: custom_mode (bit-packed)
+            0.0, # param 3: custom_sub_mode (0.0 or ignored)
             0.0, 0.0, 0.0, 0.0 # param 4-7
         )
     log(f"Mode {mode_name} set!")

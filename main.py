@@ -7,21 +7,19 @@ import threading
 
 SIMULATION = False
 
+from logs import log
+
 def flight_sequence(vehicle):
     if wait_for_gps():
-        set_mode(vehicle, 'GUIDED')
-        time.sleep(1)
-        arm(vehicle)
-        if wait_for_arm():
-            takeoff(vehicle, 10)
-            if wait_for_altitude(10):
-                goto(vehicle, 32.7160, -117.1610, 10)
-            else:
-                print("Aborting: Failed to reach target altitude.")
+        log("Simulation sequence: Initiating takeoff...")
+        takeoff(vehicle, 10)
+        if wait_for_altitude(10):
+            log("Simulation sequence: Target altitude reached. Holding position in LOITER.")
+            set_mode(vehicle, 'AUTO.LOITER')
         else:
-            print("Aborting: Drone failed to arm.")
+            log("Simulation sequence aborted: Failed to reach target altitude.")
     else:
-        print("Aborting: Could not acquire GPS fix.")
+        log("Simulation sequence aborted: Could not acquire GPS fix.")
 
 vehicle = connect()
 request_telemetry(vehicle)
