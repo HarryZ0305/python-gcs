@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 from telemetry import telemetry_data
-from commands import arm, disarm, set_mode, takeoff, set_offboard_targets, reset_offboard_targets
+from commands import arm, disarm, set_mode, takeoff, set_offboard_targets, reset_offboard_targets, stop_streamer
 from ui.map_view import MapView
 from ui.attitude_view import AttitudeView
 from ui.console_view import ConsoleView
@@ -501,6 +501,8 @@ class GCSWindow(QMainWindow):
             
         import telemetry
         telemetry.telemetry_active = False
+        
+        stop_streamer()
         
         if self.vehicle is not None:
             try:

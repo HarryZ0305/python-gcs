@@ -115,49 +115,49 @@ def read_telemetry(vehicle):
             time.sleep(1)
 
 def wait_for_arm(timeout = 10):
-    print("Waiting for drone to arm...")
+    log("Waiting for drone to arm...")
     start_time = time.time()
 
     while True:
         if telemetry_data['armed']:
-            print("Drone is armed!")
+            log("Drone is armed!")
             return True
 
         if time.time() - start_time > timeout:
-            print("Timeout! Drone did not arm")
+            log("Timeout! Drone did not arm")
             return False
 
         time.sleep(0.5)
 
 def wait_for_altitude(target_alt, tolerance = 0.95, timeout = 30): # tolerance = 0.95 rather than 1 since drone might hover slightly below
-    print(f"Waiting to reach {target_alt}m...")
+    log(f"Waiting to reach {target_alt}m...")
     start_time = time.time()
     
     while True:
         current_alt = telemetry_data['alt']
-        print(f"Current altitude: {current_alt:.1f}m / {target_alt}m")
+        log(f"Current altitude: {current_alt:.1f}m / {target_alt}m")
         
         if current_alt >= target_alt * tolerance:
-            print(f"Target altitude reached!")
+            log("Target altitude reached!")
             return True
         
         if time.time() - start_time > timeout: # timeout check
-            print("Timeout! Could not reach target altitude")
+            log("Timeout! Could not reach target altitude")
             return False
         
         time.sleep(0.5)
 
 def wait_for_gps(timeout = 60): # waits for valid 3D GPS fix              
-    print("Waiting for 3D GPS fix...")
+    log("Waiting for 3D GPS fix...")
     start_time = time.time()
 
     while True:
         if telemetry_data['fix_type'] >= 3:
-            print("3D GPS fix acquired!")
+            log("3D GPS fix acquired!")
             return True
 
         if time.time() - start_time > timeout:
-            print("Timeout! Could not acquire GPS fix.")
+            log("Timeout! Could not acquire GPS fix.")
             return False
 
         time.sleep(0.5)

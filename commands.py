@@ -29,13 +29,17 @@ def _offboard_streamer_loop():
     count = 0
     while True:
         if _streamer_vehicle is not None:
-            # Send setpoint at 10 Hz (every 0.1 seconds)
-            send_offboard_setpoint(_streamer_vehicle, target_vx, target_vy, target_vz, target_yaw_rate)
-            
-            # Send GCS Heartbeat at 1 Hz (every 10 ticks)
-            if count % 10 == 0:
-                send_gcs_heartbeat(_streamer_vehicle)
-            count += 1
+            try:
+                # Send setpoint at 10 Hz (every 0.1 seconds)
+                send_offboard_setpoint(_streamer_vehicle, target_vx, target_vy, target_vz, target_yaw_rate)
+                
+                # Send GCS Heartbeat at 1 Hz (every 10 ticks)
+                if count % 10 == 0:
+                    send_gcs_heartbeat(_streamer_vehicle)
+                count += 1
+            except Exception as e:
+                log(f"Offboard streamer exception: {e}. Resetting vehicle stream.")
+                _streamer_vehicle = None
         time.sleep(0.1)
 
 def send_gcs_heartbeat(vehicle):
@@ -78,6 +82,11 @@ def reset_offboard_targets():
     target_vz = 0.0
     target_yaw_rate = 0.0
     log("Offboard targets reset to hover.")
+
+def stop_streamer():
+    global _streamer_vehicle
+    _streamer_vehicle = None
+    log("Offboard streamer stopped.")
 
 def arm(vehicle):
     _ensure_streamer(vehicle)

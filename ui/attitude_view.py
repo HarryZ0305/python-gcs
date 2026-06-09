@@ -22,7 +22,7 @@ ATTITUDE_HTML = """
 
             scene = new THREE.Scene();
 
-            camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 1000);
+            camera = new THREE.PerspectiveCamera(50, h ? w / h : 1, 0.1, 1000);
             camera.position.set(0, 3.5, 6);
             camera.lookAt(0, 0, 0);
 
@@ -101,7 +101,7 @@ ATTITUDE_HTML = """
 
         window.addEventListener('resize', () => {
             const c = document.getElementById('viewer');
-            camera.aspect = c.clientWidth / c.clientHeight;
+            camera.aspect = c.clientHeight ? c.clientWidth / c.clientHeight : 1;
             camera.updateProjectionMatrix();
             renderer.setSize(c.clientWidth, c.clientHeight);
         });
