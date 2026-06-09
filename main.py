@@ -12,12 +12,14 @@ from logs import log
 def flight_sequence(vehicle):
     if wait_for_gps():
         log("Simulation sequence: Initiating takeoff...")
-        takeoff(vehicle, 10)
-        if wait_for_altitude(10):
-            log("Simulation sequence: Target altitude reached. Holding position in LOITER.")
-            set_mode(vehicle, 'AUTO.LOITER')
+        if takeoff(vehicle, 10):
+            if wait_for_altitude(10):
+                log("Simulation sequence: Target altitude reached. Holding position in LOITER.")
+                set_mode(vehicle, 'AUTO.LOITER')
+            else:
+                log("Simulation sequence aborted: Failed to reach target altitude.")
         else:
-            log("Simulation sequence aborted: Failed to reach target altitude.")
+            log("Simulation sequence aborted: Takeoff initiation failed.")
     else:
         log("Simulation sequence aborted: Could not acquire GPS fix.")
 

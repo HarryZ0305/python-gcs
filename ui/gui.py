@@ -88,6 +88,7 @@ class GCSWindow(QMainWindow):
         self.attspeed_panel = StatPanel("ATTITUDE / SPEED")
         self.attspeed_panel.add_row('roll', 'Roll')
         self.attspeed_panel.add_row('pitch', 'Pitch')
+        self.attspeed_panel.add_row('yaw', 'Heading')
         self.attspeed_panel.add_row('speed', 'Speed')
 
         # Arm button
@@ -312,6 +313,8 @@ class GCSWindow(QMainWindow):
 
         self.attspeed_panel.set('roll', f"{math.degrees(d['roll']):.0f}\u00b0")
         self.attspeed_panel.set('pitch', f"{math.degrees(d['pitch']):.0f}\u00b0")
+        yaw_deg = math.degrees(d['yaw']) % 360
+        self.attspeed_panel.set('yaw', f"{yaw_deg:.0f}\u00b0")
         self.attspeed_panel.set('speed', f"{d['groundspeed']:.1f} m/s")
 
         if d['armed']:

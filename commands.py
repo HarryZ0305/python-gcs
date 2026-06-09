@@ -18,8 +18,8 @@ _streamer_vehicle = None
 
 def _ensure_streamer(vehicle):
     global _streamer_thread, _streamer_vehicle
+    _streamer_vehicle = vehicle
     if _streamer_thread is None:
-        _streamer_vehicle = vehicle
         _streamer_thread = threading.Thread(target=_offboard_streamer_loop, daemon=True)
         _streamer_thread.start()
 
@@ -54,7 +54,7 @@ def send_offboard_setpoint(vehicle, vx, vy, vz, yaw_rate):
                 vehicle.target_system,
                 vehicle.target_component,
                 mavutil.mavlink.MAV_FRAME_BODY_NED, # body frame (forward, right, down)
-                0b0000010111000111, # use velocity and yaw rate; ignore pos, accel, and absolute yaw
+                0b011111000111, # Bit 10 is 1 (ignore yaw), Bit 11 is 0 (use yaw rate)
                 0, 0, 0, # x, y, z position (ignored)
                 vx, vy, vz, # velocity m/s
                 0, 0, 0, # acceleration (ignored)
@@ -122,21 +122,35 @@ def set_mode(vehicle, mode_name):
     if lookup_name == "STABILIZE":
         lookup_name = "STABILIZED"
 
-    if lookup_name not in vehicle.mode_mapping(): # returns a dictionary of all available modes  
+    # Hybrid lookup strategy: try exact match first, then strip "AUTO." prefix if not found
+    mapped_name = lookup_name
+    if mapped_name not in vehicle.mode_mapping() and mapped_name.startswith("AUTO."):
+        mapped_name = mapped_name.replace("AUTO.", "")
+
+    if mapped_name not in vehicle.mode_mapping(): # returns a dictionary of all available modes  
         log(f"Unknown mode: {mode_name} (resolved to: {lookup_name})")
         log(f"Available modes: {list(vehicle.mode_mapping().keys())}")  
         return
 
-    mode_id = vehicle.mode_mapping()[lookup_name] # MAVLink number or tuple for the mode
+    mode_id = vehicle.mode_mapping()[mapped_name] # MAVLink number or tuple for the mode
     
-    # PX4 custom mode consists of main_mode and sub_mode
+    # PX4 custom mode consists of base_mode, main_mode, and sub_mode in px4_map 3-tuple
     if isinstance(mode_id, tuple):
-        main_mode = mode_id[0]
-        sub_mode = mode_id[1]
+        if len(mode_id) == 3:
+            base_mode = mode_id[0]
+            main_mode = mode_id[1]
+            sub_mode = mode_id[2]
+        else:
+            base_mode = mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
+            main_mode = mode_id[0]
+            sub_mode = mode_id[1]
     else:
+        base_mode = mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
         main_mode = mode_id
         sub_mode = 0
-        
+
+    base_mode |= mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
+    
     # Send using MAV_CMD_DO_SET_MODE command.
     with mav_lock:
         vehicle.mav.command_long_send(
@@ -144,7 +158,7 @@ def set_mode(vehicle, mode_name):
             vehicle.target_component,
             mavutil.mavlink.MAV_CMD_DO_SET_MODE,
             0, # confirmation
-            float(mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED), # param 1: base_mode
+            float(base_mode), # param 1: base_mode
             float(main_mode), # param 2: custom main mode
             float(sub_mode),  # param 3: custom sub mode
             0.0, 0.0, 0.0, 0.0 # param 4-7
@@ -170,7 +184,7 @@ def takeoff(vehicle, altitude_m):
         # Note: PX4 preflight checks (EKF/GPS) may block arming until the sim has a position fix
         if not wait_for_arm(timeout=10):
             log("Takeoff aborted: Drone failed to arm. EKF/GPS preflight checks may be blocking arming.")
-            return
+            return False
             
     log(f"Taking off to {altitude_m}m...")
     nan = float('nan')
@@ -189,6 +203,7 @@ def takeoff(vehicle, altitude_m):
             float(altitude_m) # param 7: altitude
         )
     log("Takeoff command sent!")
+    return True
 
 def goto(vehicle, lat, lon, alt):
     _ensure_streamer(vehicle)

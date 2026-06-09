@@ -49,10 +49,21 @@ class MapView(QWebEngineView):
         super().__init__()
         self.setHtml(MAP_HTML)
         self._last_pos = (0.0, 0.0)
+        self._is_loaded = False
+        self.loadFinished.connect(self._on_load_finished)
+
+    def _on_load_finished(self, ok):
+        if ok:
+            self._is_loaded = True
+            # If we received a position while loading, send it now
+            if self._last_pos != (0.0, 0.0):
+                lat, lon = self._last_pos
+                self.page().runJavaScript(f"if (typeof updateDrone === 'function') updateDrone({lat}, {lon});")
 
     def update_position(self, lat, lon):
         # Only update if position actually changed and GPS has a fix
         if (lat, lon) == self._last_pos or (lat == 0.0 and lon == 0.0):
             return
         self._last_pos = (lat, lon)
-        self.page().runJavaScript(f"if (typeof updateDrone === 'function') updateDrone({lat}, {lon});")
+        if self._is_loaded:
+            self.page().runJavaScript(f"if (typeof updateDrone === 'function') updateDrone({lat}, {lon});")

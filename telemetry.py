@@ -20,46 +20,50 @@ telemetry_data = { # dictionary that holds the latest values from the drone
 
 def read_telemetry(vehicle):
     while True: # constantly updating the dictionary
-        msg = vehicle.recv_match(  # type: ignore
-            type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE'],
-            blocking = True,
-            timeout = 5
-        )
-
-        if not msg:
-            continue
-
-        msg_type = msg.get_type()
-
-        if msg_type == 'GLOBAL_POSITION_INT':
-            telemetry_data['lat'] = msg.lat / 1e7
-            telemetry_data['lon'] = msg.lon / 1e7
-            telemetry_data['alt'] = msg.relative_alt / 1000
-
-        elif msg_type == 'VFR_HUD':
-            telemetry_data['groundspeed'] = msg.groundspeed
-            telemetry_data['throttle'] = msg.throttle
-
-        elif msg_type == 'SYS_STATUS':
-            telemetry_data['battery'] = msg.battery_remaining
-            telemetry_data['voltage'] = msg.voltage_battery / 1000
-
-        elif msg_type == 'GPS_RAW_INT':
-            telemetry_data['satellites'] = msg.satellites_visible
-            telemetry_data['fix_type'] = msg.fix_type
-
-        elif msg_type == 'HEARTBEAT':
-            telemetry_data['armed'] = bool(
-                msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED # bitmask check that isolates the arm bit
+        try:
+            msg = vehicle.recv_match(  # type: ignore
+                type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE'],
+                blocking = True,
+                timeout = 5
             )
-        
-        elif msg_type == 'STATUSTEXT': # error logs
-            log(f"FCU: {msg.text}")
-        
-        elif msg_type == 'ATTITUDE':
-            telemetry_data['roll'] = msg.roll
-            telemetry_data['pitch'] = msg.pitch
-            telemetry_data['yaw'] = msg.yaw
+
+            if not msg:
+                continue
+
+            msg_type = msg.get_type()
+
+            if msg_type == 'GLOBAL_POSITION_INT':
+                telemetry_data['lat'] = msg.lat / 1e7
+                telemetry_data['lon'] = msg.lon / 1e7
+                telemetry_data['alt'] = msg.relative_alt / 1000
+
+            elif msg_type == 'VFR_HUD':
+                telemetry_data['groundspeed'] = msg.groundspeed
+                telemetry_data['throttle'] = msg.throttle
+
+            elif msg_type == 'SYS_STATUS':
+                telemetry_data['battery'] = msg.battery_remaining
+                telemetry_data['voltage'] = msg.voltage_battery / 1000
+
+            elif msg_type == 'GPS_RAW_INT':
+                telemetry_data['satellites'] = msg.satellites_visible
+                telemetry_data['fix_type'] = msg.fix_type
+
+            elif msg_type == 'HEARTBEAT':
+                telemetry_data['armed'] = bool(
+                    msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED # bitmask check that isolates the arm bit
+                )
+            
+            elif msg_type == 'STATUSTEXT': # error logs
+                log(f"FCU: {msg.text}")
+            
+            elif msg_type == 'ATTITUDE':
+                telemetry_data['roll'] = msg.roll
+                telemetry_data['pitch'] = msg.pitch
+                telemetry_data['yaw'] = msg.yaw
+        except Exception as e:
+            log(f"Telemetry error: {e}")
+            time.sleep(1)
 
 def wait_for_arm(timeout = 10):
     print("Waiting for drone to arm...")
