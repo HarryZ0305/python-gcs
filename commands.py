@@ -225,3 +225,138 @@ def goto(vehicle, lat, lon, alt):
             )
         )
     log("Goto command sent!")
+
+def upload_mission(vehicle, waypoints, target_alt=10.0):
+    log("Mission upload: Starting transaction...")
+    from telemetry import mission_queue, telemetry_data
+    import queue
+
+    # Clear queue of any stale messages first
+    while not mission_queue.empty():
+        try:
+            mission_queue.get_nowait()
+        except queue.Empty:
+            break
+
+    # Step 1: Clear existing mission
+    log("Mission upload: Clearing existing mission...")
+    with mav_lock:
+        vehicle.mav.mission_clear_all_send(
+            vehicle.target_system,
+            vehicle.target_component
+        )
+
+    try:
+        msg = mission_queue.get(timeout=2.0)
+        if msg.get_type() != 'MISSION_ACK':
+            log(f"Mission upload failed: Expected MISSION_ACK, got {msg.get_type()}")
+            return False
+        if msg.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+            log(f"Mission upload failed: MAV_CMD_MISSION_CLEAR_ALL rejected with type {msg.type}")
+            return False
+    except queue.Empty:
+        log("Mission upload failed: Timeout waiting for MISSION_ACK during clear.")
+        return False
+
+    log("Mission upload: Previous mission cleared.")
+
+    # PX4 expects waypoint 0 to be the home position.
+    home_lat = telemetry_data['lat']
+    home_lon = telemetry_data['lon']
+    if home_lat == 0.0 or home_lon == 0.0:
+        home_lat = waypoints[0][0]
+        home_lon = waypoints[0][1]
+
+    items = []
+    # Add home item (seq 0)
+    items.append({
+        'seq': 0,
+        'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+        'command': mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+        'current': 0,
+        'autocontinue': 1,
+        'param1': 0.0,
+        'param2': 0.0,
+        'param3': 0.0,
+        'param4': 0.0,
+        'x': int(home_lat * 1e7),
+        'y': int(home_lon * 1e7),
+        'z': 0.0
+    })
+
+    # Add waypoints (seq 1 to N)
+    for idx, wp in enumerate(waypoints):
+        items.append({
+            'seq': idx + 1,
+            'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+            'command': mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+            'current': 0,
+            'autocontinue': 1,
+            'param1': 0.0,
+            'param2': 2.0, # 2m acceptance radius
+            'param3': 0.0,
+            'param4': 0.0,
+            'x': int(wp[0] * 1e7),
+            'y': int(wp[1] * 1e7),
+            'z': float(target_alt)
+        })
+
+    total_count = len(items)
+    log(f"Mission upload: Sending count ({total_count} items)...")
+    with mav_lock:
+        vehicle.mav.mission_count_send(
+            vehicle.target_system,
+            vehicle.target_component,
+            total_count
+        )
+
+    for i in range(total_count):
+        try:
+            msg = mission_queue.get(timeout=2.0)
+            msg_type = msg.get_type()
+            if msg_type not in ['MISSION_REQUEST', 'MISSION_REQUEST_INT']:
+                log(f"Mission upload failed: Unexpected message {msg_type} (expected request)")
+                return False
+            
+            requested_seq = msg.seq
+            if requested_seq < 0 or requested_seq >= total_count:
+                log(f"Mission upload failed: Requested invalid sequence number {requested_seq}")
+                return False
+
+            item = items[requested_seq]
+            log(f"Mission upload: Sending item {requested_seq}/{total_count-1}...")
+            with mav_lock:
+                vehicle.mav.mission_item_int_send(
+                    vehicle.target_system,
+                    vehicle.target_component,
+                    item['seq'],
+                    item['frame'],
+                    item['command'],
+                    item['current'],
+                    item['autocontinue'],
+                    item['param1'],
+                    item['param2'],
+                    item['param3'],
+                    item['param4'],
+                    item['x'],
+                    item['y'],
+                    item['z']
+                )
+        except queue.Empty:
+            log(f"Mission upload failed: Timeout waiting for request for item {i}.")
+            return False
+
+    try:
+        msg = mission_queue.get(timeout=2.0)
+        if msg.get_type() != 'MISSION_ACK':
+            log(f"Mission upload failed: Expected final MISSION_ACK, got {msg.get_type()}")
+            return False
+        if msg.type == mavutil.mavlink.MAV_MISSION_ACCEPTED:
+            log("Mission upload SUCCESSFUL! Mission accepted by vehicle.")
+            return True
+        else:
+            log(f"Mission upload failed: Mission rejected with ACK type {msg.type}")
+            return False
+    except queue.Empty:
+        log("Mission upload failed: Timeout waiting for final MISSION_ACK.")
+        return False

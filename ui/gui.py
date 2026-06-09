@@ -4,7 +4,7 @@ import threading
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QLabel, QFrame, QMessageBox,
-    QPushButton, QComboBox, QSpinBox
+    QPushButton, QComboBox, QSpinBox, QListWidget
 )
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
@@ -55,6 +55,7 @@ class GCSWindow(QMainWindow):
     def __init__(self, vehicle):
         super().__init__()
         self.vehicle = vehicle
+        self.waypoints = []
         
         from commands import _ensure_streamer
         _ensure_streamer(self.vehicle)
@@ -188,6 +189,50 @@ class GCSWindow(QMainWindow):
         ap.addLayout(r4)
         ap.addWidget(self.status_label)
 
+        # Mission planning panel container
+        self.mission_panel = QFrame()
+        self.mission_panel.setStyleSheet("background-color: #1e2d3d; border-radius: 8px;")
+        mp = QVBoxLayout(self.mission_panel)
+        mp.setContentsMargins(10, 8, 10, 8)
+        mp.setSpacing(6)
+        
+        mp_title = QLabel("MISSION PLANNING")
+        mp_title.setStyleSheet("color: #7a9cc4; font-size: 11px; font-weight: bold; border: none;")
+        mp.addWidget(mp_title)
+        
+        self.wp_list = QListWidget()
+        self.wp_list.setStyleSheet("""
+            QListWidget {
+                background-color: #0d1b2a; color: #00e5ff;
+                border: 1px solid #2a4a6a; border-radius: 4px;
+                font-family: Courier New; font-size: 11px;
+            }
+        """)
+        mp.addWidget(self.wp_list)
+        
+        m_row = QHBoxLayout()
+        m_row.setSpacing(6)
+        
+        self.sync_btn = QPushButton("SYNC MAP")
+        self.sync_btn.setFixedHeight(30)
+        self.sync_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.sync_btn.clicked.connect(self.on_sync_map)
+        
+        self.clear_btn = QPushButton("CLEAR")
+        self.clear_btn.setFixedHeight(30)
+        self.clear_btn.setStyleSheet(self._btn_style("#ff4444", "#0d1b2a"))
+        self.clear_btn.clicked.connect(self.on_clear_mission)
+        
+        self.upload_btn = QPushButton("UPLOAD")
+        self.upload_btn.setFixedHeight(30)
+        self.upload_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+        self.upload_btn.clicked.connect(self.on_upload_mission)
+        
+        m_row.addWidget(self.sync_btn)
+        m_row.addWidget(self.clear_btn)
+        m_row.addWidget(self.upload_btn)
+        mp.addLayout(m_row)
+
         # ===== Assemble layout (3 columns + bottom bar) =====
         top = QHBoxLayout()
         top.setSpacing(8)
@@ -213,8 +258,9 @@ class GCSWindow(QMainWindow):
         outer.addLayout(top, stretch=5)
 
         bottom = QHBoxLayout(); bottom.setSpacing(8)
-        bottom.addWidget(self.action_panel, stretch=1)
-        bottom.addWidget(self.console_view, stretch=1)
+        bottom.addWidget(self.action_panel, stretch=3)
+        bottom.addWidget(self.mission_panel, stretch=4)
+        bottom.addWidget(self.console_view, stretch=5)
         outer.addLayout(bottom, stretch=2)
 
         # ===== Refresh timer =====
@@ -292,6 +338,34 @@ class GCSWindow(QMainWindow):
 
     def set_status(self, msg):
         self.status_label.setText(msg)
+
+    def on_sync_map(self):
+        self.map_view.get_waypoints(self.on_waypoints_received)
+
+    def on_waypoints_received(self, wps):
+        self.wp_list.clear()
+        if not wps:
+            self.waypoints = []
+            self.set_status("No waypoints on map to sync.")
+            return
+        self.waypoints = wps
+        for idx, wp in enumerate(wps):
+            self.wp_list.addItem(f"WP {idx+1}: {wp[0]:.6f}, {wp[1]:.6f}")
+        self.set_status(f"Synced {len(wps)} waypoints from map.")
+
+    def on_clear_mission(self):
+        self.map_view.clear_waypoints()
+        self.wp_list.clear()
+        self.waypoints = []
+        self.set_status("Mission cleared.")
+
+    def on_upload_mission(self):
+        if not self.waypoints:
+            self.set_status("Upload failed: Sync map first!")
+            return
+        from commands import upload_mission
+        threading.Thread(target=upload_mission, args=(self.vehicle, self.waypoints), daemon=True).start()
+        self.set_status("Uploading mission...")
 
     # ---- live refresh ----
     def refresh(self):

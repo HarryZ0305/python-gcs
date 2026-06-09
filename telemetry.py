@@ -1,6 +1,9 @@
 import time
+import queue
 from pymavlink import mavutil
 from logs import log
+
+mission_queue = queue.Queue()
 
 telemetry_data = { # dictionary that holds the latest values from the drone
     'lat': 0.0,
@@ -22,7 +25,7 @@ def read_telemetry(vehicle):
     while True: # constantly updating the dictionary
         try:
             msg = vehicle.recv_match(  # type: ignore
-                type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE'],
+                type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE', 'MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK'],
                 blocking = True,
                 timeout = 5
             )
@@ -61,6 +64,9 @@ def read_telemetry(vehicle):
                 telemetry_data['roll'] = msg.roll
                 telemetry_data['pitch'] = msg.pitch
                 telemetry_data['yaw'] = msg.yaw
+            
+            elif msg_type in ['MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK']:
+                mission_queue.put(msg)
         except Exception as e:
             log(f"Telemetry error: {e}")
             time.sleep(1)

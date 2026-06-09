@@ -32,6 +32,44 @@ MAP_HTML = """
         var path = L.polyline([], {color: '#00e5ff', weight: 2, opacity: 0.7}).addTo(map);
         var positions = [];
 
+        var waypoints = [];
+        var waypointMarkers = [];
+        var missionPath = L.polyline([], {color: '#ffaa00', weight: 3, dashArray: '5, 5'}).addTo(map);
+
+        map.on('click', function(e) {
+            var lat = e.latlng.lat;
+            var lon = e.latlng.lng;
+            addWaypoint(lat, lon);
+        });
+
+        function addWaypoint(lat, lon) {
+            var pos = [lat, lon];
+            waypoints.push(pos);
+            var num = waypoints.length;
+            var icon = L.divIcon({
+                html: '<div style="width:18px;height:18px;background:#ffaa00;border:2px solid white;border-radius:50%;box-shadow:0 0 6px rgba(0,0,0,0.5);text-align:center;color:#0d1b2a;font-size:11px;line-height:18px;font-weight:bold;">' + num + '</div>',
+                iconSize: [18, 18],
+                iconAnchor: [9, 9],
+                className: ''
+            });
+            var m = L.marker(pos, {icon: icon}).addTo(map);
+            waypointMarkers.push(m);
+            missionPath.setLatLngs(waypoints);
+        }
+
+        function getWaypoints() {
+            return waypoints;
+        }
+
+        function clearWaypoints() {
+            for (var i = 0; i < waypointMarkers.length; i++) {
+                map.removeLayer(waypointMarkers[i]);
+            }
+            waypointMarkers = [];
+            waypoints = [];
+            missionPath.setLatLngs([]);
+        }
+
         function updateDrone(lat, lon) {
             var pos = [lat, lon];
             marker.setLatLng(pos);
@@ -67,3 +105,9 @@ class MapView(QWebEngineView):
         self._last_pos = (lat, lon)
         if self._is_loaded:
             self.page().runJavaScript(f"if (typeof updateDrone === 'function') updateDrone({lat}, {lon});")
+
+    def get_waypoints(self, callback):
+        self.page().runJavaScript("if (typeof getWaypoints === 'function') getWaypoints();", callback)
+
+    def clear_waypoints(self):
+        self.page().runJavaScript("if (typeof clearWaypoints === 'function') clearWaypoints();")
