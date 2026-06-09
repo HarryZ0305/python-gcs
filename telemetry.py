@@ -1,9 +1,13 @@
 import time
 import queue
+import threading
 from pymavlink import mavutil
 from logs import log
 
 mission_queue = queue.Queue()
+
+parameters_lock = threading.Lock()
+parameters_data = {} # {param_name: {'value': val, 'type': type, 'index': idx, 'count': count}}
 
 telemetry_data = { # dictionary that holds the latest values from the drone
     'lat': 0.0,
@@ -25,7 +29,7 @@ def read_telemetry(vehicle):
     while True: # constantly updating the dictionary
         try:
             msg = vehicle.recv_match(  # type: ignore
-                type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE', 'MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK'],
+                type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE', 'MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK', 'PARAM_VALUE'],
                 blocking = True,
                 timeout = 5
             )
@@ -64,6 +68,20 @@ def read_telemetry(vehicle):
                 telemetry_data['roll'] = msg.roll
                 telemetry_data['pitch'] = msg.pitch
                 telemetry_data['yaw'] = msg.yaw
+            
+            elif msg_type == 'PARAM_VALUE':
+                param_id = msg.param_id
+                if isinstance(param_id, bytes):
+                    param_id = param_id.decode('utf-8', errors='ignore')
+                param_name = param_id.split('\x00')[0]
+                
+                with parameters_lock:
+                    parameters_data[param_name] = {
+                        'value': msg.param_value,
+                        'type': msg.param_type,
+                        'index': msg.param_index,
+                        'count': msg.param_count
+                    }
             
             elif msg_type in ['MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK']:
                 mission_queue.put(msg)

@@ -4,7 +4,7 @@ import threading
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QLabel, QFrame, QMessageBox,
-    QPushButton, QComboBox, QSpinBox, QListWidget
+    QPushButton, QComboBox, QSpinBox, QListWidget, QTabWidget
 )
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QFont
@@ -14,6 +14,7 @@ from ui.map_view import MapView
 from ui.attitude_view import AttitudeView
 from ui.console_view import ConsoleView
 from ui.camera_view import CameraView
+from ui.setup_view import SetupView
 
 
 class StatPanel(QFrame):
@@ -66,9 +67,39 @@ class GCSWindow(QMainWindow):
         root = QWidget()
         root.setStyleSheet("background-color: #0d1b2a;")
         self.setCentralWidget(root)
-        outer = QVBoxLayout(root)
-        outer.setSpacing(8)
-        outer.setContentsMargins(10, 10, 10, 10)
+        
+        # Create Tab Widget
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #2a4a6a;
+                background-color: #0d1b2a;
+                border-radius: 8px;
+            }
+            QTabBar::tab {
+                background-color: #1e2d3d;
+                color: #7a9cc4;
+                font-family: Courier New;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 8px 20px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+                border: 1px solid #2a4a6a;
+                border-bottom: none;
+                margin-right: 4px;
+            }
+            QTabBar::tab:selected {
+                background-color: #0d1b2a;
+                color: #00e5ff;
+                border: 2px solid #00e5ff;
+                border-bottom: none;
+            }
+            QTabBar::tab:hover {
+                background-color: #2a4a6a;
+                color: #ffffff;
+            }
+        """)
 
         # ===== Build all widgets =====
 
@@ -233,20 +264,24 @@ class GCSWindow(QMainWindow):
         m_row.addWidget(self.upload_btn)
         mp.addLayout(m_row)
 
-        # ===== Assemble layout (3 columns + bottom bar) =====
-        top = QHBoxLayout()
-        top.setSpacing(8)
+        # ===== FLY Tab Layout =====
+        fly_widget = QWidget()
+        fly_layout = QVBoxLayout(fly_widget)
+        fly_layout.setContentsMargins(6, 6, 6, 6)
+        fly_layout.setSpacing(6)
 
-        left = QVBoxLayout(); left.setSpacing(8)
+        top = QHBoxLayout(); top.setSpacing(6)
+        
+        left = QVBoxLayout(); left.setSpacing(6)
         left.addWidget(self.power_panel, stretch=3)
         left.addWidget(self.gnss_panel, stretch=4)
         left.addWidget(self.arm_btn, stretch=1)
 
-        center = QVBoxLayout(); center.setSpacing(8)
+        center = QVBoxLayout(); center.setSpacing(6)
         center.addWidget(self.front_cam, stretch=1)
         center.addWidget(self.bottom_cam, stretch=1)
 
-        right = QVBoxLayout(); right.setSpacing(8)
+        right = QVBoxLayout(); right.setSpacing(6)
         right.addWidget(self.map_view, stretch=5)
         right.addWidget(self.attitude_view, stretch=3)
         right.addWidget(self.attspeed_panel, stretch=2)
@@ -254,14 +289,34 @@ class GCSWindow(QMainWindow):
         top.addLayout(left, stretch=2)
         top.addLayout(center, stretch=3)
         top.addLayout(right, stretch=4)
+        fly_layout.addLayout(top, stretch=5)
 
-        outer.addLayout(top, stretch=5)
+        bottom = QHBoxLayout(); bottom.setSpacing(6)
+        bottom.addWidget(self.action_panel, stretch=1)
+        bottom.addWidget(self.console_view, stretch=1)
+        fly_layout.addLayout(bottom, stretch=2)
 
-        bottom = QHBoxLayout(); bottom.setSpacing(8)
-        bottom.addWidget(self.action_panel, stretch=3)
-        bottom.addWidget(self.mission_panel, stretch=4)
-        bottom.addWidget(self.console_view, stretch=5)
-        outer.addLayout(bottom, stretch=2)
+        self.tabs.addTab(fly_widget, "FLY")
+
+        # ===== PLAN Tab Layout =====
+        plan_widget = QWidget()
+        plan_layout = QVBoxLayout(plan_widget)
+        plan_layout.setContentsMargins(8, 8, 8, 8)
+        plan_layout.addWidget(self.mission_panel)
+        self.tabs.addTab(plan_widget, "PLAN")
+
+        # ===== SETUP Tab Layout =====
+        self.setup_view = SetupView(self.vehicle)
+        self.tabs.addTab(self.setup_view, "SETUP")
+
+        # ===== Assemble Central Layout =====
+        # Clear default root layout and reset it to contain self.tabs
+        root = QWidget()
+        root.setStyleSheet("background-color: #0d1b2a;")
+        self.setCentralWidget(root)
+        outer = QVBoxLayout(root)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.addWidget(self.tabs)
 
         # ===== Refresh timer =====
         self.timer = QTimer()

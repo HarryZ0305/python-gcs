@@ -360,3 +360,27 @@ def upload_mission(vehicle, waypoints, target_alt=10.0):
     except queue.Empty:
         log("Mission upload failed: Timeout waiting for final MISSION_ACK.")
         return False
+
+def request_all_parameters(vehicle):
+    log("Parameter protocol: Requesting all parameters...")
+    with mav_lock:
+        vehicle.mav.param_request_list_send(
+            vehicle.target_system,
+            vehicle.target_component
+        )
+
+def set_parameter(vehicle, param_id, param_value, param_type):
+    log(f"Parameter protocol: Setting parameter {param_id} = {param_value}...")
+    if isinstance(param_id, str):
+        param_id_bytes = param_id.encode('utf-8')
+    else:
+        param_id_bytes = param_id
+    param_id_bytes = param_id_bytes[:16].ljust(16, b'\x00')
+    with mav_lock:
+        vehicle.mav.param_set_send(
+            vehicle.target_system,
+            vehicle.target_component,
+            param_id_bytes,
+            float(param_value),
+            int(param_type)
+        )
