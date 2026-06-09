@@ -85,6 +85,8 @@ class GCSWindow(QMainWindow):
         super().__init__()
         self.vehicle = vehicle
         self.waypoints = []
+        self.takeoff_point = None
+        self.landing_point = None
         self.conn_worker = None
         self.telemetry_thread = None
         
@@ -272,6 +274,10 @@ class GCSWindow(QMainWindow):
         """)
         mp.addWidget(self.wp_list)
         
+        self.wp_progress_label = QLabel("Active Waypoint: ---")
+        self.wp_progress_label.setStyleSheet("color: #00e5ff; font-family: Courier New; font-size: 11px; border: none;")
+        mp.addWidget(self.wp_progress_label)
+        
         m_row = QHBoxLayout()
         m_row.setSpacing(6)
         
@@ -280,20 +286,26 @@ class GCSWindow(QMainWindow):
         self.sync_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
         self.sync_btn.clicked.connect(self.on_sync_map)
         
+        self.upload_btn = QPushButton("UPLOAD")
+        self.upload_btn.setFixedHeight(30)
+        self.upload_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+        self.upload_btn.clicked.connect(self.on_upload_mission)
+
         self.clear_btn = QPushButton("CLEAR")
         self.clear_btn.setFixedHeight(30)
         self.clear_btn.setStyleSheet(self._btn_style("#ff4444", "#0d1b2a"))
         self.clear_btn.clicked.connect(self.on_clear_mission)
         
-        self.upload_btn = QPushButton("UPLOAD")
-        self.upload_btn.setFixedHeight(30)
-        self.upload_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
-        self.upload_btn.clicked.connect(self.on_upload_mission)
-        
         m_row.addWidget(self.sync_btn)
-        m_row.addWidget(self.clear_btn)
         m_row.addWidget(self.upload_btn)
+        m_row.addWidget(self.clear_btn)
         mp.addLayout(m_row)
+
+        self.start_btn = QPushButton("START MISSION")
+        self.start_btn.setFixedHeight(34)
+        self.start_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+        self.start_btn.clicked.connect(self.on_start_mission)
+        mp.addWidget(self.start_btn)
 
         # ===== FLY Tab Layout =====
         fly_widget = QWidget()
@@ -521,6 +533,7 @@ class GCSWindow(QMainWindow):
         self.sync_btn.setEnabled(enabled)
         self.clear_btn.setEnabled(enabled)
         self.upload_btn.setEnabled(enabled)
+        self.start_btn.setEnabled(enabled)
 
     # ---- command handlers ----
     def on_arm_disarm(self):
@@ -555,6 +568,7 @@ class GCSWindow(QMainWindow):
         current_mode = telemetry_data.get('mode', 'UNKNOWN')
         if current_mode != 'OFFBOARD':
             self.mode_combo.setCurrentText('OFFBOARD')
+            telemetry_data['mode'] = 'OFFBOARD'
             threading.Thread(target=set_mode, args=(self.vehicle, 'OFFBOARD'), daemon=True).start()
             self.set_status("Auto-switching to OFFBOARD mode...")
 
@@ -584,30 +598,56 @@ class GCSWindow(QMainWindow):
     def on_sync_map(self):
         self.plan_map_view.get_waypoints(self.on_waypoints_received)
 
-    def on_waypoints_received(self, wps):
+    def on_waypoints_received(self, data):
         self.wp_list.clear()
-        if not wps:
+        if not data or not isinstance(data, dict):
             self.waypoints = []
-            self.set_status("No waypoints on map to sync.")
+            self.takeoff_point = None
+            self.landing_point = None
+            self.set_status("No mission elements to sync.")
             return
-        self.waypoints = wps
-        for idx, wp in enumerate(wps):
+
+        self.takeoff_point = data.get('takeoff')
+        self.waypoints = data.get('waypoints', [])
+        self.landing_point = data.get('landing')
+
+        if self.takeoff_point:
+            self.wp_list.addItem(f"TAKEOFF: {self.takeoff_point[0]:.6f}, {self.takeoff_point[1]:.6f}")
+
+        for idx, wp in enumerate(self.waypoints):
             self.wp_list.addItem(f"WP {idx+1}: {wp[0]:.6f}, {wp[1]:.6f}")
-        self.set_status(f"Synced {len(wps)} waypoints from map.")
+
+        if self.landing_point:
+            self.wp_list.addItem(f"LAND: {self.landing_point[0]:.6f}, {self.landing_point[1]:.6f}")
+
+        total_items = (1 if self.takeoff_point else 0) + len(self.waypoints) + (1 if self.landing_point else 0)
+        self.set_status(f"Synced mission: {total_items} items.")
 
     def on_clear_mission(self):
         self.plan_map_view.clear_waypoints()
         self.wp_list.clear()
         self.waypoints = []
+        self.takeoff_point = None
+        self.landing_point = None
+        telemetry_data['wp_current'] = -1
         self.set_status("Mission cleared.")
 
     def on_upload_mission(self):
-        if not self.waypoints:
+        if not self.waypoints and not self.takeoff_point and not self.landing_point:
             self.set_status("Upload failed: Sync map first!")
             return
         from commands import upload_mission
-        threading.Thread(target=upload_mission, args=(self.vehicle, self.waypoints), daemon=True).start()
+        threading.Thread(target=upload_mission, args=(
+            self.vehicle, self.waypoints, self.takeoff_point, self.landing_point
+        ), daemon=True).start()
         self.set_status("Uploading mission...")
+
+    def on_start_mission(self):
+        if not self.vehicle:
+            self.set_status("Start Mission failed: No vehicle connection.")
+            return
+        threading.Thread(target=set_mode, args=(self.vehicle, 'AUTO.MISSION'), daemon=True).start()
+        self.set_status("Setting mode to AUTO.MISSION (Starting mission)...")
 
     # ---- live refresh ----
     def refresh(self):
@@ -658,6 +698,25 @@ class GCSWindow(QMainWindow):
         self.map_view.update_position(d['lat'], d['lon'])
         self.plan_map_view.update_position(d['lat'], d['lon'])
         self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'])
+
+        wp_idx = d.get('wp_current', -1)
+        total_items = self.wp_list.count()
+        if wp_idx > 0 and total_items > 0:
+            if wp_idx - 1 < total_items:
+                self.wp_list.setCurrentRow(wp_idx - 1)
+                item_text = self.wp_list.item(wp_idx - 1).text()
+                active_name = item_text.split(':')[0]
+                self.wp_progress_label.setText(f"Active: {active_name} (Item {wp_idx} / {total_items})")
+            else:
+                self.wp_progress_label.setText("Active: ---")
+                self.wp_list.clearSelection()
+        elif wp_idx == 0:
+            self.wp_progress_label.setText("Active: Home / Preflight")
+            self.wp_list.clearSelection()
+        else:
+            self.wp_progress_label.setText("Active: ---")
+            self.wp_list.clearSelection()
+
         self.console_view.refresh_logs()
 
     def closeEvent(self, event):  # type: ignore

@@ -226,7 +226,7 @@ def goto(vehicle, lat, lon, alt):
         )
     log("Goto command sent!")
 
-def upload_mission(vehicle, waypoints, target_alt=10.0):
+def upload_mission(vehicle, waypoints, takeoff_point=None, landing_point=None, target_alt=10.0):
     log("Mission upload: Starting transaction...")
     from telemetry import mission_queue, telemetry_data
     import queue
@@ -264,13 +264,22 @@ def upload_mission(vehicle, waypoints, target_alt=10.0):
     home_lat = telemetry_data['lat']
     home_lon = telemetry_data['lon']
     if home_lat == 0.0 or home_lon == 0.0:
-        home_lat = waypoints[0][0]
-        home_lon = waypoints[0][1]
+        if takeoff_point:
+            home_lat = takeoff_point[0]
+            home_lon = takeoff_point[1]
+        elif waypoints:
+            home_lat = waypoints[0][0]
+            home_lon = waypoints[0][1]
+        elif landing_point:
+            home_lat = landing_point[0]
+            home_lon = landing_point[1]
 
     items = []
+    seq_counter = 0
+
     # Add home item (seq 0)
     items.append({
-        'seq': 0,
+        'seq': seq_counter,
         'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
         'command': mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
         'current': 0,
@@ -283,11 +292,30 @@ def upload_mission(vehicle, waypoints, target_alt=10.0):
         'y': int(home_lon * 1e7),
         'z': 0.0
     })
+    seq_counter += 1
 
-    # Add waypoints (seq 1 to N)
-    for idx, wp in enumerate(waypoints):
+    # Add Takeoff item (MAV_CMD_NAV_TAKEOFF) if specified
+    if takeoff_point:
         items.append({
-            'seq': idx + 1,
+            'seq': seq_counter,
+            'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+            'command': mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+            'current': 0,
+            'autocontinue': 1,
+            'param1': 0.0,
+            'param2': 0.0,
+            'param3': 0.0,
+            'param4': 0.0,
+            'x': int(takeoff_point[0] * 1e7),
+            'y': int(takeoff_point[1] * 1e7),
+            'z': float(target_alt)
+        })
+        seq_counter += 1
+
+    # Add waypoints (MAV_CMD_NAV_WAYPOINT)
+    for wp in waypoints:
+        items.append({
+            'seq': seq_counter,
             'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
             'command': mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
             'current': 0,
@@ -300,6 +328,25 @@ def upload_mission(vehicle, waypoints, target_alt=10.0):
             'y': int(wp[1] * 1e7),
             'z': float(target_alt)
         })
+        seq_counter += 1
+
+    # Add Land item (MAV_CMD_NAV_LAND) if specified
+    if landing_point:
+        items.append({
+            'seq': seq_counter,
+            'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+            'command': mavutil.mavlink.MAV_CMD_NAV_LAND,
+            'current': 0,
+            'autocontinue': 1,
+            'param1': 0.0,
+            'param2': 0.0,
+            'param3': 0.0,
+            'param4': 0.0,
+            'x': int(landing_point[0] * 1e7),
+            'y': int(landing_point[1] * 1e7),
+            'z': 0.0
+        })
+        seq_counter += 1
 
     total_count = len(items)
     log(f"Mission upload: Sending count ({total_count} items)...")

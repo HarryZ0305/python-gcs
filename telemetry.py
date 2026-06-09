@@ -23,8 +23,8 @@ telemetry_data = { # dictionary that holds the latest values from the drone
     'voltage': 0.0, # battery voltage
     'roll': 0.0,      
     'pitch': 0.0,     
-    'yaw': 0.0,
-    'mode': 'UNKNOWN'
+    'mode': 'UNKNOWN',
+    'wp_current': -1
 }
 
 def read_telemetry(vehicle):
@@ -33,7 +33,7 @@ def read_telemetry(vehicle):
     while telemetry_active:
         try:
             msg = vehicle.recv_match(  # type: ignore
-                type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE', 'MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK', 'PARAM_VALUE', 'COMMAND_ACK'],
+                type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE', 'MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK', 'PARAM_VALUE', 'COMMAND_ACK', 'MISSION_CURRENT'],
                 blocking = True,
                 timeout = 5
             )
@@ -103,6 +103,11 @@ def read_telemetry(vehicle):
                 }
                 result_str = ack_results.get(msg.result, f"UNKNOWN_CODE({msg.result})")
                 log(f"Command {msg.command} ACK: {result_str}")
+
+            elif msg_type == 'MISSION_CURRENT':
+                if telemetry_data.get('wp_current') != msg.seq:
+                    telemetry_data['wp_current'] = msg.seq
+                    log(f"Active waypoint updated: WP {msg.seq}")
         except Exception as e:
             if not telemetry_active:
                 break
