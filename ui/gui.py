@@ -549,19 +549,32 @@ class GCSWindow(QMainWindow):
         threading.Thread(target=set_mode, args=(self.vehicle, 'AUTO.LAND'), daemon=True).start()
         self.set_status("LAND command sent...")
 
+    def ensure_offboard(self):
+        if not self.vehicle:
+            return
+        current_mode = telemetry_data.get('mode', 'UNKNOWN')
+        if current_mode != 'OFFBOARD':
+            self.mode_combo.setCurrentText('OFFBOARD')
+            threading.Thread(target=set_mode, args=(self.vehicle, 'OFFBOARD'), daemon=True).start()
+            self.set_status("Auto-switching to OFFBOARD mode...")
+
     def on_forward(self):
+        self.ensure_offboard()
         set_offboard_targets(vx=2.0, yaw_rate=0.0)
         self.set_status("Offboard target: Forward (2.0 m/s)")
 
     def on_yaw_left(self):
+        self.ensure_offboard()
         set_offboard_targets(vx=0.0, yaw_rate=-0.5)
         self.set_status("Offboard target: Yaw Left (-0.5 rad/s)")
 
     def on_yaw_right(self):
+        self.ensure_offboard()
         set_offboard_targets(vx=0.0, yaw_rate=0.5)
         self.set_status("Offboard target: Yaw Right (0.5 rad/s)")
 
     def on_hover(self):
+        self.ensure_offboard()
         reset_offboard_targets()
         self.set_status("Offboard target: Hover")
 

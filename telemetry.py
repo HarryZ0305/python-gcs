@@ -23,7 +23,8 @@ telemetry_data = { # dictionary that holds the latest values from the drone
     'voltage': 0.0, # battery voltage
     'roll': 0.0,      
     'pitch': 0.0,     
-    'yaw': 0.0
+    'yaw': 0.0,
+    'mode': 'UNKNOWN'
 }
 
 def read_telemetry(vehicle):
@@ -63,6 +64,8 @@ def read_telemetry(vehicle):
                 telemetry_data['armed'] = bool(
                     msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED # bitmask check that isolates the arm bit
                 )
+                if hasattr(vehicle, 'flightmode'):
+                    telemetry_data['mode'] = vehicle.flightmode
             
             elif msg_type == 'STATUSTEXT': # error logs
                 log(f"FCU: {msg.text}")

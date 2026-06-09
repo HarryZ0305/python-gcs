@@ -54,7 +54,7 @@ def send_offboard_setpoint(vehicle, vx, vy, vz, yaw_rate):
                 vehicle.target_system,
                 vehicle.target_component,
                 mavutil.mavlink.MAV_FRAME_BODY_NED, # body frame (forward, right, down)
-                0b011111000111, # Bit 10 is 1 (ignore yaw), Bit 11 is 0 (use yaw rate)
+                0b010111000111, # Bit 10 is 1 (ignore yaw), Bit 11 is 0 (use yaw rate), Bit 9 is 0 (disable FORCE)
                 0, 0, 0, # x, y, z position (ignored)
                 vx, vy, vz, # velocity m/s
                 0, 0, 0, # acceleration (ignored)
