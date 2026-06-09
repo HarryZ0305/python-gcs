@@ -331,9 +331,13 @@ class GCSWindow(QMainWindow):
 
         # ===== PLAN Tab Layout =====
         plan_widget = QWidget()
-        plan_layout = QVBoxLayout(plan_widget)
+        plan_layout = QHBoxLayout(plan_widget)
         plan_layout.setContentsMargins(8, 8, 8, 8)
-        plan_layout.addWidget(self.mission_panel)
+        plan_layout.setSpacing(8)
+        
+        self.plan_map_view = MapView()
+        plan_layout.addWidget(self.plan_map_view, stretch=3)
+        plan_layout.addWidget(self.mission_panel, stretch=1)
         self.tabs.addTab(plan_widget, "PLAN")
 
         # ===== SETUP Tab Layout =====
@@ -469,6 +473,10 @@ class GCSWindow(QMainWindow):
         self.conn_status.setStyleSheet("color: #44ff88; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
         self.set_controls_enabled(True)
 
+        # Automatically request all parameters upon connection
+        from commands import request_all_parameters
+        threading.Thread(target=request_all_parameters, args=(self.vehicle,), daemon=True).start()
+
     def on_connection_failed(self, error_msg):
         self.set_status(f"Connection failed: {error_msg}")
         self.disconnect_vehicle()
@@ -561,7 +569,7 @@ class GCSWindow(QMainWindow):
         self.status_label.setText(msg)
 
     def on_sync_map(self):
-        self.map_view.get_waypoints(self.on_waypoints_received)
+        self.plan_map_view.get_waypoints(self.on_waypoints_received)
 
     def on_waypoints_received(self, wps):
         self.wp_list.clear()
@@ -575,7 +583,7 @@ class GCSWindow(QMainWindow):
         self.set_status(f"Synced {len(wps)} waypoints from map.")
 
     def on_clear_mission(self):
-        self.map_view.clear_waypoints()
+        self.plan_map_view.clear_waypoints()
         self.wp_list.clear()
         self.waypoints = []
         self.set_status("Mission cleared.")
@@ -635,6 +643,7 @@ class GCSWindow(QMainWindow):
             self.arm_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
 
         self.map_view.update_position(d['lat'], d['lon'])
+        self.plan_map_view.update_position(d['lat'], d['lon'])
         self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'])
         self.console_view.refresh_logs()
 
