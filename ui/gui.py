@@ -4,9 +4,10 @@ import threading
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QLabel, QFrame, QMessageBox,
-    QPushButton, QComboBox, QSpinBox, QListWidget, QTabWidget
+    QPushButton, QComboBox, QSpinBox, QListWidget, QTabWidget,
+    QLineEdit
 )
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 from telemetry import telemetry_data
 from commands import arm, disarm, set_mode, takeoff, set_offboard_targets, reset_offboard_targets
@@ -15,6 +16,33 @@ from ui.attitude_view import AttitudeView
 from ui.console_view import ConsoleView
 from ui.camera_view import CameraView
 from ui.setup_view import SetupView
+
+
+class ConnectionWorker(QThread):
+    connected = pyqtSignal(object)
+    failed = pyqtSignal(str)
+
+    def __init__(self, connection_string):
+        super().__init__()
+        self.connection_string = connection_string
+        self.running = True
+
+    def run(self):
+        from connection import connect
+        try:
+            while self.running:
+                vehicle = connect(self.connection_string, timeout=1.0)
+                if vehicle is not None:
+                    if self.running:
+                        self.connected.emit(vehicle)
+                    return
+                self.msleep(500)
+        except Exception as e:
+            if self.running:
+                self.failed.emit(str(e))
+
+    def stop(self):
+        self.running = False
 
 
 class StatPanel(QFrame):
@@ -53,13 +81,16 @@ class StatPanel(QFrame):
 
 
 class GCSWindow(QMainWindow):
-    def __init__(self, vehicle):
+    def __init__(self, vehicle=None):
         super().__init__()
         self.vehicle = vehicle
         self.waypoints = []
+        self.conn_worker = None
+        self.telemetry_thread = None
         
-        from commands import _ensure_streamer
-        _ensure_streamer(self.vehicle)
+        if self.vehicle is not None:
+            from commands import _ensure_streamer
+            _ensure_streamer(self.vehicle)
 
         self.setWindowTitle("Python GCS")
         self.resize(1280, 800)
@@ -310,18 +341,60 @@ class GCSWindow(QMainWindow):
         self.tabs.addTab(self.setup_view, "SETUP")
 
         # ===== Assemble Central Layout =====
-        # Clear default root layout and reset it to contain self.tabs
         root = QWidget()
         root.setStyleSheet("background-color: #0d1b2a;")
         self.setCentralWidget(root)
         outer = QVBoxLayout(root)
         outer.setContentsMargins(8, 8, 8, 8)
+
+        # Connection Panel
+        self.conn_panel = QFrame()
+        self.conn_panel.setStyleSheet("background-color: #1e2d3d; border-radius: 8px; border: 1px solid #2a4a6a;")
+        self.conn_panel.setFixedHeight(50)
+        
+        conn_layout = QHBoxLayout(self.conn_panel)
+        conn_layout.setContentsMargins(15, 5, 15, 5)
+        conn_layout.setSpacing(10)
+        
+        conn_lbl = QLabel("CONNECTION:")
+        conn_lbl.setStyleSheet("color: #7a9cc4; font-family: Courier New; font-weight: bold; font-size: 12px; border: none;")
+        conn_layout.addWidget(conn_lbl)
+        
+        self.conn_input = QLineEdit()
+        self.conn_input.setText("udpin:0.0.0.0:14540")
+        self.conn_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #0d1b2a; color: #00e5ff;
+                border: 1px solid #2a4a6a; border-radius: 4px;
+                padding: 4px 8px; font-family: Courier New; font-size: 12px;
+            }
+        """)
+        conn_layout.addWidget(self.conn_input, stretch=1)
+        
+        self.conn_btn = QPushButton("CONNECT")
+        self.conn_btn.setFixedWidth(120)
+        self.conn_btn.setFixedHeight(30)
+        self.conn_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.conn_btn.clicked.connect(self.on_connect_toggle)
+        conn_layout.addWidget(self.conn_btn)
+        
+        self.conn_status = QLabel("DISCONNECTED")
+        self.conn_status.setStyleSheet("color: #ff4444; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+        conn_layout.addWidget(self.conn_status)
+
+        outer.addWidget(self.conn_panel)
         outer.addWidget(self.tabs)
 
         # ===== Refresh timer =====
         self.timer = QTimer()
         self.timer.timeout.connect(self.refresh)
         self.timer.start(500)
+
+        # Initialize connection states
+        if self.vehicle is not None:
+            self.on_connected(self.vehicle)
+        else:
+            self.disconnect_vehicle()
 
     # ---- styling helpers ----
     def _btn_style(self, color, bg):
@@ -347,6 +420,99 @@ class GCSWindow(QMainWindow):
                 selection-background-color: #2a4a6a;
             }
         """
+
+    def on_connect_toggle(self):
+        if self.vehicle is not None:
+            self.disconnect_vehicle()
+        else:
+            connection_string = self.conn_input.text().strip()
+            if not connection_string:
+                self.set_status("Error: Connection string is empty!")
+                return
+            
+            self.set_status("Connecting to vehicle...")
+            self.conn_btn.setText("CONNECTING...")
+            self.conn_btn.setEnabled(False)
+            self.conn_input.setEnabled(False)
+            self.conn_status.setText("CONNECTING")
+            self.conn_status.setStyleSheet("color: #ffaa00; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+            
+            self.conn_worker = ConnectionWorker(connection_string)
+            self.conn_worker.connected.connect(self.on_connected)
+            self.conn_worker.failed.connect(self.on_connection_failed)
+            self.conn_worker.start()
+
+    def on_connected(self, vehicle):
+        self.vehicle = vehicle
+        self.setup_view.set_vehicle(vehicle)
+        
+        from commands import _ensure_streamer
+        _ensure_streamer(self.vehicle)
+        
+        from connection import request_telemetry
+        from telemetry import read_telemetry
+        try:
+            request_telemetry(self.vehicle)
+            import telemetry
+            telemetry.telemetry_active = True
+            
+            self.telemetry_thread = threading.Thread(target=read_telemetry, args=(self.vehicle,), daemon=True)
+            self.telemetry_thread.start()
+        except Exception as e:
+            self.set_status(f"Telemetry start failed: {e}")
+            
+        self.set_status("Connected to vehicle!")
+        self.conn_btn.setText("DISCONNECT")
+        self.conn_btn.setEnabled(True)
+        self.conn_input.setEnabled(False)
+        self.conn_status.setText("CONNECTED")
+        self.conn_status.setStyleSheet("color: #44ff88; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+        self.set_controls_enabled(True)
+
+    def on_connection_failed(self, error_msg):
+        self.set_status(f"Connection failed: {error_msg}")
+        self.disconnect_vehicle()
+
+    def disconnect_vehicle(self):
+        if self.conn_worker is not None:
+            self.conn_worker.stop()
+            self.conn_worker.wait()
+            self.conn_worker = None
+            
+        import telemetry
+        telemetry.telemetry_active = False
+        
+        if self.vehicle is not None:
+            try:
+                self.vehicle.close()
+            except Exception:
+                pass
+            self.vehicle = None
+            
+        if hasattr(self, 'setup_view'):
+            self.setup_view.set_vehicle(None)
+        
+        self.set_status("Disconnected.")
+        self.conn_btn.setText("CONNECT")
+        self.conn_btn.setEnabled(True)
+        self.conn_input.setEnabled(True)
+        self.conn_status.setText("DISCONNECTED")
+        self.conn_status.setStyleSheet("color: #ff4444; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+        self.set_controls_enabled(False)
+
+    def set_controls_enabled(self, enabled):
+        self.arm_btn.setEnabled(enabled)
+        self.mode_btn.setEnabled(enabled)
+        self.takeoff_btn.setEnabled(enabled)
+        self.rtl_btn.setEnabled(enabled)
+        self.land_btn.setEnabled(enabled)
+        self.yawl_btn.setEnabled(enabled)
+        self.fwd_btn.setEnabled(enabled)
+        self.yawr_btn.setEnabled(enabled)
+        self.hover_btn.setEnabled(enabled)
+        self.sync_btn.setEnabled(enabled)
+        self.clear_btn.setEnabled(enabled)
+        self.upload_btn.setEnabled(enabled)
 
     # ---- command handlers ----
     def on_arm_disarm(self):
@@ -424,6 +590,21 @@ class GCSWindow(QMainWindow):
 
     # ---- live refresh ----
     def refresh(self):
+        if not self.vehicle:
+            self.power_panel.set('battery', "---", "#5a7a9a")
+            self.power_panel.set('voltage', "---", "#5a7a9a")
+            self.gnss_panel.set('fix', "DISCONNECTED", "#ff4444")
+            self.gnss_panel.set('sats', "---", "#5a7a9a")
+            self.gnss_panel.set('lat', "---", "#5a7a9a")
+            self.gnss_panel.set('lon', "---", "#5a7a9a")
+            self.gnss_panel.set('alt', "---", "#5a7a9a")
+            self.attspeed_panel.set('roll', "---", "#5a7a9a")
+            self.attspeed_panel.set('pitch', "---", "#5a7a9a")
+            self.attspeed_panel.set('yaw', "---", "#5a7a9a")
+            self.attspeed_panel.set('speed', "---", "#5a7a9a")
+            self.console_view.refresh_logs()
+            return
+
         d = telemetry_data
 
         self.power_panel.set('battery', f"{d['battery']}%",
@@ -458,7 +639,7 @@ class GCSWindow(QMainWindow):
         self.console_view.refresh_logs()
 
     def closeEvent(self, event):  # type: ignore
-        if telemetry_data['armed']:
+        if self.vehicle is not None and telemetry_data['armed']:
             reply = QMessageBox.question(
                 self, 'Warning',
                 "Drone is still ARMED! Are you sure you want to exit the GCS?",
@@ -467,14 +648,16 @@ class GCSWindow(QMainWindow):
             )
             if reply == QMessageBox.StandardButton.Yes:
                 print("Closing GCS...")
+                self.disconnect_vehicle()
                 event.accept()
             else:
                 event.ignore()
         else:
+            self.disconnect_vehicle()
             event.accept()
 
 
-def launch_gui(vehicle):
+def launch_gui(vehicle=None):
     app = QApplication(sys.argv)
     window = GCSWindow(vehicle)
     window.show()

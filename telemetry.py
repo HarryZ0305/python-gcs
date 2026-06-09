@@ -8,6 +8,7 @@ mission_queue = queue.Queue()
 
 parameters_lock = threading.Lock()
 parameters_data = {} # {param_name: {'value': val, 'type': type, 'index': idx, 'count': count}}
+telemetry_active = True
 
 telemetry_data = { # dictionary that holds the latest values from the drone
     'lat': 0.0,
@@ -26,10 +27,12 @@ telemetry_data = { # dictionary that holds the latest values from the drone
 }
 
 def read_telemetry(vehicle):
-    while True: # constantly updating the dictionary
+    global telemetry_active
+    telemetry_active = True
+    while telemetry_active:
         try:
             msg = vehicle.recv_match(  # type: ignore
-                type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE', 'MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK', 'PARAM_VALUE'],
+                type = ['GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT', 'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE', 'MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK', 'PARAM_VALUE', 'COMMAND_ACK'],
                 blocking = True,
                 timeout = 5
             )
@@ -85,7 +88,21 @@ def read_telemetry(vehicle):
             
             elif msg_type in ['MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK']:
                 mission_queue.put(msg)
+
+            elif msg_type == 'COMMAND_ACK':
+                # Map the MAV_RESULT enum to readable text
+                ack_results = {
+                    0: "ACCEPTED",
+                    1: "TEMPORARILY_REJECTED",
+                    2: "DENIED",
+                    3: "UNSUPPORTED",
+                    4: "FAILED"
+                }
+                result_str = ack_results.get(msg.result, f"UNKNOWN_CODE({msg.result})")
+                log(f"Command {msg.command} ACK: {result_str}")
         except Exception as e:
+            if not telemetry_active:
+                break
             log(f"Telemetry error: {e}")
             time.sleep(1)
 

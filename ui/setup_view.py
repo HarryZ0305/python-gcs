@@ -10,7 +10,7 @@ from commands import request_all_parameters, set_parameter
 import threading
 
 class SetupView(QWidget):
-    def __init__(self, vehicle):
+    def __init__(self, vehicle=None):
         super().__init__()
         self.vehicle = vehicle
         self._last_params = {} # Cache to track what is currently shown
@@ -76,22 +76,39 @@ class SetupView(QWidget):
         self.timer.timeout.connect(self.update_table)
         self.timer.start(200)
 
+        self.set_vehicle(vehicle)
+
+    def set_vehicle(self, vehicle):
+        self.vehicle = vehicle
+        if vehicle is None:
+            self.refresh_btn.setEnabled(False)
+            self.table.blockSignals(True)
+            self.table.setRowCount(0)
+            self.table.blockSignals(False)
+            self._last_params.clear()
+            with telemetry.parameters_lock:
+                telemetry.parameters_data.clear()
+        else:
+            self.refresh_btn.setEnabled(True)
+
     def on_search_changed(self):
         self.update_table(force=True)
 
     def on_refresh(self):
+        if not self.vehicle:
+            return
         import threading
         threading.Thread(target=request_all_parameters, args=(self.vehicle,), daemon=True).start()
 
     def on_cell_changed(self, row, column):
-        if column != 1:
+        if column != 1 or not self.vehicle:
             return
         
         param_name_item = self.table.item(row, 0)
         param_val_item = self.table.item(row, 1)
         if not param_name_item or not param_val_item:
             return
-
+        
         param_name = param_name_item.text()
         new_val_str = param_val_item.text()
 

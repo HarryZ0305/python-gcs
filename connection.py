@@ -4,12 +4,18 @@ from pymavlink import mavutil
 # Easy to override connection string via environment variable or default parameter
 DEFAULT_CONNECTION = os.environ.get('MAVLINK_CONNECTION', 'udpin:0.0.0.0:14540')
 
-def connect(connection_string = None):
+def connect(connection_string = None, timeout = None):
     if connection_string is None:
         connection_string = DEFAULT_CONNECTION
     print(f"Connecting to vehicle at {connection_string}...")
     vehicle = mavutil.mavlink_connection(connection_string) # opens the connection to the simulator
-    vehicle.wait_heartbeat() # pauses until drone confirmed alive # type: ignore
+    if timeout is not None:
+        msg = vehicle.wait_heartbeat(timeout=timeout) # type: ignore
+        if msg is None:
+            print("Connection timeout: No heartbeat received.")
+            return None
+    else:
+        vehicle.wait_heartbeat() # pauses until drone confirmed alive # type: ignore
     print(f"Connected! System ID: {vehicle.target_system}") # drone ID # type: ignore
     return vehicle
 
