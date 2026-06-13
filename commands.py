@@ -73,7 +73,7 @@ def set_offboard_targets(vx=0.0, vy=0.0, vz=0.0, yaw_rate=0.0):
     target_vy = vy
     target_vz = vz
     target_yaw_rate = yaw_rate
-    log(f"Offboard target updated: vx={vx:.1f}, yaw_rate={yaw_rate:.2f}")
+    log(f"Offboard target updated: vx={vx:.1f}, vy={vy:.1f}, vz={vz:.1f}, yaw_rate={yaw_rate:.2f}")
 
 def reset_offboard_targets():
     global target_vx, target_vy, target_vz, target_yaw_rate
