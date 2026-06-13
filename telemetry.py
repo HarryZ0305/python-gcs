@@ -24,7 +24,9 @@ telemetry_data = { # dictionary that holds the latest values from the drone
     'roll': 0.0,      
     'pitch': 0.0,     
     'mode': 'UNKNOWN',
-    'wp_current': -1
+    'wp_current': -1,
+    'last_heartbeat_time': 0.0,
+    'prearm_fail': ''
 }
 
 def read_telemetry(vehicle):
@@ -61,14 +63,24 @@ def read_telemetry(vehicle):
                 telemetry_data['fix_type'] = msg.fix_type
 
             elif msg_type == 'HEARTBEAT':
+                telemetry_data['last_heartbeat_time'] = time.time()
                 telemetry_data['armed'] = bool(
                     msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED # bitmask check that isolates the arm bit
                 )
+                if telemetry_data['armed']:
+                    telemetry_data['prearm_fail'] = ""
                 if hasattr(vehicle, 'flightmode'):
                     telemetry_data['mode'] = vehicle.flightmode
             
             elif msg_type == 'STATUSTEXT': # error logs
                 log(f"FCU: {msg.text}")
+                txt = msg.text.upper()
+                # Parse for preflight/arm/failsafe warning messages
+                if "PREFLIGHT FAIL" in txt or "ARMING DENIED" in txt or (not telemetry_data['armed'] and ("FAIL" in txt or "ERROR" in txt or "REJECTED" in txt)):
+                    reason = msg.text
+                    if "Preflight Fail:" in reason:
+                        reason = reason.replace("Preflight Fail:", "").strip()
+                    telemetry_data['prearm_fail'] = reason
             
             elif msg_type == 'ATTITUDE':
                 telemetry_data['roll'] = msg.roll

@@ -1,7 +1,9 @@
-import sys
+import json
+import time
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QTableWidget, QTableWidgetItem, QHeaderView
+    QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
+    QFileDialog, QMessageBox
 )
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QColor
@@ -35,7 +37,7 @@ class SetupView(QWidget):
         self.search_bar.textChanged.connect(self.on_search_changed)
         top_row.addWidget(self.search_bar, stretch=1)
 
-        self.refresh_btn = QPushButton("REFRESH PARAMETERS")
+        self.refresh_btn = QPushButton("REFRESH")
         self.refresh_btn.setFixedHeight(30)
         self.refresh_btn.setStyleSheet("""
             QPushButton {
@@ -45,9 +47,22 @@ class SetupView(QWidget):
                 padding: 4px 12px;
             }
             QPushButton:hover { background-color: #00e5ff; color: #0d1b2a; }
+            QPushButton:disabled { border-color: #2a4a6a; color: #2a4a6a; }
         """)
         self.refresh_btn.clicked.connect(self.on_refresh)
         top_row.addWidget(self.refresh_btn)
+
+        self.save_btn = QPushButton("SAVE")
+        self.save_btn.setFixedHeight(30)
+        self.save_btn.setStyleSheet(self.refresh_btn.styleSheet())
+        self.save_btn.clicked.connect(self.on_save_params)
+        top_row.addWidget(self.save_btn)
+
+        self.load_btn = QPushButton("LOAD")
+        self.load_btn.setFixedHeight(30)
+        self.load_btn.setStyleSheet(self.refresh_btn.styleSheet())
+        self.load_btn.clicked.connect(self.on_load_params)
+        top_row.addWidget(self.load_btn)
 
         layout.addLayout(top_row)
 
@@ -82,6 +97,8 @@ class SetupView(QWidget):
         self.vehicle = vehicle
         if vehicle is None:
             self.refresh_btn.setEnabled(False)
+            self.save_btn.setEnabled(False)
+            self.load_btn.setEnabled(False)
             self.table.blockSignals(True)
             self.table.setRowCount(0)
             self.table.blockSignals(False)
@@ -90,6 +107,8 @@ class SetupView(QWidget):
                 telemetry.parameters_data.clear()
         else:
             self.refresh_btn.setEnabled(True)
+            self.save_btn.setEnabled(True)
+            self.load_btn.setEnabled(True)
 
     def on_search_changed(self):
         self.update_table(force=True)
@@ -170,3 +189,80 @@ class SetupView(QWidget):
             self.table.setItem(row, 1, val_item)
 
         self.table.blockSignals(False)
+
+    def on_save_params(self):
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Save Parameters", "", "Parameter Files (*.param);;JSON Files (*.json)"
+        )
+        if not filename:
+            return
+
+        with telemetry.parameters_lock:
+            save_dict = {name: meta['value'] for name, meta in telemetry.parameters_data.items()}
+
+        try:
+            with open(filename, 'w') as f:
+                json.dump(save_dict, f, indent=4)
+            from logs import log
+            log(f"Setup: Successfully saved {len(save_dict)} parameters to {filename}")
+        except Exception as e:
+            from logs import log
+            log(f"Setup: Failed to save parameters: {e}")
+
+    def on_load_params(self):
+        if not self.vehicle:
+            return
+        
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Load Parameters", "", "Parameter Files (*.param);;JSON Files (*.json)"
+        )
+        if not filename:
+            return
+
+        try:
+            with open(filename, 'r') as f:
+                load_dict = json.load(f)
+        except Exception as e:
+            from logs import log
+            log(f"Setup: Failed to read parameter file: {e}")
+            return
+
+        reply = QMessageBox.question(
+            self, 'Confirm Load',
+            f"Are you sure you want to write {len(load_dict)} parameters to the flight controller?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        threading.Thread(target=self._upload_parameters_thread, args=(load_dict,), daemon=True).start()
+
+    def _upload_parameters_thread(self, param_dict):
+        from logs import log
+        log(f"Setup: Starting write of {len(param_dict)} parameters...")
+        success_count = 0
+        
+        for param_name, target_val in param_dict.items():
+            if not self.vehicle:
+                break
+                
+            with telemetry.parameters_lock:
+                param_meta = telemetry.parameters_data.get(param_name)
+                
+            if not param_meta:
+                param_type = 9 # MAV_PARAM_TYPE_REAL32 (default float)
+            else:
+                param_type = param_meta['type']
+                if param_meta['value'] == target_val:
+                    continue
+
+            set_parameter(self.vehicle, param_name, target_val, param_type)
+            with telemetry.parameters_lock:
+                if param_name in telemetry.parameters_data:
+                    telemetry.parameters_data[param_name]['value'] = target_val
+            success_count += 1
+            time.sleep(0.05)
+
+        log(f"Setup: Upload complete! Wrote {success_count} parameters to flight controller.")
+        self.update_table(force=True)

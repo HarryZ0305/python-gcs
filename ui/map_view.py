@@ -83,6 +83,7 @@ MAP_HTML = """
         var waypoints = [];
         var waypointMarkers = [];
         var missionPath = L.polyline([], {color: '#ffaa00', weight: 3, dashArray: '5, 5'}).addTo(map);
+        var activeMarkerHighlight = null;
 
         // Initialize mode button UI
         setMode('waypoint');
@@ -205,13 +206,67 @@ MAP_HTML = """
             for (var i = 0; i < waypointMarkers.length; i++) {
                 map.removeLayer(waypointMarkers[i]);
             }
+            if (activeMarkerHighlight) {
+                map.removeLayer(activeMarkerHighlight);
+            }
             takeoffPoint = null;
             takeoffMarker = null;
             landingPoint = null;
             landingMarker = null;
             waypoints = [];
             waypointMarkers = [];
+            activeMarkerHighlight = null;
             missionPath.setLatLngs([]);
+        }
+
+        function setActiveWaypoint(seq) {
+            if (activeMarkerHighlight) {
+                map.removeLayer(activeMarkerHighlight);
+                activeMarkerHighlight = null;
+            }
+
+            var targetMarker = null;
+            var highlightColor = '#00e5ff'; // default cyan
+
+            var hasTakeoff = (takeoffPoint !== null);
+            var hasLanding = (landingPoint !== null);
+
+            if (seq <= 0) {
+                return;
+            }
+
+            if (hasTakeoff) {
+                if (seq === 1) {
+                    targetMarker = takeoffMarker;
+                    highlightColor = '#44ff88'; // green for takeoff
+                } else if (seq > 1 && seq <= 1 + waypoints.length) {
+                    targetMarker = waypointMarkers[seq - 2];
+                    highlightColor = '#ffaa00'; // amber for waypoints
+                } else if (hasLanding && seq === 2 + waypoints.length) {
+                    targetMarker = landingMarker;
+                    highlightColor = '#ff4444'; // red for landing
+                }
+            } else {
+                if (seq >= 1 && seq <= waypoints.length) {
+                    targetMarker = waypointMarkers[seq - 1];
+                    highlightColor = '#ffaa00';
+                } else if (hasLanding && seq === 1 + waypoints.length) {
+                    targetMarker = landingMarker;
+                    highlightColor = '#ff4444';
+                }
+            }
+
+            if (targetMarker) {
+                var latlng = targetMarker.getLatLng();
+                activeMarkerHighlight = L.circle(latlng, {
+                    color: highlightColor,
+                    fillColor: highlightColor,
+                    fillOpacity: 0.15,
+                    radius: 20,
+                    weight: 2,
+                    dashArray: '4, 4'
+                }).addTo(map);
+            }
         }
 
         function updateDrone(lat, lon) {

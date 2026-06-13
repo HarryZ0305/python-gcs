@@ -149,6 +149,11 @@ class GCSWindow(QMainWindow):
         self.gnss_panel.add_row('lon', 'Longitude')
         self.gnss_panel.add_row('alt', 'Altitude')
 
+        # Safety & Alerts
+        self.alert_panel = StatPanel("SAFETY & ALERTS")
+        self.alert_panel.add_row('status', 'Safety Status')
+        self.alert_panel.add_row('alert_msg', 'Active Alerts')
+
         # Attitude / Speed
         self.attspeed_panel = StatPanel("ATTITUDE / SPEED")
         self.attspeed_panel.add_row('roll', 'Roll')
@@ -318,6 +323,7 @@ class GCSWindow(QMainWindow):
         left = QVBoxLayout(); left.setSpacing(6)
         left.addWidget(self.power_panel, stretch=3)
         left.addWidget(self.gnss_panel, stretch=4)
+        left.addWidget(self.alert_panel, stretch=3)
         left.addWidget(self.arm_btn, stretch=1)
 
         center = QVBoxLayout(); center.setSpacing(6)
@@ -501,6 +507,8 @@ class GCSWindow(QMainWindow):
             
         import telemetry
         telemetry.telemetry_active = False
+        telemetry_data['last_heartbeat_time'] = 0.0
+        telemetry_data['prearm_fail'] = ""
         
         stop_streamer()
         
@@ -653,6 +661,9 @@ class GCSWindow(QMainWindow):
 
     # ---- live refresh ----
     def refresh(self):
+        import time
+        d = telemetry_data
+
         if not self.vehicle:
             self.power_panel.set('battery', "---", "#5a7a9a")
             self.power_panel.set('voltage', "---", "#5a7a9a")
@@ -665,41 +676,113 @@ class GCSWindow(QMainWindow):
             self.attspeed_panel.set('pitch', "---", "#5a7a9a")
             self.attspeed_panel.set('yaw', "---", "#5a7a9a")
             self.attspeed_panel.set('speed', "---", "#5a7a9a")
+            self.alert_panel.set('status', "DISCONNECTED", "#ff4444")
+            self.alert_panel.set('alert_msg', "NO TELEMETRY", "#5a7a9a")
+            self.conn_status.setText("DISCONNECTED")
+            self.conn_status.setStyleSheet("color: #ff4444; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
             self.console_view.refresh_logs()
             return
 
-        d = telemetry_data
+        # Check for link loss (heartbeat older than 3 seconds)
+        last_hb = d.get('last_heartbeat_time', 0.0)
+        is_link_lost = last_hb == 0.0 or (time.time() - last_hb) > 3.0
 
-        self.power_panel.set('battery', f"{d['battery']}%",
-            "#ff4444" if d['battery'] < 20 else "#00e5ff")
-        self.power_panel.set('voltage', f"{d['voltage']:.1f}V")
+        if is_link_lost:
+            val_color = "#5a7a9a"
+            battery_color = "#5a7a9a"
+            fix_color = "#5a7a9a"
+            status_text = "LINK LOST"
+            status_color = "#ff4444"
+            alert_text = "NO TELEMETRY"
+            alert_color = "#5a7a9a"
+            self.conn_status.setText("LINK LOST")
+            self.conn_status.setStyleSheet("color: #ff4444; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+        else:
+            val_color = "#00e5ff"
+            battery_color = "#ff4444" if d['battery'] < 20 else "#00e5ff"
+            fix_labels_colors = {0: "#ff4444", 1: "#ff4444", 2: "#ffaa00", 3: "#44ff88",
+                                 4: "#44ff88", 5: "#44ff88", 6: "#44ff88"}
+            fix_color = fix_labels_colors.get(d['fix_type'], "#ff4444")
+            
+            # Check warning alerts
+            active_alerts = []
+            if d['battery'] > 0:
+                if d['battery'] < 10:
+                    active_alerts.append("CRIT BATT")
+                elif d['battery'] < 20:
+                    active_alerts.append("LOW BATT")
+            if d['voltage'] > 0.0 and d['voltage'] < 14.4:
+                active_alerts.append("LOW VOLT")
+            if d['fix_type'] < 3:
+                active_alerts.append("NO 3D GPS")
+            elif d['satellites'] < 6:
+                active_alerts.append("WEAK GPS")
+            
+            prearm = d.get('prearm_fail', '')
+            if prearm:
+                active_alerts.append(f"PREARM: {prearm}")
+
+            if active_alerts:
+                status_text = "ARM BLOCKED"
+                status_color = "#ff4444"
+                alert_text = ", ".join(active_alerts)
+                if len(alert_text) > 22:
+                    alert_text = alert_text[:19] + "..."
+                alert_color = "#ff4444"
+            else:
+                status_text = "SAFE"
+                status_color = "#44ff88"
+                alert_text = "NONE"
+                alert_color = "#44ff88"
+
+            self.conn_status.setText("CONNECTED")
+            self.conn_status.setStyleSheet("color: #44ff88; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+
+        # Update panels
+        self.power_panel.set('battery', f"{d['battery']}%", battery_color)
+        self.power_panel.set('voltage', f"{d['voltage']:.1f}V", val_color)
 
         fix_labels = {0: "NO FIX", 1: "NO FIX", 2: "2D", 3: "3D",
                       4: "DGPS", 5: "RTK-FLT", 6: "RTK-FIX"}
         fix = d['fix_type']
-        self.gnss_panel.set('fix', fix_labels.get(fix, str(fix)),
-            "#44ff88" if fix >= 3 else "#ff4444")
-        self.gnss_panel.set('sats', str(d['satellites']))
-        self.gnss_panel.set('lat', f"{d['lat']:.6f}")
-        self.gnss_panel.set('lon', f"{d['lon']:.6f}")
-        self.gnss_panel.set('alt', f"{d['alt']:.1f} m")
+        self.gnss_panel.set('fix', fix_labels.get(fix, str(fix)), fix_color)
+        self.gnss_panel.set('sats', str(d['satellites']), val_color)
+        self.gnss_panel.set('lat', f"{d['lat']:.6f}", val_color)
+        self.gnss_panel.set('lon', f"{d['lon']:.6f}", val_color)
+        self.gnss_panel.set('alt', f"{d['alt']:.1f} m", val_color)
 
-        self.attspeed_panel.set('roll', f"{math.degrees(d['roll']):.0f}\u00b0")
-        self.attspeed_panel.set('pitch', f"{math.degrees(d['pitch']):.0f}\u00b0")
+        self.attspeed_panel.set('roll', f"{math.degrees(d['roll']):.0f}\u00b0", val_color)
+        self.attspeed_panel.set('pitch', f"{math.degrees(d['pitch']):.0f}\u00b0", val_color)
         yaw_deg = math.degrees(d['yaw']) % 360
-        self.attspeed_panel.set('yaw', f"{yaw_deg:.0f}\u00b0")
-        self.attspeed_panel.set('speed', f"{d['groundspeed']:.1f} m/s")
+        self.attspeed_panel.set('yaw', f"{yaw_deg:.0f}\u00b0", val_color)
+        self.attspeed_panel.set('speed', f"{d['groundspeed']:.1f} m/s", val_color)
 
-        if d['armed']:
-            self.arm_btn.setText("DISARM")
-            self.arm_btn.setStyleSheet(self._btn_style("#ff4444", "#0d1b2a"))
+        # Toggle flashing state for warnings
+        self._alert_flash_toggle = getattr(self, '_alert_flash_toggle', False)
+        self._alert_flash_toggle = not self._alert_flash_toggle
+
+        self.alert_panel.set('status', status_text, status_color)
+        if alert_text != "NONE" and self._alert_flash_toggle and not is_link_lost:
+            self.alert_panel.set('alert_msg', alert_text, "#ffffff") # flash to white text
         else:
-            self.arm_btn.setText("ARM")
-            self.arm_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+            self.alert_panel.set('alert_msg', alert_text, alert_color)
 
-        self.map_view.update_position(d['lat'], d['lon'])
-        self.plan_map_view.update_position(d['lat'], d['lon'])
-        self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'])
+        if not is_link_lost:
+            if d['armed']:
+                self.arm_btn.setText("DISARM")
+                self.arm_btn.setStyleSheet(self._btn_style("#ff4444", "#0d1b2a"))
+            else:
+                self.arm_btn.setText("ARM")
+                self.arm_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+            
+            self.map_view.update_position(d['lat'], d['lon'])
+            self.plan_map_view.update_position(d['lat'], d['lon'])
+            self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'])
+            
+            # Update active waypoint highlight on map views
+            wp_idx = d.get('wp_current', -1)
+            self.map_view.page().runJavaScript(f"if (typeof setActiveWaypoint === 'function') setActiveWaypoint({wp_idx});")
+            self.plan_map_view.page().runJavaScript(f"if (typeof setActiveWaypoint === 'function') setActiveWaypoint({wp_idx});")
 
         wp_idx = d.get('wp_current', -1)
         total_items = self.wp_list.count()
