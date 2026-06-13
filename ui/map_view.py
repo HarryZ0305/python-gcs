@@ -276,6 +276,31 @@ MAP_HTML = """
             path.setLatLngs(positions);
             map.panTo(pos);
         }
+
+        function importMission(takeoff, wps, landing) {
+            clearWaypoints();
+            if (takeoff && takeoff.length === 2) {
+                setTakeoff(takeoff[0], takeoff[1]);
+            }
+            if (wps && wps.length > 0) {
+                for (var i = 0; i < wps.length; i++) {
+                    addWaypoint(wps[i][0], wps[i][1]);
+                }
+            }
+            if (landing && landing.length === 2) {
+                setLanding(landing[0], landing[1]);
+            }
+            // Zoom/pan to fit the bounds of the new mission if elements exist
+            var points = [];
+            if (takeoffPoint) points.push(takeoffPoint);
+            for (var i = 0; i < waypoints.length; i++) {
+                points.push(waypoints[i]);
+            }
+            if (landingPoint) points.push(landingPoint);
+            if (points.length > 0) {
+                map.fitBounds(points);
+            }
+        }
     </script>
 </body>
 </html>
@@ -310,3 +335,10 @@ class MapView(QWebEngineView):
 
     def clear_waypoints(self):
         self.page().runJavaScript("if (typeof clearWaypoints === 'function') clearWaypoints();")
+
+    def import_mission(self, takeoff, waypoints, landing):
+        import json
+        t_json = json.dumps(takeoff)
+        w_json = json.dumps(waypoints)
+        l_json = json.dumps(landing)
+        self.page().runJavaScript(f"if (typeof importMission === 'function') importMission({t_json}, {w_json}, {l_json});")
