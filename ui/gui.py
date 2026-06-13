@@ -1,11 +1,13 @@
 import sys
 import math
 import threading
+import time
+import pyqtgraph as pg
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QLabel, QFrame, QMessageBox,
     QPushButton, QComboBox, QSpinBox, QListWidget, QTabWidget,
-    QLineEdit
+    QLineEdit, QCheckBox
 )
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -78,6 +80,38 @@ class StatPanel(QFrame):
         if key in self.rows:
             self.rows[key].setText(text)
             self.rows[key].setStyleSheet(f"color: {color}; border: none;")
+
+
+class TelemetryPlotPanel(QFrame):
+    """A live-updating plot panel showing historical telemetry trends."""
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("background-color: #1e2d3d; border-radius: 8px; border: 1px solid #2a4a6a;")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
+
+        t = QLabel("TELEMETRY HISTORICAL TRENDS")
+        t.setStyleSheet("color: #7a9cc4; font-size: 11px; font-weight: bold; border: none;")
+        layout.addWidget(t)
+
+        self.plot_widget = pg.PlotWidget()
+        self.plot_widget.setBackground('#0d1b2a')
+        self.plot_widget.showGrid(x=True, y=True, alpha=0.15)
+        self.plot_widget.getAxis('left').setPen(pg.mkPen(color='#7a9cc4', width=1))
+        self.plot_widget.getAxis('bottom').setPen(pg.mkPen(color='#7a9cc4', width=1))
+        self.plot_widget.getAxis('left').setTextPen('#7a9cc4')
+        self.plot_widget.getAxis('bottom').setTextPen('#7a9cc4')
+
+        self.alt_curve = self.plot_widget.plot(pen=pg.mkPen('#00e5ff', width=1.5))
+        self.speed_curve = self.plot_widget.plot(pen=pg.mkPen('#ffaa00', width=1.5))
+        layout.addWidget(self.plot_widget)
+
+    def update_plots(self, times, alts, speeds):
+        if not times:
+            return
+        self.alt_curve.setData(times, alts)
+        self.speed_curve.setData(times, speeds)
 
 
 class GCSWindow(QMainWindow):
@@ -153,6 +187,9 @@ class GCSWindow(QMainWindow):
         self.alert_panel = StatPanel("SAFETY & ALERTS")
         self.alert_panel.add_row('status', 'Safety Status')
         self.alert_panel.add_row('alert_msg', 'Active Alerts')
+        self.alert_panel.add_row('check_link', 'Link State')
+        self.alert_panel.add_row('check_gps', 'GPS Checklist')
+        self.alert_panel.add_row('check_batt', 'Power Checklist')
 
         # Attitude / Speed
         self.attspeed_panel = StatPanel("ATTITUDE / SPEED")
@@ -256,6 +293,26 @@ class GCSWindow(QMainWindow):
         r4.addWidget(self.yawr_btn)
         r4.addWidget(self.hover_btn)
         ap.addLayout(r4)
+        
+        self.kb_checkbox = QCheckBox("Enable Keyboard Flight (W/S/A/D/Q/E/I/K)")
+        self.kb_checkbox.setStyleSheet("""
+            QCheckBox {
+                color: #7a9cc4;
+                font-family: Courier New;
+                font-size: 11px;
+            }
+            QCheckBox::indicator {
+                width: 13px;
+                height: 13px;
+                border: 1px solid #2a4a6a;
+                background: #0d1b2a;
+            }
+            QCheckBox::indicator:checked {
+                background: #00e5ff;
+                border-color: #00e5ff;
+            }
+        """)
+        ap.addWidget(self.kb_checkbox)
         ap.addWidget(self.status_label)
 
         # Mission planning panel container
@@ -306,6 +363,23 @@ class GCSWindow(QMainWindow):
         m_row.addWidget(self.clear_btn)
         mp.addLayout(m_row)
 
+        m_row2 = QHBoxLayout()
+        m_row2.setSpacing(6)
+        
+        self.import_btn = QPushButton("IMPORT")
+        self.import_btn.setFixedHeight(30)
+        self.import_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.import_btn.clicked.connect(self.on_import_mission)
+        
+        self.export_btn = QPushButton("EXPORT")
+        self.export_btn.setFixedHeight(30)
+        self.export_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.export_btn.clicked.connect(self.on_export_mission)
+        
+        m_row2.addWidget(self.import_btn)
+        m_row2.addWidget(self.export_btn)
+        mp.addLayout(m_row2)
+
         self.start_btn = QPushButton("START MISSION")
         self.start_btn.setFixedHeight(34)
         self.start_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
@@ -340,9 +414,20 @@ class GCSWindow(QMainWindow):
         top.addLayout(right, stretch=4)
         fly_layout.addLayout(top, stretch=5)
 
+        # Real-time Plotting
+        self.plot_panel = TelemetryPlotPanel()
+        
+        # Telemetry historical lists
+        self.history_time = []
+        self.history_alt = []
+        self.history_speed = []
+        self.start_time = time.time()
+        self.held_keys = set()
+
         bottom = QHBoxLayout(); bottom.setSpacing(6)
-        bottom.addWidget(self.action_panel, stretch=1)
-        bottom.addWidget(self.console_view, stretch=1)
+        bottom.addWidget(self.action_panel, stretch=2)
+        bottom.addWidget(self.plot_panel, stretch=3)
+        bottom.addWidget(self.console_view, stretch=3)
         fly_layout.addLayout(bottom, stretch=2)
 
         self.tabs.addTab(fly_widget, "FLY")
@@ -522,6 +607,16 @@ class GCSWindow(QMainWindow):
         if hasattr(self, 'setup_view'):
             self.setup_view.set_vehicle(None)
         
+        self.history_time = []
+        self.history_alt = []
+        self.history_speed = []
+        self.start_time = time.time()
+        self.held_keys.clear()
+        if hasattr(self, 'plot_panel'):
+            self.plot_panel.plot_widget.clear()
+            self.plot_panel.alt_curve = self.plot_panel.plot_widget.plot(pen=pg.mkPen('#00e5ff', width=1.5))
+            self.plot_panel.speed_curve = self.plot_panel.plot_widget.plot(pen=pg.mkPen('#ffaa00', width=1.5))
+
         self.set_status("Disconnected.")
         self.conn_btn.setText("CONNECT")
         self.conn_btn.setEnabled(True)
@@ -544,6 +639,9 @@ class GCSWindow(QMainWindow):
         self.clear_btn.setEnabled(enabled)
         self.upload_btn.setEnabled(enabled)
         self.start_btn.setEnabled(enabled)
+        self.import_btn.setEnabled(enabled)
+        self.export_btn.setEnabled(enabled)
+        self.kb_checkbox.setEnabled(enabled)
 
     # ---- command handlers ----
     def on_arm_disarm(self):
@@ -659,6 +757,136 @@ class GCSWindow(QMainWindow):
         threading.Thread(target=set_mode, args=(self.vehicle, 'AUTO.MISSION'), daemon=True).start()
         self.set_status("Setting mode to AUTO.MISSION (Starting mission)...")
 
+    def on_export_mission(self):
+        if not self.waypoints and not self.takeoff_point and not self.landing_point:
+            self.set_status("Export failed: Synced map is empty!")
+            # Fallback to sync first
+            self.on_sync_map()
+            if not self.waypoints and not self.takeoff_point and not self.landing_point:
+                return
+            
+        import json
+        from PyQt6.QtWidgets import QFileDialog
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Mission Plan", "", "Mission Files (*.plan);;JSON Files (*.json)"
+        )
+        if not filename:
+            return
+        mission_dict = {
+            "takeoff": self.takeoff_point,
+            "waypoints": self.waypoints,
+            "landing": self.landing_point
+        }
+        try:
+            with open(filename, 'w') as f:
+                json.dump(mission_dict, f, indent=4)
+            self.set_status(f"Mission exported to {filename}")
+        except Exception as e:
+            self.set_status(f"Export failed: {e}")
+
+    def on_import_mission(self):
+        import json
+        from PyQt6.QtWidgets import QFileDialog
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Import Mission Plan", "", "Mission Files (*.plan);;JSON Files (*.json)"
+        )
+        if not filename:
+            return
+        try:
+            with open(filename, 'r') as f:
+                mission_dict = json.load(f)
+        except Exception as e:
+            self.set_status(f"Import failed: {e}")
+            return
+        takeoff = mission_dict.get("takeoff")
+        wps = mission_dict.get("waypoints", [])
+        landing = mission_dict.get("landing")
+        
+        self.takeoff_point = takeoff
+        self.waypoints = wps
+        self.landing_point = landing
+        
+        self.map_view.import_mission(takeoff, wps, landing)
+        self.plan_map_view.import_mission(takeoff, wps, landing)
+        
+        self.wp_list.clear()
+        if takeoff:
+            self.wp_list.addItem(f"TAKEOFF: {takeoff[0]:.6f}, {takeoff[1]:.6f}")
+        for idx, wp in enumerate(wps):
+            self.wp_list.addItem(f"WP {idx+1}: {wp[0]:.6f}, {wp[1]:.6f}")
+        if landing:
+            self.wp_list.addItem(f"LAND: {landing[0]:.6f}, {landing[1]:.6f}")
+            
+        total_items = (1 if takeoff else 0) + len(wps) + (1 if landing else 0)
+        self.set_status(f"Imported mission: {total_items} items.")
+
+    # ---- Keyboard Offboard Flight Controls ----
+    def keyPressEvent(self, event):
+        if not hasattr(self, 'kb_checkbox') or not self.kb_checkbox.isChecked() or not self.vehicle:
+            super().keyPressEvent(event)
+            return
+        if self.conn_input.hasFocus() or self.setup_view.search_bar.hasFocus():
+            super().keyPressEvent(event)
+            return
+        key = event.key()
+        if key in [Qt.Key.Key_W, Qt.Key.Key_S, Qt.Key.Key_A, Qt.Key.Key_D, 
+                   Qt.Key.Key_Q, Qt.Key.Key_E, Qt.Key.Key_I, Qt.Key.Key_K]:
+            self.held_keys.add(key)
+            self.update_keyboard_offboard()
+            event.accept()
+        elif key == Qt.Key.Key_Space or key == Qt.Key.Key_H:
+            self.held_keys.clear()
+            self.update_keyboard_offboard()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if not hasattr(self, 'kb_checkbox') or not self.kb_checkbox.isChecked() or not self.vehicle:
+            super().keyReleaseEvent(event)
+            return
+        if event.isAutoRepeat():
+            event.accept()
+            return
+        key = event.key()
+        if key in self.held_keys:
+            self.held_keys.remove(key)
+            self.update_keyboard_offboard()
+            event.accept()
+        else:
+            super().keyReleaseEvent(event)
+
+    def update_keyboard_offboard(self):
+        if not self.vehicle:
+            return
+        vx = 0.0
+        vy = 0.0
+        vz = 0.0
+        yaw_rate = 0.0
+        if Qt.Key.Key_W in self.held_keys:
+            vx += 2.0
+        if Qt.Key.Key_S in self.held_keys:
+            vx -= 2.0
+        if Qt.Key.Key_A in self.held_keys:
+            vy -= 2.0
+        if Qt.Key.Key_D in self.held_keys:
+            vy += 2.0
+        if Qt.Key.Key_Q in self.held_keys:
+            yaw_rate -= 0.5
+        if Qt.Key.Key_E in self.held_keys:
+            yaw_rate += 0.5
+        if Qt.Key.Key_I in self.held_keys:
+            vz -= 1.5
+        if Qt.Key.Key_K in self.held_keys:
+            vz += 1.5
+            
+        self.ensure_offboard()
+        set_offboard_targets(vx=vx, vy=vy, vz=vz, yaw_rate=yaw_rate)
+        if any(k in self.held_keys for k in [Qt.Key.Key_W, Qt.Key.Key_S, Qt.Key.Key_A, Qt.Key.Key_D, Qt.Key.Key_Q, Qt.Key.Key_E, Qt.Key.Key_I, Qt.Key.Key_K]):
+            self.set_status(f"Keyboard flying: vx={vx:.1f}, vy={vy:.1f}, vz={vz:.1f}, yaw_rate={yaw_rate:.1f}")
+        else:
+            self.set_status("Keyboard offboard: Hover")
+
     # ---- live refresh ----
     def refresh(self):
         import time
@@ -678,6 +906,9 @@ class GCSWindow(QMainWindow):
             self.attspeed_panel.set('speed', "---", "#5a7a9a")
             self.alert_panel.set('status', "DISCONNECTED", "#ff4444")
             self.alert_panel.set('alert_msg', "NO TELEMETRY", "#5a7a9a")
+            self.alert_panel.set('check_link', "DISCONNECTED", "#ff4444")
+            self.alert_panel.set('check_gps', "NO TELEMETRY", "#5a7a9a")
+            self.alert_panel.set('check_batt', "NO TELEMETRY", "#5a7a9a")
             self.conn_status.setText("DISCONNECTED")
             self.conn_status.setStyleSheet("color: #ff4444; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
             self.console_view.refresh_logs()
@@ -695,6 +926,9 @@ class GCSWindow(QMainWindow):
             status_color = "#ff4444"
             alert_text = "NO TELEMETRY"
             alert_color = "#5a7a9a"
+            self.alert_panel.set('check_link', "LOST", "#ff4444")
+            self.alert_panel.set('check_gps', "NO TELEMETRY", "#5a7a9a")
+            self.alert_panel.set('check_batt', "NO TELEMETRY", "#5a7a9a")
             self.conn_status.setText("LINK LOST")
             self.conn_status.setStyleSheet("color: #ff4444; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
         else:
@@ -735,8 +969,36 @@ class GCSWindow(QMainWindow):
                 alert_text = "NONE"
                 alert_color = "#44ff88"
 
+            self.alert_panel.set('check_link', "OK", "#44ff88")
+            gps_ok = d['fix_type'] >= 3
+            gps_text = "3D FIX" if gps_ok else f"NO 3D ({d['fix_type']}D)"
+            gps_color = "#44ff88" if gps_ok else "#ff4444"
+            self.alert_panel.set('check_gps', gps_text, gps_color)
+            
+            if d['battery'] >= 30:
+                batt_text = "OK"
+                batt_color = "#44ff88"
+            elif d['battery'] >= 20:
+                batt_text = "LOW"
+                batt_color = "#ffaa00"
+            else:
+                batt_text = "CRIT"
+                batt_color = "#ff4444"
+            self.alert_panel.set('check_batt', f"{batt_text} ({d['battery']}%)", batt_color)
+
             self.conn_status.setText("CONNECTED")
             self.conn_status.setStyleSheet("color: #44ff88; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+
+            # Record history for plotting
+            elapsed = time.time() - self.start_time
+            self.history_time.append(elapsed)
+            self.history_alt.append(d.get('alt', 0.0))
+            self.history_speed.append(d.get('groundspeed', 0.0))
+            if len(self.history_time) > 120:
+                self.history_time.pop(0)
+                self.history_alt.pop(0)
+                self.history_speed.pop(0)
+            self.plot_panel.update_plots(self.history_time, self.history_alt, self.history_speed)
 
         # Update panels
         self.power_panel.set('battery', f"{d['battery']}%", battery_color)
