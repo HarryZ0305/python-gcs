@@ -596,6 +596,7 @@ class GCSWindow(QMainWindow):
         telemetry_data['prearm_fail'] = ""
         
         stop_streamer()
+        reset_offboard_targets()
         
         if self.vehicle is not None:
             try:
@@ -855,6 +856,21 @@ class GCSWindow(QMainWindow):
             event.accept()
         else:
             super().keyReleaseEvent(event)
+
+    def focusOutEvent(self, event):
+        if hasattr(self, 'held_keys') and self.held_keys:
+            self.held_keys.clear()
+            self.update_keyboard_offboard()
+        super().focusOutEvent(event)
+
+    def changeEvent(self, event):
+        from PyQt6.QtCore import QEvent
+        if event.type() == QEvent.Type.ActivationChange:
+            if not self.isActiveWindow():
+                if hasattr(self, 'held_keys') and self.held_keys:
+                    self.held_keys.clear()
+                    self.update_keyboard_offboard()
+        super().changeEvent(event)
 
     def update_keyboard_offboard(self):
         if not self.vehicle:
