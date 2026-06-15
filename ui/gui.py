@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QLabel, QFrame, QMessageBox,
     QPushButton, QComboBox, QSpinBox, QListWidget, QTabWidget,
-    QLineEdit, QCheckBox
+    QLineEdit, QCheckBox, QProgressDialog
 )
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -45,6 +45,33 @@ class ConnectionWorker(QThread):
 
     def stop(self):
         self.running = False
+
+
+class MapDownloadWorker(QThread):
+    progress_signal = pyqtSignal(int, int) # current, total
+    finished_signal = pyqtSignal(int, int, bool) # downloaded, skipped, success
+    
+    def __init__(self, bounds):
+        super().__init__()
+        self.bounds = bounds
+        self._cancelled = False
+        
+    def run(self):
+        from ui.tile_server import download_area_task
+        
+        def on_progress(curr, total):
+            self.progress_signal.emit(curr, total)
+            
+        def on_finished(dl, skip, ok):
+            self.finished_signal.emit(dl, skip, ok)
+            
+        def is_cancelled():
+            return self._cancelled
+            
+        download_area_task(self.bounds, on_progress, on_finished, is_cancelled)
+        
+    def cancel(self):
+        self._cancelled = True
 
 
 class StatPanel(QFrame):
@@ -405,7 +432,21 @@ class GCSWindow(QMainWindow):
         center.addWidget(self.bottom_cam, stretch=1)
 
         right = QVBoxLayout(); right.setSpacing(6)
-        right.addWidget(self.map_view, stretch=5)
+        
+        # Map view and download layout
+        map_container = QVBoxLayout()
+        map_container.setSpacing(4)
+        map_container.addWidget(self.map_view, stretch=1)
+        
+        map_bar = QHBoxLayout()
+        self.download_map_btn = QPushButton("DOWNLOAD OFFLINE MAP")
+        self.download_map_btn.setFixedHeight(28)
+        self.download_map_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.download_map_btn.clicked.connect(self.on_download_offline_area)
+        map_bar.addWidget(self.download_map_btn)
+        map_container.addLayout(map_bar)
+        
+        right.addLayout(map_container, stretch=5)
         right.addWidget(self.attitude_view, stretch=3)
         right.addWidget(self.attspeed_panel, stretch=2)
 
@@ -820,6 +861,62 @@ class GCSWindow(QMainWindow):
             
         total_items = (1 if takeoff else 0) + len(wps) + (1 if landing else 0)
         self.set_status(f"Imported mission: {total_items} items.")
+
+    def on_download_offline_area(self):
+        # Fetch bounds from map_view
+        self.map_view.get_map_bounds(self.on_bounds_retrieved)
+        
+    def on_bounds_retrieved(self, bounds_json):
+        if not bounds_json:
+            self.set_status("Download failed: Map bounds not loaded yet.")
+            return
+            
+        import json
+        try:
+            bounds = json.loads(bounds_json)
+        except Exception as e:
+            self.set_status(f"Download failed: Could not parse bounds {e}")
+            return
+            
+        # Create and configure progress dialog
+        self.progress_dialog = QProgressDialog("Calculating offline tiles...", "Cancel", 0, 100, self)
+        self.progress_dialog.setWindowTitle("Offline Map Downloader")
+        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.progress_dialog.setMinimumDuration(0)
+        self.progress_dialog.setAutoClose(True)
+        self.progress_dialog.setValue(0)
+        
+        # Start background thread
+        self.download_worker = MapDownloadWorker(bounds)
+        self.download_worker.progress_signal.connect(self.on_download_progress)
+        self.download_worker.finished_signal.connect(self.on_download_finished)
+        
+        # Handle cancel button clicked
+        self.progress_dialog.canceled.connect(self.download_worker.cancel)
+        
+        self.download_map_btn.setEnabled(False)
+        self.download_worker.start()
+        
+    def on_download_progress(self, curr, total):
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.setMaximum(total)
+            self.progress_dialog.setValue(curr)
+            self.progress_dialog.setLabelText(f"Downloading zoom 13-18 tile cache: {curr} of {total}...")
+            
+    def on_download_finished(self, dl, skip, ok):
+        self.download_map_btn.setEnabled(True)
+        if hasattr(self, 'progress_dialog') and self.progress_dialog:
+            self.progress_dialog.close()
+            self.progress_dialog = None
+            
+        if ok:
+            QMessageBox.information(
+                self, "Success",
+                f"Offline Map Download Complete!\n\nDownloaded: {dl} tiles\nSkipped (already cached): {skip} tiles\n\nThese tiles are now cached on disk and will render offline."
+            )
+            self.set_status(f"Offline Map Download Success: {dl} downloaded, {skip} cached.")
+        else:
+            self.set_status("Offline Map Download cancelled or encountered errors.")
 
     # ---- Keyboard Offboard Flight Controls ----
     def keyPressEvent(self, event):
