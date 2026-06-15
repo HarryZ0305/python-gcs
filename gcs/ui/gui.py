@@ -18,6 +18,7 @@ from gcs.ui.attitude_view import AttitudeView
 from gcs.ui.console_view import ConsoleView
 from gcs.ui.camera_view import CameraView
 from gcs.ui.setup_view import SetupView
+from gcs.ui.gauge import ArcGauge
 
 THEME = {
     'bg': '#eef2f6',           # Softer cool gray-blue background for contrast
@@ -256,10 +257,6 @@ class GCSWindow(QMainWindow):
 
         self.setWindowTitle("Python GCS")
         self.resize(1280, 800)
-
-        root = QWidget()
-        root.setStyleSheet(f"background-color: {THEME['bg']};")
-        self.setCentralWidget(root)
         
         # Create Tab Widget
         self.tabs = QTabWidget()
@@ -323,6 +320,20 @@ class GCSWindow(QMainWindow):
         self.attspeed_panel.add_row('pitch', 'Pitch')
         self.attspeed_panel.add_row('yaw', 'Heading')
         self.attspeed_panel.add_row('speed', 'Speed')
+
+        # Custom Arc Gauges
+        self.alt_gauge = ArcGauge("ALTITUDE", "m", 0, 120, THEME['primary'])
+        self.speed_gauge = ArcGauge("SPEED", "m/s", 0, 30, THEME['primary'])
+        self.batt_gauge = ArcGauge("BATTERY", "%", 0, 100, THEME['success'])
+        self.gps_gauge = ArcGauge("GPS SATS", "sats", 0, 20, THEME['primary'])
+
+        # New Aircraft Status Panel
+        self.aircraft_status_panel = StatPanel("AIRCRAFT STATUS")
+        self.aircraft_status_panel.add_row('pitch', 'Pitch')
+        self.aircraft_status_panel.add_row('roll', 'Roll')
+        self.aircraft_status_panel.add_row('yaw', 'Yaw')
+        self.aircraft_status_panel.add_row('mode', 'Mode')
+        self.aircraft_status_panel.add_row('throttle', 'Throttle')
 
         # Arm button
         self.arm_btn = QPushButton("ARM")
@@ -539,27 +550,34 @@ class GCSWindow(QMainWindow):
         fly_layout.setContentsMargins(6, 6, 6, 6)
         fly_layout.setSpacing(6)
 
-        top = QHBoxLayout(); top.setSpacing(6)
-        
-        left = QVBoxLayout(); left.setSpacing(6)
-        left.addWidget(self.power_panel, stretch=0)
-        left.addWidget(self.gnss_panel, stretch=0)
-        left.addWidget(self.alert_panel, stretch=0)
-        left.addWidget(self.arm_btn, stretch=0)
+        # Initialize telemetry historical lists
+        self.history_time = []
+        self.history_alt = []
+        self.history_speed = []
+        self.start_time = time.time()
+        self.held_keys = set()
 
-        center = QVBoxLayout(); center.setSpacing(6)
-        center.addWidget(self.front_cam, stretch=1)
-        center.addWidget(self.bottom_cam, stretch=1)
+        # Real-time Plotting
+        self.plot_panel = TelemetryPlotPanel()
 
-        right = QVBoxLayout(); right.setSpacing(6)
+        # Rebuild FLY tab into a 3-column dashboard
+        dashboard_layout = QHBoxLayout()
+        dashboard_layout.setSpacing(8)
+
+        # LEFT column: Arm, Action Buttons, and Safety & Alerts
+        left_col = QVBoxLayout()
+        left_col.setSpacing(8)
+        left_col.addWidget(self.alert_panel, stretch=0)
+        left_col.addWidget(self.action_panel, stretch=0)
+        left_col.addWidget(self.arm_btn, stretch=0)
+        left_col.addStretch(1)
+
+        # CENTER column: Map, Download button, and Plot panel below it
+        center_col = QVBoxLayout()
+        center_col.setSpacing(6)
         
-        # Map view and download layout
-        map_container = QVBoxLayout()
-        map_container.setSpacing(4)
-        
-        # Wrap map view in premium container
         self.map_container_widget = PremiumViewContainer(self.map_view, "MapContainer")
-        map_container.addWidget(self.map_container_widget, stretch=1)
+        center_col.addWidget(self.map_container_widget, stretch=5)
         
         map_bar = QHBoxLayout()
         self.download_map_btn = QPushButton("DOWNLOAD OFFLINE MAP")
@@ -567,35 +585,66 @@ class GCSWindow(QMainWindow):
         self.download_map_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.download_map_btn.clicked.connect(self.on_download_offline_area)
         map_bar.addWidget(self.download_map_btn)
-        map_container.addLayout(map_bar)
+        center_col.addLayout(map_bar)
         
-        right.addLayout(map_container, stretch=5)
+        center_col.addWidget(self.plot_panel, stretch=2)
+
+        # RIGHT column: Telemetry Gauges, Aircraft Status, and 3D Attitude
+        right_col = QVBoxLayout()
+        right_col.setSpacing(8)
+
+        # TELEMETRY card with 2x2 grid of gauges
+        self.telemetry_card = QFrame()
+        self.telemetry_card.setObjectName("TelemetryCard")
+        self.telemetry_card.setStyleSheet(f"""
+            #TelemetryCard {{
+                background-color: {THEME['panel_bg']};
+                border: 1px solid {THEME['panel_border']};
+                border-radius: 10px;
+            }}
+        """)
+        shadow_tc = QGraphicsDropShadowEffect(self)
+        shadow_tc.setBlurRadius(15)
+        shadow_tc.setColor(QColor(0, 0, 0, 15))
+        shadow_tc.setOffset(0, 4)
+        self.telemetry_card.setGraphicsEffect(shadow_tc)
         
-        # Wrap attitude view in premium container
+        tc_layout = QVBoxLayout(self.telemetry_card)
+        tc_layout.setContentsMargins(12, 10, 12, 10)
+        tc_layout.setSpacing(6)
+        
+        tc_title = QLabel("TELEMETRY")
+        tc_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        tc_layout.addWidget(tc_title)
+        
+        grid_widget = QWidget()
+        grid_widget.setStyleSheet("background: transparent;")
+        grid_layout = QGridLayout(grid_widget)
+        grid_layout.setContentsMargins(0, 0, 0, 0)
+        grid_layout.setSpacing(8)
+        
+        grid_layout.addWidget(self.alt_gauge, 0, 0)
+        grid_layout.addWidget(self.speed_gauge, 0, 1)
+        grid_layout.addWidget(self.batt_gauge, 1, 0)
+        grid_layout.addWidget(self.gps_gauge, 1, 1)
+        tc_layout.addWidget(grid_widget)
+
+        right_col.addWidget(self.telemetry_card, stretch=4)
+        right_col.addWidget(self.aircraft_status_panel, stretch=0)
+        
         self.attitude_container_widget = PremiumViewContainer(self.attitude_view, "AttitudeContainer")
-        right.addWidget(self.attitude_container_widget, stretch=3)
-        right.addWidget(self.attspeed_panel, stretch=0)
+        right_col.addWidget(self.attitude_container_widget, stretch=3)
 
-        top.addLayout(left, stretch=2)
-        top.addLayout(center, stretch=3)
-        top.addLayout(right, stretch=4)
-        fly_layout.addLayout(top, stretch=5)
+        # Assemble columns into dashboard
+        dashboard_layout.addLayout(left_col, stretch=2)
+        dashboard_layout.addLayout(center_col, stretch=5)
+        dashboard_layout.addLayout(right_col, stretch=3)
 
-        # Real-time Plotting
-        self.plot_panel = TelemetryPlotPanel()
+        fly_layout.addLayout(dashboard_layout, stretch=8)
         
-        # Telemetry historical lists
-        self.history_time = []
-        self.history_alt = []
-        self.history_speed = []
-        self.start_time = time.time()
-        self.held_keys = set()
-
-        bottom = QHBoxLayout(); bottom.setSpacing(6)
-        bottom.addWidget(self.action_panel, stretch=2)
-        bottom.addWidget(self.plot_panel, stretch=3)
-        bottom.addWidget(self.console_view, stretch=3)
-        fly_layout.addLayout(bottom, stretch=2)
+        # Horizontal slim strip for console at the bottom
+        self.console_view.setFixedHeight(110)
+        fly_layout.addWidget(self.console_view, stretch=0)
 
         self.tabs.addTab(fly_widget, "FLY")
 
@@ -613,6 +662,17 @@ class GCSWindow(QMainWindow):
         plan_layout.addWidget(self.mission_panel, stretch=1)
         self.tabs.addTab(plan_widget, "PLAN")
 
+        # ===== CAMERAS Tab Layout =====
+        cameras_widget = QWidget()
+        cameras_widget.setObjectName("CamerasTab")
+        cameras_widget.setStyleSheet(f"#CamerasTab {{ background-color: {THEME['bg']}; }}")
+        cameras_layout = QHBoxLayout(cameras_widget)
+        cameras_layout.setContentsMargins(8, 8, 8, 8)
+        cameras_layout.setSpacing(8)
+        cameras_layout.addWidget(self.front_cam, stretch=1)
+        cameras_layout.addWidget(self.bottom_cam, stretch=1)
+        self.tabs.addTab(cameras_widget, "CAMERAS")
+
         # ===== SETUP Tab Layout =====
         self.setup_view = SetupView(self.vehicle)
         self.setup_view.setObjectName("SetupTab")
@@ -620,7 +680,6 @@ class GCSWindow(QMainWindow):
         self.tabs.addTab(self.setup_view, "SETUP")
 
         # ===== Assemble Central Layout =====
-        # Assemble Central Layout =====
         root = QWidget()
         root.setStyleSheet(f"background-color: {THEME['bg']};")
         self.setCentralWidget(root)
@@ -1162,6 +1221,24 @@ class GCSWindow(QMainWindow):
             self.alert_panel.set('check_link', "DISCONNECTED", THEME['danger'])
             self.alert_panel.set('check_gps', "NO TELEMETRY", THEME['muted'])
             self.alert_panel.set('check_batt', "NO TELEMETRY", THEME['muted'])
+            
+            # Reset aircraft status panel
+            self.aircraft_status_panel.set('pitch', "---", THEME['muted'])
+            self.aircraft_status_panel.set('roll', "---", THEME['muted'])
+            self.aircraft_status_panel.set('yaw', "---", THEME['muted'])
+            self.aircraft_status_panel.set('mode', "---", THEME['muted'])
+            self.aircraft_status_panel.set('throttle', "---", THEME['muted'])
+            
+            # Reset gauges
+            self.alt_gauge.set_value(0.0)
+            self.alt_gauge.set_accent(THEME['muted'])
+            self.speed_gauge.set_value(0.0)
+            self.speed_gauge.set_accent(THEME['muted'])
+            self.batt_gauge.set_value(0.0)
+            self.batt_gauge.set_accent(THEME['muted'])
+            self.gps_gauge.set_value(0.0)
+            self.gps_gauge.set_accent(THEME['muted'])
+            
             self.conn_status.setText("DISCONNECTED")
             self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
             self.console_view.refresh_logs()
@@ -1182,6 +1259,23 @@ class GCSWindow(QMainWindow):
             self.alert_panel.set('check_link', "LOST", THEME['danger'])
             self.alert_panel.set('check_gps', "NO TELEMETRY", THEME['muted'])
             self.alert_panel.set('check_batt', "NO TELEMETRY", THEME['muted'])
+            
+            # Link lost gauges
+            self.alt_gauge.set_value(d.get('alt', 0.0))
+            self.alt_gauge.set_accent(THEME['muted'])
+            self.speed_gauge.set_value(d.get('groundspeed', 0.0))
+            self.speed_gauge.set_accent(THEME['muted'])
+            self.batt_gauge.set_value(d.get('battery', 0))
+            self.batt_gauge.set_accent(THEME['muted'])
+            self.gps_gauge.set_value(d.get('satellites', 0))
+            self.gps_gauge.set_accent(THEME['muted'])
+            
+            self.aircraft_status_panel.set('pitch', "---", THEME['muted'])
+            self.aircraft_status_panel.set('roll', "---", THEME['muted'])
+            self.aircraft_status_panel.set('yaw', "---", THEME['muted'])
+            self.aircraft_status_panel.set('mode', "---", THEME['muted'])
+            self.aircraft_status_panel.set('throttle', "---", THEME['muted'])
+            
             self.conn_status.setText("LINK LOST")
             self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
         else:
@@ -1253,7 +1347,35 @@ class GCSWindow(QMainWindow):
                 self.history_speed.pop(0)
             self.plot_panel.update_plots(self.history_time, self.history_alt, self.history_speed)
 
-        # Update panels
+            # Update Gauges
+            alt_accent = THEME['primary']
+            speed_accent = THEME['primary']
+            if d['battery'] < 10:
+                batt_accent = THEME['danger']
+            elif d['battery'] < 20:
+                batt_accent = THEME['warning']
+            else:
+                batt_accent = THEME['success']
+            gps_accent = fix_color
+            
+            self.alt_gauge.set_value(d.get('alt', 0.0))
+            self.alt_gauge.set_accent(alt_accent)
+            self.speed_gauge.set_value(d.get('groundspeed', 0.0))
+            self.speed_gauge.set_accent(speed_accent)
+            self.batt_gauge.set_value(d.get('battery', 0))
+            self.batt_gauge.set_accent(batt_accent)
+            self.gps_gauge.set_value(d.get('satellites', 0))
+            self.gps_gauge.set_accent(gps_accent)
+
+            # Update new Aircraft Status panel
+            self.aircraft_status_panel.set('pitch', f"{math.degrees(d['pitch']):.0f}\u00b0", val_color)
+            self.aircraft_status_panel.set('roll', f"{math.degrees(d['roll']):.0f}\u00b0", val_color)
+            yaw_deg = math.degrees(d['yaw']) % 360
+            self.aircraft_status_panel.set('yaw', f"{yaw_deg:.0f}\u00b0", val_color)
+            self.aircraft_status_panel.set('mode', str(d.get('mode', 'UNKNOWN')), val_color)
+            self.aircraft_status_panel.set('throttle', f"{d.get('throttle', 0)}%", val_color)
+
+        # Update panels (retaining original functionality)
         self.power_panel.set('battery', f"{d['battery']}%", battery_color)
         self.power_panel.set('voltage', f"{d['voltage']:.1f}V", val_color)
 

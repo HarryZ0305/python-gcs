@@ -23,6 +23,7 @@ telemetry_data = { # dictionary that holds the latest values from the drone
     'voltage': 0.0, # battery voltage
     'roll': 0.0,      
     'pitch': 0.0,     
+    'yaw': 0.0,     
     'mode': 'UNKNOWN',
     'wp_current': -1,
     'last_heartbeat_time': 0.0,
