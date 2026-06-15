@@ -188,12 +188,13 @@ def latlon_to_tile(lat, lon, zoom):
     ytile = int((1.0 - math.log(math.tan(lat_rad) + (1.0 / math.cos(lat_rad))) / math.pi) / 2.0 * n)
     return xtile, ytile
 
-def download_area_task(bounds, progress_callback, finished_callback):
+def download_area_task(bounds, progress_callback, finished_callback, is_cancelled_fn=None):
     """
     Downloads tiles within bounds for zoom levels 13 to 18.
     bounds: dict matching Leaflet LatLngBounds structure
     progress_callback: takes (current, total)
     finished_callback: takes (downloaded_count, skipped_count, success)
+    is_cancelled_fn: optional function returning boolean to abort the task
     """
     try:
         sw = bounds['_southWest']
@@ -229,6 +230,11 @@ def download_area_task(bounds, progress_callback, finished_callback):
         skipped = 0
         
         for idx, (zoom, x, y) in enumerate(tiles):
+            if is_cancelled_fn and is_cancelled_fn():
+                log("Offline Map Downloader: Cancelled by user.")
+                finished_callback(downloaded - skipped, skipped, False)
+                return
+                
             # Safe caching path
             cache_path = os.path.abspath(os.path.join(tile_cache_dir, str(zoom), str(x), f"{y}.png"))
             if not cache_path.startswith(os.path.abspath(tile_cache_dir)):
