@@ -6,7 +6,7 @@ ATTITUDE_HTML = """
 <head>
     <meta charset="utf-8"/>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: #0d1b2a; }
+        body { margin: 0; padding: 0; overflow: hidden; background: #ffffff; }
         #viewer { width: 100%; height: 100vh; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -36,7 +36,7 @@ ATTITUDE_HTML = """
             scene.add(dir);
 
             // reference grid (horizon)
-            const grid = new THREE.GridHelper(12, 12, 0x2a4a6a, 0x1e2d3d);
+            const grid = new THREE.GridHelper(12, 12, 0x0b57d0, 0xcbd5e1);
             grid.position.y = -1.5;
             scene.add(grid);
 
@@ -46,7 +46,7 @@ ATTITUDE_HTML = """
             // center body
             const body = new THREE.Mesh(
                 new THREE.BoxGeometry(1, 0.3, 1),
-                new THREE.MeshStandardMaterial({ color: 0x1e2d3d })
+                new THREE.MeshStandardMaterial({ color: 0x1f2937 })
             );
             drone.add(body);
 
@@ -62,7 +62,7 @@ ATTITUDE_HTML = """
                 // arm (thin box from center to motor)
                 const arm = new THREE.Mesh(
                     new THREE.BoxGeometry(0.15, 0.1, 0.15),
-                    new THREE.MeshStandardMaterial({ color: 0x555555 })
+                    new THREE.MeshStandardMaterial({ color: 0x94a3b8 })
                 );
                 arm.scale.z = Math.hypot(a.x, a.z) * 5;
                 arm.position.set(a.x / 2, 0, a.z / 2);
@@ -73,7 +73,7 @@ ATTITUDE_HTML = """
                 const rotor = new THREE.Mesh(
                     new THREE.CylinderGeometry(0.5, 0.5, 0.05, 24),
                     new THREE.MeshStandardMaterial({
-                        color: a.front ? 0x00e5ff : 0x888888,
+                        color: a.front ? 0x0b57d0 : 0x64748b,
                         transparent: true, opacity: 0.85
                     })
                 );

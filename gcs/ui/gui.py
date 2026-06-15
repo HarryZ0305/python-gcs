@@ -7,10 +7,10 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QLabel, QFrame, QMessageBox,
     QPushButton, QComboBox, QSpinBox, QListWidget, QTabWidget,
-    QLineEdit, QCheckBox, QProgressDialog
+    QLineEdit, QCheckBox, QProgressDialog, QGridLayout, QGraphicsDropShadowEffect
 )
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 from gcs.telemetry import telemetry_data
 from gcs.commands import arm, disarm, set_mode, takeoff, set_offboard_targets, reset_offboard_targets, stop_streamer
 from gcs.ui.map_view import MapView
@@ -20,16 +20,16 @@ from gcs.ui.camera_view import CameraView
 from gcs.ui.setup_view import SetupView
 
 THEME = {
-    'bg': '#f5f7fa',           # Soft light gray background
+    'bg': '#eef2f6',           # Softer cool gray-blue background for contrast
     'panel_bg': '#ffffff',     # Pure white cards
-    'panel_border': '#cbd5e1', # Light border for card/panel boundaries
+    'panel_border': '#e2e8f0', # Lighter, softer border (slate-200)
     'primary': '#0b57d0',      # Deep aerospace royal blue
     'success': '#0f9d58',      # Emerald green
     'warning': '#e37400',      # Muted amber/orange
     'danger': '#d93025',       # Crimson red
-    'muted': '#5f6368',        # Medium gray for labels
-    'dark_text': '#0f172a',    # Near-black slate-900 for readable value text
-    'plot_bg': '#f8fafc',      # Slate-50 background for plots
+    'muted': '#64748b',        # Slate-500 for secondary labels
+    'dark_text': '#0f172a',    # Slate-900 for readable value text
+    'plot_bg': '#ffffff',      # Pure white plot background
 }
 
 
@@ -88,56 +88,137 @@ class MapDownloadWorker(QThread):
 
 
 class StatPanel(QFrame):
-    """A titled panel holding label:value rows that update live."""
+    """A titled panel holding labels and values in a clean 2-column grid layout with drop shadows."""
     def __init__(self, title):
         super().__init__()
-        self.setStyleSheet(f"background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
+        self.setObjectName("StatPanel")
+        
+        # Soft shadow to feel extremely premium
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(0, 0, 0, 15))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
+
+        self.setStyleSheet(f"""
+            #StatPanel {{
+                background-color: {THEME['panel_bg']};
+                border: 1px solid {THEME['panel_border']};
+                border-radius: 10px;
+            }}
+        """)
+        
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(10, 8, 10, 8)
-        self._layout.setSpacing(4)
+        self._layout.setContentsMargins(12, 10, 12, 10)
+        self._layout.setSpacing(6)
 
         t = QLabel(title)
-        t.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none;")
+        t.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
         self._layout.addWidget(t)
 
+        self.grid_widget = QWidget()
+        self.grid_widget.setStyleSheet("background: transparent;")
+        self.grid_layout = QGridLayout(self.grid_widget)
+        self.grid_layout.setContentsMargins(0, 0, 0, 0)
+        self.grid_layout.setSpacing(6)
+        self._layout.addWidget(self.grid_widget)
+
         self.rows = {}
+        self.current_row = 0
+        self.current_col = 0
 
     def add_row(self, key, label):
-        row = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"color: {THEME['muted']}; font-size: 12px; border: none;")
-        val = QLabel("---")
-        val.setFont(QFont("Courier New", 13, QFont.Weight.Bold))
-        val.setStyleSheet(f"color: {THEME['dark_text']}; border: none;")
-        val.setAlignment(Qt.AlignmentFlag.AlignRight)
-        row.addWidget(lbl)
-        row.addStretch()
-        row.addWidget(val)
-        self._layout.addLayout(row)
-        self.rows[key] = val
+        lbl.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none; background: transparent;")
         
-        # Prevent vertical squishing by setting minimum height dynamically based on row count
-        self.setMinimumHeight(35 + len(self.rows) * 26)
+        val = QLabel("---")
+        val.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
+        val.setStyleSheet(f"color: {THEME['dark_text']}; border: none; background: transparent;")
+        
+        # Make the active alert message full-width spanning multiple columns
+        if key == 'alert_msg':
+            if self.current_col != 0:
+                self.current_row += 1
+                self.current_col = 0
+                
+            val.setAlignment(Qt.AlignmentFlag.AlignLeft)
+            self.grid_layout.addWidget(lbl, self.current_row, 0)
+            self.grid_layout.addWidget(val, self.current_row, 1, 1, 4)
+            self.current_row += 1
+            self.current_col = 0
+        else:
+            if self.current_col == 0:
+                val.setAlignment(Qt.AlignmentFlag.AlignRight)
+                self.grid_layout.addWidget(lbl, self.current_row, 0)
+                self.grid_layout.addWidget(val, self.current_row, 1)
+                self.grid_layout.setColumnStretch(1, 2)
+                self.current_col = 1
+            else:
+                if self.current_row == 0:
+                    spacer = QWidget()
+                    spacer.setFixedWidth(16)
+                    self.grid_layout.addWidget(spacer, 0, 2)
+                val.setAlignment(Qt.AlignmentFlag.AlignRight)
+                self.grid_layout.addWidget(lbl, self.current_row, 3)
+                self.grid_layout.addWidget(val, self.current_row, 4)
+                self.grid_layout.setColumnStretch(4, 2)
+                self.current_row += 1
+                self.current_col = 0
+
+        self.rows[key] = val
 
     def set(self, key, text, color=None):
         if color is None:
             color = THEME['primary']
         if key in self.rows:
             self.rows[key].setText(text)
-            self.rows[key].setStyleSheet(f"color: {color}; border: none;")
+            self.rows[key].setStyleSheet(f"color: {color}; border: none; background: transparent;")
+
+
+class PremiumViewContainer(QFrame):
+    """A styled container to hold widgets like map view and attitude view with round borders and shadow."""
+    def __init__(self, child_widget, name):
+        super().__init__()
+        self.setObjectName(name)
+        self.setStyleSheet(f"""
+            #{name} {{
+                background-color: {THEME['panel_bg']};
+                border: 1px solid {THEME['panel_border']};
+                border-radius: 10px;
+            }}
+        """)
+        
+        # Shadow effect
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(0, 0, 0, 15))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.addWidget(child_widget)
 
 
 class TelemetryPlotPanel(QFrame):
     """A live-updating plot panel showing historical telemetry trends."""
     def __init__(self):
         super().__init__()
-        self.setStyleSheet(f"background-color: {THEME['panel_bg']}; border-radius: 8px; border: 1px solid {THEME['panel_border']};")
+        self.setObjectName("TelemetryPlotPanel")
+        self.setStyleSheet(f"#TelemetryPlotPanel {{ background-color: {THEME['panel_bg']}; border-radius: 10px; border: 1px solid {THEME['panel_border']}; }}")
+        
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(0, 0, 0, 15))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
+        
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(4)
 
         t = QLabel("TELEMETRY HISTORICAL TRENDS")
-        t.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none;")
+        t.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
         layout.addWidget(t)
 
         self.plot_widget = pg.PlotWidget()
@@ -318,16 +399,25 @@ class GCSWindow(QMainWindow):
         self.hover_btn.clicked.connect(self.on_hover)
 
         self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none;")
+        self.status_label.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none; background: transparent;")
 
         # Action panel container
         self.action_panel = QFrame()
-        self.action_panel.setStyleSheet(f"background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
+        self.action_panel.setObjectName("ActionPanel")
+        self.action_panel.setStyleSheet(f"#ActionPanel {{ background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; }}")
+        
+        # Soft shadow for ActionPanel
+        shadow_ap = QGraphicsDropShadowEffect(self)
+        shadow_ap.setBlurRadius(15)
+        shadow_ap.setColor(QColor(0, 0, 0, 15))
+        shadow_ap.setOffset(0, 4)
+        self.action_panel.setGraphicsEffect(shadow_ap)
+        
         ap = QVBoxLayout(self.action_panel)
-        ap.setContentsMargins(10, 8, 10, 8)
+        ap.setContentsMargins(12, 10, 12, 10)
         ap.setSpacing(8)
         ap_title = QLabel("ACTION BUTTONS")
-        ap_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none;")
+        ap_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
         ap.addWidget(ap_title)
         r1 = QHBoxLayout(); r1.addWidget(self.mode_combo); r1.addWidget(self.mode_btn); ap.addLayout(r1)
         r2 = QHBoxLayout(); r2.addWidget(self.alt_spin); r2.addWidget(self.takeoff_btn); ap.addLayout(r2)
@@ -345,6 +435,7 @@ class GCSWindow(QMainWindow):
                 color: {THEME['muted']};
                 font-family: Courier New;
                 font-size: 11px;
+                background: transparent;
             }}
             QCheckBox::indicator {{
                 width: 13px;
@@ -362,13 +453,22 @@ class GCSWindow(QMainWindow):
 
         # Mission planning panel container
         self.mission_panel = QFrame()
-        self.mission_panel.setStyleSheet(f"background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
+        self.mission_panel.setObjectName("MissionPanel")
+        self.mission_panel.setStyleSheet(f"#MissionPanel {{ background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; }}")
+        
+        # Soft shadow for MissionPanel
+        shadow_mp = QGraphicsDropShadowEffect(self)
+        shadow_mp.setBlurRadius(15)
+        shadow_mp.setColor(QColor(0, 0, 0, 15))
+        shadow_mp.setOffset(0, 4)
+        self.mission_panel.setGraphicsEffect(shadow_mp)
+        
         mp = QVBoxLayout(self.mission_panel)
-        mp.setContentsMargins(10, 8, 10, 8)
+        mp.setContentsMargins(12, 10, 12, 10)
         mp.setSpacing(6)
         
         mp_title = QLabel("MISSION PLANNING")
-        mp_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none;")
+        mp_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
         mp.addWidget(mp_title)
         
         self.wp_list = QListWidget()
@@ -382,7 +482,7 @@ class GCSWindow(QMainWindow):
         mp.addWidget(self.wp_list)
         
         self.wp_progress_label = QLabel("Active Waypoint: ---")
-        self.wp_progress_label.setStyleSheet(f"color: {THEME['primary']}; font-family: Courier New; font-size: 11px; border: none;")
+        self.wp_progress_label.setStyleSheet(f"color: {THEME['primary']}; font-family: Courier New; font-size: 11px; border: none; background: transparent;")
         mp.addWidget(self.wp_progress_label)
         
         m_row = QHBoxLayout()
@@ -433,6 +533,8 @@ class GCSWindow(QMainWindow):
 
         # ===== FLY Tab Layout =====
         fly_widget = QWidget()
+        fly_widget.setObjectName("FlyTab")
+        fly_widget.setStyleSheet(f"#FlyTab {{ background-color: {THEME['bg']}; }}")
         fly_layout = QVBoxLayout(fly_widget)
         fly_layout.setContentsMargins(6, 6, 6, 6)
         fly_layout.setSpacing(6)
@@ -440,10 +542,10 @@ class GCSWindow(QMainWindow):
         top = QHBoxLayout(); top.setSpacing(6)
         
         left = QVBoxLayout(); left.setSpacing(6)
-        left.addWidget(self.power_panel, stretch=2)
-        left.addWidget(self.gnss_panel, stretch=5)
-        left.addWidget(self.alert_panel, stretch=5)
-        left.addWidget(self.arm_btn, stretch=1)
+        left.addWidget(self.power_panel, stretch=0)
+        left.addWidget(self.gnss_panel, stretch=0)
+        left.addWidget(self.alert_panel, stretch=0)
+        left.addWidget(self.arm_btn, stretch=0)
 
         center = QVBoxLayout(); center.setSpacing(6)
         center.addWidget(self.front_cam, stretch=1)
@@ -454,7 +556,10 @@ class GCSWindow(QMainWindow):
         # Map view and download layout
         map_container = QVBoxLayout()
         map_container.setSpacing(4)
-        map_container.addWidget(self.map_view, stretch=1)
+        
+        # Wrap map view in premium container
+        self.map_container_widget = PremiumViewContainer(self.map_view, "MapContainer")
+        map_container.addWidget(self.map_container_widget, stretch=1)
         
         map_bar = QHBoxLayout()
         self.download_map_btn = QPushButton("DOWNLOAD OFFLINE MAP")
@@ -465,8 +570,11 @@ class GCSWindow(QMainWindow):
         map_container.addLayout(map_bar)
         
         right.addLayout(map_container, stretch=5)
-        right.addWidget(self.attitude_view, stretch=3)
-        right.addWidget(self.attspeed_panel, stretch=2)
+        
+        # Wrap attitude view in premium container
+        self.attitude_container_widget = PremiumViewContainer(self.attitude_view, "AttitudeContainer")
+        right.addWidget(self.attitude_container_widget, stretch=3)
+        right.addWidget(self.attspeed_panel, stretch=0)
 
         top.addLayout(left, stretch=2)
         top.addLayout(center, stretch=3)
@@ -493,17 +601,22 @@ class GCSWindow(QMainWindow):
 
         # ===== PLAN Tab Layout =====
         plan_widget = QWidget()
+        plan_widget.setObjectName("PlanTab")
+        plan_widget.setStyleSheet(f"#PlanTab {{ background-color: {THEME['bg']}; }}")
         plan_layout = QHBoxLayout(plan_widget)
         plan_layout.setContentsMargins(8, 8, 8, 8)
         plan_layout.setSpacing(8)
         
         self.plan_map_view = MapView()
-        plan_layout.addWidget(self.plan_map_view, stretch=3)
+        self.plan_map_container = PremiumViewContainer(self.plan_map_view, "PlanMapContainer")
+        plan_layout.addWidget(self.plan_map_container, stretch=3)
         plan_layout.addWidget(self.mission_panel, stretch=1)
         self.tabs.addTab(plan_widget, "PLAN")
 
         # ===== SETUP Tab Layout =====
         self.setup_view = SetupView(self.vehicle)
+        self.setup_view.setObjectName("SetupTab")
+        self.setup_view.setStyleSheet(f"#SetupTab {{ background-color: {THEME['bg']}; }}")
         self.tabs.addTab(self.setup_view, "SETUP")
 
         # ===== Assemble Central Layout =====
@@ -516,15 +629,23 @@ class GCSWindow(QMainWindow):
 
         # Connection Panel
         self.conn_panel = QFrame()
-        self.conn_panel.setStyleSheet(f"background-color: {THEME['panel_bg']}; border-radius: 8px; border: 1px solid {THEME['panel_border']};")
+        self.conn_panel.setObjectName("ConnPanel")
+        self.conn_panel.setStyleSheet(f"#ConnPanel {{ background-color: {THEME['panel_bg']}; border-radius: 10px; border: 1px solid {THEME['panel_border']}; }}")
         self.conn_panel.setFixedHeight(50)
+        
+        # Soft shadow for ConnPanel
+        shadow_conn = QGraphicsDropShadowEffect(self)
+        shadow_conn.setBlurRadius(12)
+        shadow_conn.setColor(QColor(0, 0, 0, 15))
+        shadow_conn.setOffset(0, 3)
+        self.conn_panel.setGraphicsEffect(shadow_conn)
         
         conn_layout = QHBoxLayout(self.conn_panel)
         conn_layout.setContentsMargins(15, 5, 15, 5)
         conn_layout.setSpacing(10)
         
         conn_lbl = QLabel("CONNECTION:")
-        conn_lbl.setStyleSheet(f"color: {THEME['primary']}; font-family: Courier New; font-weight: bold; font-size: 12px; border: none;")
+        conn_lbl.setStyleSheet(f"color: {THEME['primary']}; font-family: Courier New; font-weight: bold; font-size: 12px; border: none; background: transparent;")
         conn_layout.addWidget(conn_lbl)
         
         self.conn_input = QLineEdit()
@@ -546,7 +667,7 @@ class GCSWindow(QMainWindow):
         conn_layout.addWidget(self.conn_btn)
         
         self.conn_status = QLabel("DISCONNECTED")
-        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none; background: transparent;")
         conn_layout.addWidget(self.conn_status)
 
         outer.addWidget(self.conn_panel)

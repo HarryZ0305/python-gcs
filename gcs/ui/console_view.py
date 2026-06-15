@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QTextEdit
-from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QTextEdit, QGraphicsDropShadowEffect
+from PyQt6.QtGui import QFont, QColor
 from gcs.logs import log_messages
 
 class ConsoleView(QTextEdit):
@@ -8,9 +8,19 @@ class ConsoleView(QTextEdit):
         self.setReadOnly(True)
         self.setFont(QFont("Courier New", 9))
         self.setStyleSheet("""
-            background-color: #f8fafc; color: #0f172a;
-            border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px;
+            QTextEdit {
+                background-color: #ffffff; color: #0f172a;
+                border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px;
+            }
         """)
+        
+        # Soft shadow
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(0, 0, 0, 15))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
+        
         self._shown = 0  # how many messages already displayed
 
     def refresh_logs(self):
