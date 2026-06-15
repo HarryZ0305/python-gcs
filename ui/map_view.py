@@ -44,8 +44,8 @@ MAP_HTML = """
             color: #ff4444;
         }
     </style>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="http://localhost:PORT_PLACEHOLDER/static/leaflet.css"/>
+    <script src="http://localhost:PORT_PLACEHOLDER/static/leaflet.js"></script>
 </head>
 <body>
     <div id="map"></div>
@@ -59,7 +59,7 @@ MAP_HTML = """
     <script>
         var map = L.map('map').setView([32.7157, -117.1611], 15);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        L.tileLayer('http://localhost:PORT_PLACEHOLDER/tiles/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors'
         }).addTo(map);
 
@@ -309,7 +309,10 @@ MAP_HTML = """
 class MapView(QWebEngineView):
     def __init__(self):
         super().__init__()
-        self.setHtml(MAP_HTML)
+        from ui.tile_server import start_server
+        port = start_server()
+        local_html = MAP_HTML.replace("PORT_PLACEHOLDER", str(port))
+        self.setHtml(local_html)
         self._last_pos = (0.0, 0.0)
         self._is_loaded = False
         self.loadFinished.connect(self._on_load_finished)
@@ -342,3 +345,6 @@ class MapView(QWebEngineView):
         w_json = json.dumps(waypoints)
         l_json = json.dumps(landing)
         self.page().runJavaScript(f"if (typeof importMission === 'function') importMission({t_json}, {w_json}, {l_json});")
+
+    def get_map_bounds(self, callback):
+        self.page().runJavaScript("if (typeof map !== 'undefined') JSON.stringify(map.getBounds()); else '';", callback)
