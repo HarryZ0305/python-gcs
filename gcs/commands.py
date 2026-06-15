@@ -1,7 +1,7 @@
 from pymavlink import mavutil
 import time
 import threading
-from logs import log
+from gcs.logs import log
 
 # Lock for all vehicle.mav calls to prevent packet corruption from concurrent writes
 mav_lock = threading.Lock()
@@ -176,7 +176,7 @@ def set_mode(vehicle, mode_name):
 
 def takeoff(vehicle, altitude_m):
     _ensure_streamer(vehicle)
-    from telemetry import telemetry_data, wait_for_arm
+    from gcs.telemetry import telemetry_data, wait_for_arm
     
     # PX4 takeoff flow: Arm the vehicle first if not already armed
     if not telemetry_data['armed']:
@@ -237,7 +237,7 @@ def goto(vehicle, lat, lon, alt):
 
 def upload_mission(vehicle, waypoints, takeoff_point=None, landing_point=None, target_alt=10.0):
     log("Mission upload: Starting transaction...")
-    from telemetry import mission_queue, telemetry_data
+    from gcs.telemetry import mission_queue, telemetry_data
     import queue
 
     # Clear queue of any stale messages first

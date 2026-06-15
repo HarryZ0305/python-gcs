@@ -2,7 +2,7 @@ import time
 import queue
 import threading
 from pymavlink import mavutil
-from logs import log
+from gcs.logs import log
 
 mission_queue = queue.Queue()
 
