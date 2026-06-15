@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Python GCS — open-source ground control for your build</title>
+<meta name="description" content="A clean, open-source MAVLink ground control station for PX4 multirotors. Live telemetry, satellite maps with offline caching, 3D attitude, and mission planning — built for the Holybro S500 + Pixhawk 6C." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#eaeef4; --bg-2:#f5f8fc; --surface:#ffffff;
+    --line:#d4dce7; --line-soft:#e4eaf2;
+    --ink:#0d1626; --muted:#5b6675;
+    --blue:#0b57d0; --blue-bright:#2b7fff; --cyan:#0aa4c2;
+    --green:#0f9d58; --amber:#e08200; --red:#d93025;
+    --shadow:0 1px 2px rgba(13,22,38,.04), 0 12px 32px -12px rgba(13,22,38,.18);
+    --r:14px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* blueprint grid backdrop */
+  body::before{
+    content:""; position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:
+      linear-gradient(rgba(11,87,208,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(11,87,208,.045) 1px, transparent 1px);
+    background-size:46px 46px;
+    mask-image:radial-gradient(ellipse 90% 70% at 70% 0%, #000 30%, transparent 80%);
+    -webkit-mask-image:radial-gradient(ellipse 90% 70% at 70% 0%, #000 30%, transparent 80%);
+  }
+  .wrap{max-width:1140px; margin:0 auto; padding:0 24px; position:relative; z-index:1}
+  a{color:inherit; text-decoration:none}
+  .mono{font-family:'JetBrains Mono',monospace}
+
+  /* ---- top bar ---- */
+  header{
+    position:sticky; top:0; z-index:50;
+    backdrop-filter:saturate(1.2) blur(10px);
+    background:rgba(234,238,244,.78);
+    border-bottom:1px solid var(--line-soft);
+  }
+  .bar{display:flex; align-items:center; justify-content:space-between; height:62px}
+  .brand{display:flex; align-items:center; gap:11px; font-family:'Space Grotesk'; font-weight:700; letter-spacing:-.01em; font-size:1.02rem}
+  .glyph{width:26px; height:26px; flex:none}
+  nav.links{display:flex; gap:28px; font-size:.9rem; color:var(--muted); font-weight:500}
+  nav.links a:hover{color:var(--ink)}
+  .ghbtn{
+    display:inline-flex; align-items:center; gap:8px; font-size:.84rem; font-weight:600;
+    padding:8px 14px; border:1px solid var(--line); border-radius:9px; background:var(--surface);
+    transition:.18s;
+  }
+  .ghbtn:hover{border-color:var(--blue); color:var(--blue); transform:translateY(-1px)}
+  @media(max-width:760px){ nav.links{display:none} }
+
+  /* ---- hero ---- */
+  .hero{padding:64px 0 28px; display:grid; grid-template-columns:1.05fr .95fr; gap:54px; align-items:center}
+  .eyebrow{
+    font-family:'JetBrains Mono',monospace; font-size:.74rem; font-weight:500;
+    letter-spacing:.16em; color:var(--blue); text-transform:uppercase;
+    display:inline-flex; align-items:center; gap:9px; margin-bottom:20px;
+  }
+  .eyebrow::before{content:""; width:22px; height:1px; background:var(--blue)}
+  h1{
+    font-family:'Space Grotesk'; font-weight:700; letter-spacing:-.025em;
+    font-size:clamp(2.3rem,4.6vw,3.5rem); line-height:1.04; margin:0 0 20px;
+  }
+  h1 .b{color:var(--blue)}
+  .lede{font-size:1.08rem; color:var(--muted); max-width:30em; margin:0 0 30px}
+  .cta{display:flex; flex-wrap:wrap; gap:13px; align-items:center}
+  .btn{
+    font-family:'Inter'; font-weight:600; font-size:.95rem; cursor:pointer;
+    padding:14px 22px; border-radius:11px; border:1px solid transparent; transition:.18s;
+    display:inline-flex; align-items:center; gap:10px;
+  }
+  .btn-primary{background:var(--blue); color:#fff; box-shadow:0 8px 22px -8px rgba(11,87,208,.6)}
+  .btn-primary:hover{background:#0a4cb8; transform:translateY(-2px)}
+  .btn-ghost{background:var(--surface); border-color:var(--line); color:var(--ink)}
+  .btn-ghost:hover{border-color:var(--muted); transform:translateY(-2px)}
+  .badge{
+    font-family:'JetBrains Mono',monospace; font-size:.62rem; font-weight:600; letter-spacing:.08em;
+    background:rgba(255,255,255,.22); padding:3px 7px; border-radius:5px;
+  }
+  .meta-line{margin-top:18px; font-family:'JetBrains Mono',monospace; font-size:.76rem; color:var(--muted)}
+  .meta-line b{color:var(--green); font-weight:600}
+
+  /* ---- hero instrument panel (signature) ---- */
+  .panel{
+    background:linear-gradient(180deg,#fff, #fbfdff);
+    border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow);
+    padding:18px; position:relative; overflow:hidden;
+  }
+  .panel-h{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px}
+  .panel-h .t{font-family:'JetBrains Mono',monospace; font-size:.68rem; letter-spacing:.18em; color:var(--blue); font-weight:600}
+  .live{display:inline-flex; align-items:center; gap:7px; font-family:'JetBrains Mono',monospace; font-size:.64rem; color:var(--muted); letter-spacing:.1em}
+  .dot{width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 0 0 rgba(15,157,88,.5); animation:pulse 2.2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(15,157,88,.45)}70%{box-shadow:0 0 0 7px rgba(15,157,88,0)}100%{box-shadow:0 0 0 0 rgba(15,157,88,0)}}
+  .gauges{display:grid; grid-template-columns:1fr 1fr 1.15fr; gap:12px; align-items:stretch}
+  .gcard{background:var(--bg-2); border:1px solid var(--line-soft); border-radius:11px; padding:12px 10px; display:flex; flex-direction:column; align-items:center; justify-content:center}
+  .gcard svg{display:block}
+  .gval{font-family:'JetBrains Mono',monospace; font-weight:600; font-size:1.32rem; line-height:1; margin-top:-46px; margin-bottom:30px}
+  .gunit{font-family:'JetBrains Mono',monospace; font-size:.6rem; color:var(--muted); margin-top:-26px}
+  .glabel{font-family:'JetBrains Mono',monospace; font-size:.6rem; letter-spacing:.12em; color:var(--muted); margin-top:8px}
+  /* attitude */
+  .att{position:relative}
+  .horizon-wrap{width:118px; height:118px; border-radius:50%; overflow:hidden; border:3px solid #cdd7e4; position:relative; margin:2px auto 0}
+  .sky-ground{position:absolute; left:-30%; top:-30%; width:160%; height:160%; transition:transform .1s linear}
+  .sky{position:absolute; inset:0 0 50% 0; background:linear-gradient(#bfe0ff,#9cc9f5)}
+  .ground{position:absolute; inset:50% 0 0 0; background:linear-gradient(#b08a63,#8f6f4d)}
+  .hline{position:absolute; left:0; right:0; top:50%; height:2px; background:#fff; transform:translateY(-1px)}
+  .acsym{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none}
+  .acsym svg{filter:drop-shadow(0 1px 1px rgba(0,0,0,.25))}
+  .readout{margin-top:14px; display:grid; grid-template-columns:1fr 1fr; gap:6px 18px; font-family:'JetBrains Mono',monospace; font-size:.7rem}
+  .readout .k{color:var(--muted)} .readout .v{text-align:right; color:var(--ink); font-weight:500}
+  .scan{position:absolute; left:0; right:0; height:38%; top:-40%; background:linear-gradient(180deg,transparent,rgba(43,127,255,.07),transparent); animation:scan 6s linear infinite; pointer-events:none}
+  @keyframes scan{to{top:120%}}
+
+  /* ---- spec ticker ---- */
+  .ticker{border-top:1px solid var(--line-soft); border-bottom:1px solid var(--line-soft); background:rgba(255,255,255,.5); margin-top:30px}
+  .ticker .wrap{display:flex; flex-wrap:wrap; gap:10px 34px; padding:15px 24px; font-family:'JetBrains Mono',monospace; font-size:.76rem; color:var(--muted); justify-content:center}
+  .ticker b{color:var(--ink); font-weight:600}
+
+  /* ---- sections ---- */
+  section{padding:72px 0; position:relative}
+  .sec-head{max-width:34em; margin-bottom:40px}
+  .sec-eyebrow{font-family:'JetBrains Mono',monospace; font-size:.72rem; letter-spacing:.16em; color:var(--blue); text-transform:uppercase; font-weight:500}
+  h2{font-family:'Space Grotesk'; font-weight:700; letter-spacing:-.02em; font-size:clamp(1.7rem,3vw,2.3rem); margin:.5rem 0 .4rem}
+  .sec-head p{color:var(--muted); margin:0; font-size:1.02rem}
+
+  .grid{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
+  .feat{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:24px;
+    transition:.2s; position:relative; overflow:hidden;
+  }
+  .feat:hover{transform:translateY(-3px); border-color:#bcc8d8; box-shadow:var(--shadow)}
+  .feat .ic{width:38px; height:38px; border-radius:10px; background:rgba(11,87,208,.08); display:flex; align-items:center; justify-content:center; margin-bottom:16px; color:var(--blue)}
+  .feat h3{font-family:'Space Grotesk'; font-weight:600; font-size:1.08rem; margin:0 0 7px; letter-spacing:-.01em}
+  .feat p{margin:0; color:var(--muted); font-size:.93rem}
+  .feat .no{position:absolute; top:16px; right:18px; font-family:'JetBrains Mono',monospace; font-size:.68rem; color:#c2ccd9}
+  @media(max-width:860px){ .grid{grid-template-columns:1fr 1fr} }
+  @media(max-width:560px){ .grid{grid-template-columns:1fr} }
+
+  /* ---- download ---- */
+  .dl{
+    background:linear-gradient(135deg,#0b1f3a,#0b57d0); color:#fff; border-radius:20px;
+    padding:48px; position:relative; overflow:hidden;
+  }
+  .dl::after{content:""; position:absolute; inset:0;
+    background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px);
+    background-size:34px 34px; mask-image:radial-gradient(circle at 85% 20%,#000,transparent 70%); -webkit-mask-image:radial-gradient(circle at 85% 20%,#000,transparent 70%)}
+  .dl-in{position:relative; z-index:1; max-width:34em}
+  .dl h2{color:#fff}
+  .dl p{color:rgba(255,255,255,.82); margin:.4rem 0 26px}
+  .plats{display:flex; flex-wrap:wrap; gap:11px; margin-bottom:18px}
+  .plat{
+    display:flex; align-items:center; gap:10px; padding:12px 17px; border-radius:11px;
+    background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.18); font-size:.9rem; font-weight:500;
+  }
+  .plat.ready{background:#fff; color:var(--ink); cursor:pointer; transition:.18s}
+  .plat.ready:hover{transform:translateY(-2px)}
+  .plat small{font-family:'JetBrains Mono',monospace; font-size:.62rem; opacity:.7; letter-spacing:.05em}
+  .plat.soon{opacity:.7}
+  .notify{font-family:'JetBrains Mono',monospace; font-size:.8rem; color:rgba(255,255,255,.85)}
+  .notify a{color:#fff; text-decoration:underline; text-underline-offset:3px}
+
+  /* ---- footer ---- */
+  footer{padding:40px 0 56px; border-top:1px solid var(--line-soft); margin-top:8px}
+  .foot{display:flex; flex-wrap:wrap; justify-content:space-between; gap:18px; align-items:center; color:var(--muted); font-size:.85rem}
+  .foot .mono{font-size:.76rem}
+  .disclaimer{font-size:.74rem; color:#8a94a3; margin-top:14px; max-width:46em; line-height:1.5}
+
+  @media(max-width:860px){
+    .hero{grid-template-columns:1fr; gap:36px; padding-top:44px}
+    .dl{padding:32px 24px}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important; transition:none !important; scroll-behavior:auto}
+    .sky-ground{transform:none !important}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap bar">
+    <div class="brand">
+      <svg class="glyph" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="14.5" stroke="#0b57d0" stroke-width="1.4"/>
+        <path d="M16 4 L16 28 M4 16 L28 16" stroke="#0b57d0" stroke-width="1" opacity=".4"/>
+        <path d="M16 8 L22 22 L16 18.5 L10 22 Z" fill="#0b57d0"/>
+      </svg>
+      Python<span style="color:var(--blue)">GCS</span>
+    </div>
+    <nav class="links">
+      <a href="#features">Features</a>
+      <a href="#hardware">Hardware</a>
+      <a href="#download">Download</a>
+    </nav>
+    <a class="ghbtn" href="https://github.com/HarryZ0305/python-gcs" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.71 1.23 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.52.56.83 1.28.83 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      Star
+    </a>
+  </div>
+</header>
+
+<div class="wrap">
+  <section class="hero">
+    <div>
+      <span class="eyebrow">Open-source ground control</span>
+      <h1>Fly your build with <span class="b">full situational awareness.</span></h1>
+      <p class="lede">A clean MAVLink ground control station for PX4 multirotors — live telemetry, satellite maps that work in the field, a 3D attitude view, and full mission planning. Built by a builder, for a real Pixhawk.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="#download">Get it <span class="badge">SOON</span></a>
+        <a class="btn btn-ghost" href="https://github.com/HarryZ0305/python-gcs" target="_blank" rel="noopener">View the source</a>
+      </div>
+      <div class="meta-line">v1.0 &middot; status: <b>in development</b> &middot; Windows desktop &middot; PX4 / MAVLink</div>
+    </div>
+
+    <!-- signature: live instrument cluster -->
+    <div class="panel" id="cluster">
+      <div class="scan"></div>
+      <div class="panel-h">
+        <span class="t">TELEMETRY</span>
+        <span class="live"><span class="dot"></span>LINK ACTIVE</span>
+      </div>
+      <div class="gauges">
+        <!-- gauge: altitude -->
+        <div class="gcard">
+          <svg width="96" height="78" viewBox="0 0 96 78">
+            <path d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="#dde5ef" stroke-width="9" stroke-linecap="round"/>
+            <path id="arc-alt" d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="url(#g1)" stroke-width="9" stroke-linecap="round"/>
+            <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2b7fff"/><stop offset="1" stop-color="#0b57d0"/></linearGradient></defs>
+          </svg>
+          <div class="gval mono" data-to="48" data-suffix="">0</div>
+          <div class="gunit">METERS</div>
+          <div class="glabel">ALTITUDE</div>
+        </div>
+        <!-- gauge: speed -->
+        <div class="gcard">
+          <svg width="96" height="78" viewBox="0 0 96 78">
+            <path d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="#dde5ef" stroke-width="9" stroke-linecap="round"/>
+            <path id="arc-spd" d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="url(#g2)" stroke-width="9" stroke-linecap="round"/>
+            <defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0aa4c2"/><stop offset="1" stop-color="#0b57d0"/></linearGradient></defs>
+          </svg>
+          <div class="gval mono" data-to="9.4" data-dec="1">0</div>
+          <div class="gunit">M / S</div>
+          <div class="glabel">GROUND SPD</div>
+        </div>
+        <!-- attitude indicator -->
+        <div class="gcard att">
+          <div class="horizon-wrap">
+            <div class="sky-ground" id="horizon">
+              <div class="sky"></div><div class="ground"></div><div class="hline"></div>
+            </div>
+            <div class="acsym">
+              <svg width="70" height="20" viewBox="0 0 70 20"><path d="M6 10 H26 M44 10 H64" stroke="#ffcc33" stroke-width="3" stroke-linecap="round"/><circle cx="35" cy="10" r="2.5" fill="#ffcc33"/></svg>
+            </div>
+          </div>
+          <div class="glabel">ATTITUDE</div>
+        </div>
+      </div>
+      <div class="readout">
+        <span class="k">LAT</span><span class="v" id="r-lat">32.7157</span>
+        <span class="k">SATS</span><span class="v" id="r-sat">12</span>
+        <span class="k">LON</span><span class="v" id="r-lon">-117.1611</span>
+        <span class="k">BATT</span><span class="v" id="r-bat" style="color:var(--green)">88%</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="ticker">
+  <div class="wrap">
+    <span>FW&nbsp; <b>PX4</b></span>
+    <span>PROTOCOL&nbsp; <b>MAVLink</b></span>
+    <span>FRAME&nbsp; <b>Holybro S500</b></span>
+    <span>FCU&nbsp; <b>Pixhawk 6C</b></span>
+    <span>STACK&nbsp; <b>Python · PyQt6</b></span>
+    <span>SIM&nbsp; <b>PX4 SITL</b></span>
+  </div>
+</div>
+
+<div class="wrap">
+  <section id="features">
+    <div class="sec-head">
+      <span class="sec-eyebrow">What's on the glass</span>
+      <h2>Everything you need on one screen.</h2>
+      <p>The features that ship in v1 — pulled straight from the build, not a wishlist.</p>
+    </div>
+    <div class="grid">
+      <div class="feat"><span class="no mono">01</span>
+        <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 15a9 9 0 0 1 18 0" stroke-linecap="round"/><path d="M12 15l4-4" stroke-linecap="round"/></svg></div>
+        <h3>Live telemetry gauges</h3>
+        <p>Altitude, speed, battery, and GPS strength on sweeping arc gauges — readable at a glance from across the field.</p>
+      </div>
+      <div class="feat"><span class="no mono">02</span>
+        <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3 3 6v15l6-3 6 3 6-3V3l-6 3-6-3Z" stroke-linejoin="round"/><path d="M9 3v15M15 6v15"/></svg></div>
+        <h3>Maps that work offline</h3>
+        <p>Plan on a real map, then cache the area to disk before you drive out — no signal needed once you're standing in the field.</p>
+      </div>
+      <div class="feat"><span class="no mono">03</span>
+        <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5Z" stroke-linejoin="round"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+        <h3>3D attitude view</h3>
+        <p>A live model that banks and pitches with the aircraft, so you can verify orientation before you ever leave the ground.</p>
+      </div>
+      <div class="feat"><span class="no mono">04</span>
+        <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8 6h7a3 3 0 0 1 3 3v6" stroke-linecap="round"/></svg></div>
+        <h3>Mission planning</h3>
+        <p>Drop waypoints with takeoff and landing, upload to the vehicle, and save or load full missions as files for next time.</p>
+      </div>
+      <div class="feat"><span class="no mono">05</span>
+        <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h2M8 14h8" stroke-linecap="round"/></svg></div>
+        <h3>Keyboard flight</h3>
+        <p>Take manual offboard control with the keyboard to nudge the aircraft and bench-test attitude response in the simulator.</p>
+      </div>
+      <div class="feat"><span class="no mono">06</span>
+        <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3Z" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Pre-flight safety checks</h3>
+        <p>A live checklist and alert panel that flags GPS, battery, and link issues — and tells you exactly what's blocking arming.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="hardware" style="padding-top:12px">
+    <div class="panel" style="display:grid; grid-template-columns:1.2fr 1fr; gap:30px; padding:34px; align-items:center">
+      <div>
+        <span class="sec-eyebrow">Built for real iron</span>
+        <h2 style="margin-top:.4rem">Bench-tested against the gear it's made for.</h2>
+        <p style="color:var(--muted)">Python GCS is developed against PX4 SITL and targets a Holybro S500 quad running a Pixhawk 6C. If you fly the same setup, it's built for your bird. If you fly something else PX4-based, it speaks plain MAVLink — give it a try.</p>
+      </div>
+      <div class="readout" style="font-size:.82rem; gap:12px 18px">
+        <span class="k">AIRFRAME</span><span class="v">Holybro S500 V2</span>
+        <span class="k">FLIGHT CTRL</span><span class="v">Pixhawk 6C</span>
+        <span class="k">FIRMWARE</span><span class="v">PX4</span>
+        <span class="k">SIMULATOR</span><span class="v">PX4 SITL · Gazebo</span>
+        <span class="k">LINK</span><span class="v">UDP / MAVLink</span>
+        <span class="k">PLATFORM</span><span class="v">Windows desktop</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="download" style="padding-top:24px">
+    <div class="dl">
+      <div class="dl-in">
+        <span class="sec-eyebrow" style="color:#9ec6ff">Download</span>
+        <h2>Almost cleared for takeoff.</h2>
+        <p>Python GCS is still in active development — v1 isn't packaged yet. Star the repo and you'll see it the moment the first release drops.</p>
+        <div class="plats">
+          <div class="plat soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10 4.5v7H3v-6Zm0 13L10 19.5v-7H3v6ZM11 4.3 21 3v8.5H11V4.3Zm0 15.4L21 21v-8.5H11v7.2Z"/></svg> Windows <small>SOON</small></div>
+          <div class="plat soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 1.6c.1 1-.3 2-.9 2.8-.7.8-1.7 1.4-2.7 1.3-.1-1 .4-2 1-2.7.6-.8 1.7-1.3 2.6-1.4ZM19 17.3c-.5 1.1-.7 1.6-1.3 2.6-.9 1.4-2.1 3.1-3.6 3.1-1.3 0-1.7-.8-3.4-.8-1.8 0-2.2.8-3.5.8-1.5 0-2.6-1.5-3.5-2.9C-.2 16-.6 9.9 2.3 7.6c1-.8 2.4-1.3 3.6-1.3 1.4 0 2.3.8 3.5.8 1.1 0 1.8-.8 3.4-.8 1.1 0 2.3.3 3.2 1.1-2.8 1.6-2.4 5.7.0 6.9Z"/></svg> macOS <small>LATER</small></div>
+          <div class="plat soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg> Linux <small>LATER</small></div>
+        </div>
+        <p class="notify">→ <a href="https://github.com/HarryZ0305/python-gcs" target="_blank" rel="noopener">Star or watch the repo on GitHub</a> to get notified at launch.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="foot">
+      <div class="brand" style="font-size:.95rem">
+        <svg class="glyph" viewBox="0 0 32 32" fill="none" style="width:22px;height:22px"><circle cx="16" cy="16" r="14.5" stroke="#0b57d0" stroke-width="1.4"/><path d="M16 8 L22 22 L16 18.5 L10 22 Z" fill="#0b57d0"/></svg>
+        Python<span style="color:var(--blue)">GCS</span>
+      </div>
+      <span class="mono">© 2026 · MAVLink ground control station</span>
+      <a class="ghbtn" href="https://github.com/HarryZ0305/python-gcs" target="_blank" rel="noopener">github.com/HarryZ0305/python-gcs</a>
+    </div>
+    <p class="disclaimer">Python GCS is an independent, open-source hobby project for controlling PX4 multirotors. Always follow your local drone regulations and operate within visual line of sight. This software is provided as-is, with no warranty — verify all flight behavior in simulation before flying real hardware.</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // arc length of the 270° gauge path
+  function setArc(id, frac){
+    var p = document.getElementById(id);
+    if(!p) return;
+    var len = p.getTotalLength();
+    p.style.strokeDasharray = len;
+    p.style.strokeDashoffset = len;            // start empty
+    if(reduce){ p.style.strokeDashoffset = len*(1-frac); return; }
+    requestAnimationFrame(function(){
+      p.style.transition = 'stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1)';
+      p.style.strokeDashoffset = len * (1 - frac);
+    });
+  }
+
+  // count-up numbers
+  function countUp(el){
+    var to = parseFloat(el.dataset.to), dec = parseInt(el.dataset.dec||'0');
+    if(reduce){ el.textContent = to.toFixed(dec); return; }
+    var t0=null, dur=1400;
+    function step(ts){
+      if(!t0) t0=ts; var k=Math.min((ts-t0)/dur,1);
+      var e = 1-Math.pow(1-k,3);
+      el.textContent = (to*e).toFixed(dec);
+      if(k<1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function run(){
+    setArc('arc-alt', 0.62);
+    setArc('arc-spd', 0.40);
+    document.querySelectorAll('.gval').forEach(countUp);
+  }
+
+  // gentle attitude idle
+  var horizon = document.getElementById('horizon'), t=0;
+  function idle(){
+    t += 0.02;
+    var roll = Math.sin(t)*6, pitch = Math.cos(t*0.7)*7;
+    horizon.style.transform = 'rotate('+roll+'deg) translateY('+pitch+'px)';
+    requestAnimationFrame(idle);
+  }
+
+  // small live readout flicker for realism
+  var sat = document.getElementById('r-sat');
+  function flicker(){
+    var s = 12 + (Math.random()<0.3 ? -1 : 0);
+    sat.textContent = s;
+  }
+
+  window.addEventListener('load', function(){
+    run();
+    if(!reduce){ idle(); setInterval(flicker, 2600); }
+  });
+})();
+</script>
+</body>
+</html>
