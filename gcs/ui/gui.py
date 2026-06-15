@@ -102,6 +102,9 @@ class StatPanel(QFrame):
         row.addWidget(val)
         self._layout.addLayout(row)
         self.rows[key] = val
+        
+        # Prevent vertical squishing by setting minimum height dynamically based on row count
+        self.setMinimumHeight(35 + len(self.rows) * 26)
 
     def set(self, key, text, color="#00e5ff"):
         if key in self.rows:
@@ -422,9 +425,9 @@ class GCSWindow(QMainWindow):
         top = QHBoxLayout(); top.setSpacing(6)
         
         left = QVBoxLayout(); left.setSpacing(6)
-        left.addWidget(self.power_panel, stretch=3)
-        left.addWidget(self.gnss_panel, stretch=4)
-        left.addWidget(self.alert_panel, stretch=3)
+        left.addWidget(self.power_panel, stretch=2)
+        left.addWidget(self.gnss_panel, stretch=5)
+        left.addWidget(self.alert_panel, stretch=5)
         left.addWidget(self.arm_btn, stretch=1)
 
         center = QVBoxLayout(); center.setSpacing(6)
