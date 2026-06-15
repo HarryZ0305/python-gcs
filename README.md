@@ -9,12 +9,17 @@ Developed and tested against **PX4 SITL** (Gazebo `gz_x500`), targeting a **Holy
 ## Features
 
 ### FLY — telemetry & flight control
-- **Live instrument panels** — battery %, voltage, GPS fix type, satellite count, groundspeed, altitude, and attitude (roll / pitch / yaw).
-- **Interactive map** — a Leaflet/OpenStreetMap view embedded in `QWebEngineView` that tracks the vehicle's position live.
-- **3D attitude viewer** — a procedural three.js quadcopter that mirrors the vehicle's real-time orientation.
-- **Command buttons** — ARM / DISARM, flight-mode selector (PX4 modes), TAKEOFF, RTL, and LAND.
-- **Manual movement** — FORWARD / YAW LEFT / YAW RIGHT / HOVER, driven by a continuous PX4 **OFFBOARD** setpoint stream.
-- **Command acknowledgement log** — decodes `COMMAND_ACK` and `STATUSTEXT` messages into plain-English console output (`ACCEPTED`, `DENIED`, `FAILED`, plus autopilot status text), so you always know *why* a command did or didn't take.
+- **Aerospace Dashboard Layout** — A clean 3-column aerospace-themed dashboard containing control systems, large map display, gauges, and attitude metrics.
+- **Custom Arc Gauges** — Beautiful custom half-circle gauges visualizing Altitude (0-120 m), Speed (0-30 m/s), Battery (0-100 %), and GPS Strength (0-20 satellites). They adaptively flash/change colors to warn of low battery or connection issues.
+- **Aircraft Status panel** — Instant text metrics reporting Pitch, Roll, Yaw, Mode, and Throttle.
+- **Interactive map** — An expanded Leaflet/OpenStreetMap view embedded in `QWebEngineView` that tracks the vehicle's position live.
+- **3D attitude viewer** — A procedural three.js quadcopter that mirrors the vehicle's real-time orientation.
+- **Command controls** — ARM / DISARM, flight-mode selector (PX4 modes), TAKEOFF, RTL, and LAND.
+- **Manual flight controls** — FORWARD / YAW LEFT / YAW RIGHT / HOVER, driven by a continuous PX4 **OFFBOARD** setpoint stream.
+- **Console acknowledgement log** — Decodes `COMMAND_ACK` and `STATUSTEXT` messages into plain-English console output (`ACCEPTED`, `DENIED`, `FAILED`, plus autopilot status text) inside a dedicated horizontal console strip.
+
+### CAMERAS — camera feeds
+- **Dedicated cameras panel** — Displays placeholder Front View and Bottom View camera feeds, isolated into their own tab to optimize flight telemetry space.
 
 ### PLAN — mission planning
 - **Click-to-add waypoints** directly on the map, drawn as a dashed flight path.
@@ -51,18 +56,20 @@ Developed and tested against **PX4 SITL** (Gazebo `gz_x500`), targeting a **Holy
 ```
 python-gcs/
 ├── main.py              # Entry point — launches the GUI
-├── connection.py        # connect() + telemetry stream setup (SET_MESSAGE_INTERVAL)
-├── telemetry.py         # MAVLink receive loop, telemetry_data store, mission/param queues
-├── commands.py          # Flight commands + OFFBOARD setpoint streamer + mission/param protocols
-├── logs.py              # Shared timestamped log buffer
 ├── requirements.txt
-└── ui/
-    ├── gui.py           # Main window, layout, tabs, button handlers
-    ├── map_view.py      # Leaflet map widget
-    ├── attitude_view.py # three.js 3D attitude widget
-    ├── console_view.py  # Live log console
-    ├── camera_view.py   # Camera feed placeholders
-    └── setup_view.py    # Parameter management table
+└── gcs/
+    ├── connection.py    # connect() + telemetry stream setup (SET_MESSAGE_INTERVAL)
+    ├── telemetry.py     # MAVLink receive loop, telemetry_data store, mission/param queues
+    ├── commands.py      # Flight commands + OFFBOARD setpoint streamer + mission/param protocols
+    ├── logs.py          # Shared timestamped log buffer
+    └── ui/
+        ├── gui.py       # Main window, layout, tabs, button handlers
+        ├── gauge.py     # Custom radial ArcGauge widget
+        ├── map_view.py  # Leaflet map widget
+        ├── attitude_view.py # three.js 3D attitude widget
+        ├── console_view.py  # Live log console
+        ├── camera_view.py   # Camera feed placeholders
+        └── setup_view.py    # Parameter management table
 ```
 
 ---
