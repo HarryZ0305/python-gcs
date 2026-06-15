@@ -13,16 +13,18 @@ FROM its old ArduCopter conventions TO PX4 — see "PX4 specifics" below.
   Leaflet from CDN inside Python HTML strings. Do NOT add external model files.
 
 ## File responsibilities
-- main.py             entry point: connect, request telemetry, launch GUI
-- connection.py       connect(conn_str) + telemetry setup
-- telemetry.py        pymavlink recv loop -> telemetry_data dict + msg handlers
-- commands.py         flight commands, each a function taking `vehicle` first
-- logs.py             log() writes to a shared buffer the console panel reads
-- ui/gui.py           GCSWindow, StatPanel, 3-column + bottom-bar layout, refresh
-- ui/map_view.py      Leaflet map
-- ui/attitude_view.py three.js quad, update_attitude(roll,pitch,yaw) in RADIANS
-- ui/console_view.py  reads the log buffer
-- ui/camera_view.py   "NO SIGNAL" placeholders (no camera hardware yet)
+- main.py                  entry point: connect, request telemetry, launch GUI
+- gcs/connection.py        connect(conn_str) + telemetry setup
+- gcs/telemetry.py         pymavlink recv loop -> telemetry_data dict + msg handlers
+- gcs/commands.py          flight commands, each a function taking `vehicle` first
+- gcs/logs.py              log() writes to a shared buffer the console panel reads
+- gcs/ui/gui.py            GCSWindow, StatPanel, 3-column + bottom-bar layout, refresh
+- gcs/ui/map_view.py       Leaflet map
+- gcs/ui/attitude_view.py  three.js quad, update_attitude(roll,pitch,yaw) in RADIANS
+- gcs/ui/console_view.py   reads the log buffer
+- gcs/ui/camera_view.py    "NO SIGNAL" placeholders (no camera hardware yet)
+- gcs/ui/setup_view.py     parameter viewer/editor interface
+- gcs/ui/tile_server.py    local offline HTTP tile server and downloader
 
 ## Conventions — follow these exactly
 - vehicle is a pymavlink mavutil connection. Commands send via

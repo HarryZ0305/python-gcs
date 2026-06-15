@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QTextEdit
 from PyQt6.QtGui import QFont
-from logs import log_messages
+from gcs.logs import log_messages
 
 class ConsoleView(QTextEdit):
     def __init__(self):

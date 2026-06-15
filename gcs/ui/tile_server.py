@@ -5,12 +5,12 @@ import urllib.error
 import http.server
 import socketserver
 import threading
-from logs import log
+from gcs.logs import log
 
 PORT = 5501
 server_instance = None
 server_thread = None
-tile_cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'tile_cache'))
+tile_cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tile_cache'))
 static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'static'))
 
 def bootstrap_leaflet():

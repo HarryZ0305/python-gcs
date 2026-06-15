@@ -11,13 +11,13 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
-from telemetry import telemetry_data
-from commands import arm, disarm, set_mode, takeoff, set_offboard_targets, reset_offboard_targets, stop_streamer
-from ui.map_view import MapView
-from ui.attitude_view import AttitudeView
-from ui.console_view import ConsoleView
-from ui.camera_view import CameraView
-from ui.setup_view import SetupView
+from gcs.telemetry import telemetry_data
+from gcs.commands import arm, disarm, set_mode, takeoff, set_offboard_targets, reset_offboard_targets, stop_streamer
+from gcs.ui.map_view import MapView
+from gcs.ui.attitude_view import AttitudeView
+from gcs.ui.console_view import ConsoleView
+from gcs.ui.camera_view import CameraView
+from gcs.ui.setup_view import SetupView
 
 
 class ConnectionWorker(QThread):
@@ -30,7 +30,7 @@ class ConnectionWorker(QThread):
         self.running = True
 
     def run(self):
-        from connection import connect
+        from gcs.connection import connect
         try:
             while self.running:
                 vehicle = connect(self.connection_string, timeout=1.0)
@@ -57,7 +57,7 @@ class MapDownloadWorker(QThread):
         self._cancelled = False
         
     def run(self):
-        from ui.tile_server import download_area_task
+        from gcs.ui.tile_server import download_area_task
         
         def on_progress(curr, total):
             self.progress_signal.emit(curr, total)
@@ -152,7 +152,7 @@ class GCSWindow(QMainWindow):
         self.telemetry_thread = None
         
         if self.vehicle is not None:
-            from commands import _ensure_streamer
+            from gcs.commands import _ensure_streamer
             _ensure_streamer(self.vehicle)
 
         self.setWindowTitle("Python GCS")
@@ -594,14 +594,14 @@ class GCSWindow(QMainWindow):
         self.vehicle = vehicle
         self.setup_view.set_vehicle(vehicle)
         
-        from commands import _ensure_streamer
+        from gcs.commands import _ensure_streamer
         _ensure_streamer(self.vehicle)
         
-        from connection import request_telemetry
-        from telemetry import read_telemetry
+        from gcs.connection import request_telemetry
+        from gcs.telemetry import read_telemetry
         try:
             request_telemetry(self.vehicle)
-            import telemetry
+            import gcs.telemetry as telemetry
             telemetry.telemetry_active = True
             
             self.telemetry_thread = threading.Thread(target=read_telemetry, args=(self.vehicle,), daemon=True)
@@ -618,7 +618,7 @@ class GCSWindow(QMainWindow):
         self.set_controls_enabled(True)
 
         # Automatically request all parameters upon connection
-        from commands import request_all_parameters
+        from gcs.commands import request_all_parameters
         threading.Thread(target=request_all_parameters, args=(self.vehicle,), daemon=True).start()
 
     def on_connection_failed(self, error_msg):
@@ -631,7 +631,7 @@ class GCSWindow(QMainWindow):
             self.conn_worker.wait()
             self.conn_worker = None
             
-        import telemetry
+        import gcs.telemetry as telemetry
         telemetry.telemetry_active = False
         telemetry_data['last_heartbeat_time'] = 0.0
         telemetry_data['prearm_fail'] = ""
@@ -786,7 +786,7 @@ class GCSWindow(QMainWindow):
         if not self.waypoints and not self.takeoff_point and not self.landing_point:
             self.set_status("Upload failed: Sync map first!")
             return
-        from commands import upload_mission
+        from gcs.commands import upload_mission
         threading.Thread(target=upload_mission, args=(
             self.vehicle, self.waypoints, self.takeoff_point, self.landing_point
         ), daemon=True).start()

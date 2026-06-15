@@ -7,8 +7,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QColor
-import telemetry
-from commands import request_all_parameters, set_parameter
+import gcs.telemetry as telemetry
+from gcs.commands import request_all_parameters, set_parameter
 import threading
 
 class SetupView(QWidget):
@@ -203,10 +203,10 @@ class SetupView(QWidget):
         try:
             with open(filename, 'w') as f:
                 json.dump(save_dict, f, indent=4)
-            from logs import log
+            from gcs.logs import log
             log(f"Setup: Successfully saved {len(save_dict)} parameters to {filename}")
         except Exception as e:
-            from logs import log
+            from gcs.logs import log
             log(f"Setup: Failed to save parameters: {e}")
 
     def on_load_params(self):
@@ -223,7 +223,7 @@ class SetupView(QWidget):
             with open(filename, 'r') as f:
                 load_dict = json.load(f)
         except Exception as e:
-            from logs import log
+            from gcs.logs import log
             log(f"Setup: Failed to read parameter file: {e}")
             return
 
@@ -239,7 +239,7 @@ class SetupView(QWidget):
         threading.Thread(target=self._upload_parameters_thread, args=(load_dict,), daemon=True).start()
 
     def _upload_parameters_thread(self, param_dict):
-        from logs import log
+        from gcs.logs import log
         log(f"Setup: Starting write of {len(param_dict)} parameters...")
         success_count = 0
         

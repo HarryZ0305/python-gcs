@@ -309,7 +309,7 @@ MAP_HTML = """
 class MapView(QWebEngineView):
     def __init__(self):
         super().__init__()
-        from ui.tile_server import start_server
+        from gcs.ui.tile_server import start_server
         port = start_server()
         local_html = MAP_HTML.replace("PORT_PLACEHOLDER", str(port))
         self.setHtml(local_html)

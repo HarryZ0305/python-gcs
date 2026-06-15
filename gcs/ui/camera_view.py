@@ -3,7 +3,7 @@ import random
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QTimer, QRect
 from PyQt6.QtGui import QPainter, QColor, QFont, QPen, QImage
-from telemetry import telemetry_data
+from gcs.telemetry import telemetry_data
 
 class CameraView(QWidget):
     def __init__(self, title="CAMERA HUD"):
