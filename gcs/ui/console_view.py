@@ -8,8 +8,8 @@ class ConsoleView(QTextEdit):
         self.setReadOnly(True)
         self.setFont(QFont("Courier New", 9))
         self.setStyleSheet("""
-            background-color: #0a131f; color: #7fffb0;
-            border: 1px solid #2a4a6a; border-radius: 6px; padding: 6px;
+            background-color: #f8fafc; color: #0f172a;
+            border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px;
         """)
         self._shown = 0  # how many messages already displayed
 

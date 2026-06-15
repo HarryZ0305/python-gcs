@@ -19,6 +19,19 @@ from gcs.ui.console_view import ConsoleView
 from gcs.ui.camera_view import CameraView
 from gcs.ui.setup_view import SetupView
 
+THEME = {
+    'bg': '#f5f7fa',           # Soft light gray background
+    'panel_bg': '#ffffff',     # Pure white cards
+    'panel_border': '#cbd5e1', # Light border for card/panel boundaries
+    'primary': '#0b57d0',      # Deep aerospace royal blue
+    'success': '#0f9d58',      # Emerald green
+    'warning': '#e37400',      # Muted amber/orange
+    'danger': '#d93025',       # Crimson red
+    'muted': '#5f6368',        # Medium gray for labels
+    'dark_text': '#0f172a',    # Near-black slate-900 for readable value text
+    'plot_bg': '#f8fafc',      # Slate-50 background for plots
+}
+
 
 class ConnectionWorker(QThread):
     connected = pyqtSignal(object)
@@ -78,13 +91,13 @@ class StatPanel(QFrame):
     """A titled panel holding label:value rows that update live."""
     def __init__(self, title):
         super().__init__()
-        self.setStyleSheet("background-color: #1e2d3d; border-radius: 8px;")
+        self.setStyleSheet(f"background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(10, 8, 10, 8)
         self._layout.setSpacing(4)
 
         t = QLabel(title)
-        t.setStyleSheet("color: #7a9cc4; font-size: 11px; font-weight: bold; border: none;")
+        t.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none;")
         self._layout.addWidget(t)
 
         self.rows = {}
@@ -92,10 +105,10 @@ class StatPanel(QFrame):
     def add_row(self, key, label):
         row = QHBoxLayout()
         lbl = QLabel(label)
-        lbl.setStyleSheet("color: #5a7a9a; font-size: 12px; border: none;")
+        lbl.setStyleSheet(f"color: {THEME['muted']}; font-size: 12px; border: none;")
         val = QLabel("---")
         val.setFont(QFont("Courier New", 13, QFont.Weight.Bold))
-        val.setStyleSheet("color: #00e5ff; border: none;")
+        val.setStyleSheet(f"color: {THEME['dark_text']}; border: none;")
         val.setAlignment(Qt.AlignmentFlag.AlignRight)
         row.addWidget(lbl)
         row.addStretch()
@@ -106,7 +119,9 @@ class StatPanel(QFrame):
         # Prevent vertical squishing by setting minimum height dynamically based on row count
         self.setMinimumHeight(35 + len(self.rows) * 26)
 
-    def set(self, key, text, color="#00e5ff"):
+    def set(self, key, text, color=None):
+        if color is None:
+            color = THEME['primary']
         if key in self.rows:
             self.rows[key].setText(text)
             self.rows[key].setStyleSheet(f"color: {color}; border: none;")
@@ -116,25 +131,25 @@ class TelemetryPlotPanel(QFrame):
     """A live-updating plot panel showing historical telemetry trends."""
     def __init__(self):
         super().__init__()
-        self.setStyleSheet("background-color: #1e2d3d; border-radius: 8px; border: 1px solid #2a4a6a;")
+        self.setStyleSheet(f"background-color: {THEME['panel_bg']}; border-radius: 8px; border: 1px solid {THEME['panel_border']};")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(4)
 
         t = QLabel("TELEMETRY HISTORICAL TRENDS")
-        t.setStyleSheet("color: #7a9cc4; font-size: 11px; font-weight: bold; border: none;")
+        t.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none;")
         layout.addWidget(t)
 
         self.plot_widget = pg.PlotWidget()
-        self.plot_widget.setBackground('#0d1b2a')
+        self.plot_widget.setBackground(THEME['plot_bg'])
         self.plot_widget.showGrid(x=True, y=True, alpha=0.15)
-        self.plot_widget.getAxis('left').setPen(pg.mkPen(color='#7a9cc4', width=1))
-        self.plot_widget.getAxis('bottom').setPen(pg.mkPen(color='#7a9cc4', width=1))
-        self.plot_widget.getAxis('left').setTextPen('#7a9cc4')
-        self.plot_widget.getAxis('bottom').setTextPen('#7a9cc4')
+        self.plot_widget.getAxis('left').setPen(pg.mkPen(color=THEME['muted'], width=1))
+        self.plot_widget.getAxis('bottom').setPen(pg.mkPen(color=THEME['muted'], width=1))
+        self.plot_widget.getAxis('left').setTextPen(THEME['muted'])
+        self.plot_widget.getAxis('bottom').setTextPen(THEME['muted'])
 
-        self.alt_curve = self.plot_widget.plot(pen=pg.mkPen('#00e5ff', width=1.5))
-        self.speed_curve = self.plot_widget.plot(pen=pg.mkPen('#ffaa00', width=1.5))
+        self.alt_curve = self.plot_widget.plot(pen=pg.mkPen(THEME['primary'], width=1.5))
+        self.speed_curve = self.plot_widget.plot(pen=pg.mkPen(THEME['warning'], width=1.5))
         layout.addWidget(self.plot_widget)
 
     def update_plots(self, times, alts, speeds):
@@ -162,40 +177,40 @@ class GCSWindow(QMainWindow):
         self.resize(1280, 800)
 
         root = QWidget()
-        root.setStyleSheet("background-color: #0d1b2a;")
+        root.setStyleSheet(f"background-color: {THEME['bg']};")
         self.setCentralWidget(root)
         
         # Create Tab Widget
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #2a4a6a;
-                background-color: #0d1b2a;
+        self.tabs.setStyleSheet(f"""
+            QTabWidget::pane {{
+                border: 1px solid {THEME['panel_border']};
+                background-color: {THEME['bg']};
                 border-radius: 8px;
-            }
-            QTabBar::tab {
-                background-color: #1e2d3d;
-                color: #7a9cc4;
+            }}
+            QTabBar::tab {{
+                background-color: {THEME['panel_border']};
+                color: {THEME['muted']};
                 font-family: Courier New;
                 font-weight: bold;
                 font-size: 13px;
                 padding: 8px 20px;
                 border-top-left-radius: 6px;
                 border-top-right-radius: 6px;
-                border: 1px solid #2a4a6a;
+                border: 1px solid {THEME['panel_border']};
                 border-bottom: none;
                 margin-right: 4px;
-            }
-            QTabBar::tab:selected {
-                background-color: #0d1b2a;
-                color: #00e5ff;
-                border: 2px solid #00e5ff;
+            }}
+            QTabBar::tab:selected {{
+                background-color: {THEME['panel_bg']};
+                color: {THEME['primary']};
+                border: 2px solid {THEME['primary']};
                 border-bottom: none;
-            }
-            QTabBar::tab:hover {
-                background-color: #2a4a6a;
-                color: #ffffff;
-            }
+            }}
+            QTabBar::tab:hover {{
+                background-color: #e2e8f0;
+                color: {THEME['dark_text']};
+            }}
         """)
 
         # ===== Build all widgets =====
@@ -232,7 +247,7 @@ class GCSWindow(QMainWindow):
         self.arm_btn = QPushButton("ARM")
         self.arm_btn.setFixedHeight(44)
         self.arm_btn.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
-        self.arm_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+        self.arm_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
         self.arm_btn.clicked.connect(self.on_arm_disarm)
 
         # Cameras
@@ -257,7 +272,7 @@ class GCSWindow(QMainWindow):
 
         self.mode_btn = QPushButton("SET MODE")
         self.mode_btn.setFixedHeight(34)
-        self.mode_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.mode_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.mode_btn.clicked.connect(self.on_set_mode)
 
         self.alt_spin = QSpinBox()
@@ -268,51 +283,51 @@ class GCSWindow(QMainWindow):
 
         self.takeoff_btn = QPushButton("TAKEOFF")
         self.takeoff_btn.setFixedHeight(34)
-        self.takeoff_btn.setStyleSheet(self._btn_style("#ffaa00", "#0d1b2a"))
+        self.takeoff_btn.setStyleSheet(self._btn_style(THEME['warning'], THEME['panel_bg']))
         self.takeoff_btn.clicked.connect(self.on_takeoff)
 
         self.rtl_btn = QPushButton("RTL")
         self.rtl_btn.setFixedHeight(34)
-        self.rtl_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.rtl_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.rtl_btn.clicked.connect(self.on_rtl)
 
         self.land_btn = QPushButton("LAND")
         self.land_btn.setFixedHeight(34)
-        self.land_btn.setStyleSheet(self._btn_style("#ffaa00", "#0d1b2a"))
+        self.land_btn.setStyleSheet(self._btn_style(THEME['warning'], THEME['panel_bg']))
         self.land_btn.clicked.connect(self.on_land)
 
         # Manual movement (sim testing: tilt the drone, watch the 3D model)
         self.yawl_btn = QPushButton("YAW L")
         self.yawl_btn.setFixedHeight(34)
-        self.yawl_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.yawl_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.yawl_btn.clicked.connect(self.on_yaw_left)
 
         self.fwd_btn = QPushButton("FORWARD")
         self.fwd_btn.setFixedHeight(34)
-        self.fwd_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+        self.fwd_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
         self.fwd_btn.clicked.connect(self.on_forward)
 
         self.yawr_btn = QPushButton("YAW R")
         self.yawr_btn.setFixedHeight(34)
-        self.yawr_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.yawr_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.yawr_btn.clicked.connect(self.on_yaw_right)
 
         self.hover_btn = QPushButton("HOVER")
         self.hover_btn.setFixedHeight(34)
-        self.hover_btn.setStyleSheet(self._btn_style("#ffaa00", "#0d1b2a"))
+        self.hover_btn.setStyleSheet(self._btn_style(THEME['warning'], THEME['panel_bg']))
         self.hover_btn.clicked.connect(self.on_hover)
 
         self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("color: #7a9cc4; font-size: 11px; border: none;")
+        self.status_label.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none;")
 
         # Action panel container
         self.action_panel = QFrame()
-        self.action_panel.setStyleSheet("background-color: #1e2d3d; border-radius: 8px;")
+        self.action_panel.setStyleSheet(f"background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
         ap = QVBoxLayout(self.action_panel)
         ap.setContentsMargins(10, 8, 10, 8)
         ap.setSpacing(8)
         ap_title = QLabel("ACTION BUTTONS")
-        ap_title.setStyleSheet("color: #7a9cc4; font-size: 11px; font-weight: bold; border: none;")
+        ap_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none;")
         ap.addWidget(ap_title)
         r1 = QHBoxLayout(); r1.addWidget(self.mode_combo); r1.addWidget(self.mode_btn); ap.addLayout(r1)
         r2 = QHBoxLayout(); r2.addWidget(self.alt_spin); r2.addWidget(self.takeoff_btn); ap.addLayout(r2)
@@ -325,49 +340,49 @@ class GCSWindow(QMainWindow):
         ap.addLayout(r4)
         
         self.kb_checkbox = QCheckBox("Enable Keyboard Flight (W/S/A/D/Q/E/I/K)")
-        self.kb_checkbox.setStyleSheet("""
-            QCheckBox {
-                color: #7a9cc4;
+        self.kb_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {THEME['muted']};
                 font-family: Courier New;
                 font-size: 11px;
-            }
-            QCheckBox::indicator {
+            }}
+            QCheckBox::indicator {{
                 width: 13px;
                 height: 13px;
-                border: 1px solid #2a4a6a;
-                background: #0d1b2a;
-            }
-            QCheckBox::indicator:checked {
-                background: #00e5ff;
-                border-color: #00e5ff;
-            }
+                border: 1px solid {THEME['panel_border']};
+                background: {THEME['panel_bg']};
+            }}
+            QCheckBox::indicator:checked {{
+                background: {THEME['primary']};
+                border-color: {THEME['primary']};
+            }}
         """)
         ap.addWidget(self.kb_checkbox)
         ap.addWidget(self.status_label)
 
         # Mission planning panel container
         self.mission_panel = QFrame()
-        self.mission_panel.setStyleSheet("background-color: #1e2d3d; border-radius: 8px;")
+        self.mission_panel.setStyleSheet(f"background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
         mp = QVBoxLayout(self.mission_panel)
         mp.setContentsMargins(10, 8, 10, 8)
         mp.setSpacing(6)
         
         mp_title = QLabel("MISSION PLANNING")
-        mp_title.setStyleSheet("color: #7a9cc4; font-size: 11px; font-weight: bold; border: none;")
+        mp_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none;")
         mp.addWidget(mp_title)
         
         self.wp_list = QListWidget()
-        self.wp_list.setStyleSheet("""
-            QListWidget {
-                background-color: #0d1b2a; color: #00e5ff;
-                border: 1px solid #2a4a6a; border-radius: 4px;
+        self.wp_list.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {THEME['panel_bg']}; color: {THEME['primary']};
+                border: 1px solid {THEME['panel_border']}; border-radius: 4px;
                 font-family: Courier New; font-size: 11px;
-            }
+            }}
         """)
         mp.addWidget(self.wp_list)
         
         self.wp_progress_label = QLabel("Active Waypoint: ---")
-        self.wp_progress_label.setStyleSheet("color: #00e5ff; font-family: Courier New; font-size: 11px; border: none;")
+        self.wp_progress_label.setStyleSheet(f"color: {THEME['primary']}; font-family: Courier New; font-size: 11px; border: none;")
         mp.addWidget(self.wp_progress_label)
         
         m_row = QHBoxLayout()
@@ -375,17 +390,17 @@ class GCSWindow(QMainWindow):
         
         self.sync_btn = QPushButton("SYNC MAP")
         self.sync_btn.setFixedHeight(30)
-        self.sync_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.sync_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.sync_btn.clicked.connect(self.on_sync_map)
         
         self.upload_btn = QPushButton("UPLOAD")
         self.upload_btn.setFixedHeight(30)
-        self.upload_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+        self.upload_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
         self.upload_btn.clicked.connect(self.on_upload_mission)
 
         self.clear_btn = QPushButton("CLEAR")
         self.clear_btn.setFixedHeight(30)
-        self.clear_btn.setStyleSheet(self._btn_style("#ff4444", "#0d1b2a"))
+        self.clear_btn.setStyleSheet(self._btn_style(THEME['danger'], THEME['panel_bg']))
         self.clear_btn.clicked.connect(self.on_clear_mission)
         
         m_row.addWidget(self.sync_btn)
@@ -398,12 +413,12 @@ class GCSWindow(QMainWindow):
         
         self.import_btn = QPushButton("IMPORT")
         self.import_btn.setFixedHeight(30)
-        self.import_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.import_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.import_btn.clicked.connect(self.on_import_mission)
         
         self.export_btn = QPushButton("EXPORT")
         self.export_btn.setFixedHeight(30)
-        self.export_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.export_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.export_btn.clicked.connect(self.on_export_mission)
         
         m_row2.addWidget(self.import_btn)
@@ -412,7 +427,7 @@ class GCSWindow(QMainWindow):
 
         self.start_btn = QPushButton("START MISSION")
         self.start_btn.setFixedHeight(34)
-        self.start_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+        self.start_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
         self.start_btn.clicked.connect(self.on_start_mission)
         mp.addWidget(self.start_btn)
 
@@ -444,7 +459,7 @@ class GCSWindow(QMainWindow):
         map_bar = QHBoxLayout()
         self.download_map_btn = QPushButton("DOWNLOAD OFFLINE MAP")
         self.download_map_btn.setFixedHeight(28)
-        self.download_map_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.download_map_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.download_map_btn.clicked.connect(self.on_download_offline_area)
         map_bar.addWidget(self.download_map_btn)
         map_container.addLayout(map_bar)
@@ -492,15 +507,16 @@ class GCSWindow(QMainWindow):
         self.tabs.addTab(self.setup_view, "SETUP")
 
         # ===== Assemble Central Layout =====
+        # Assemble Central Layout =====
         root = QWidget()
-        root.setStyleSheet("background-color: #0d1b2a;")
+        root.setStyleSheet(f"background-color: {THEME['bg']};")
         self.setCentralWidget(root)
         outer = QVBoxLayout(root)
         outer.setContentsMargins(8, 8, 8, 8)
 
         # Connection Panel
         self.conn_panel = QFrame()
-        self.conn_panel.setStyleSheet("background-color: #1e2d3d; border-radius: 8px; border: 1px solid #2a4a6a;")
+        self.conn_panel.setStyleSheet(f"background-color: {THEME['panel_bg']}; border-radius: 8px; border: 1px solid {THEME['panel_border']};")
         self.conn_panel.setFixedHeight(50)
         
         conn_layout = QHBoxLayout(self.conn_panel)
@@ -508,29 +524,29 @@ class GCSWindow(QMainWindow):
         conn_layout.setSpacing(10)
         
         conn_lbl = QLabel("CONNECTION:")
-        conn_lbl.setStyleSheet("color: #7a9cc4; font-family: Courier New; font-weight: bold; font-size: 12px; border: none;")
+        conn_lbl.setStyleSheet(f"color: {THEME['primary']}; font-family: Courier New; font-weight: bold; font-size: 12px; border: none;")
         conn_layout.addWidget(conn_lbl)
         
         self.conn_input = QLineEdit()
         self.conn_input.setText("udpin:0.0.0.0:14540")
-        self.conn_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #0d1b2a; color: #00e5ff;
-                border: 1px solid #2a4a6a; border-radius: 4px;
+        self.conn_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {THEME['panel_bg']}; color: {THEME['dark_text']};
+                border: 1px solid {THEME['panel_border']}; border-radius: 4px;
                 padding: 4px 8px; font-family: Courier New; font-size: 12px;
-            }
+            }}
         """)
         conn_layout.addWidget(self.conn_input, stretch=1)
         
         self.conn_btn = QPushButton("CONNECT")
         self.conn_btn.setFixedWidth(120)
         self.conn_btn.setFixedHeight(30)
-        self.conn_btn.setStyleSheet(self._btn_style("#00e5ff", "#0d1b2a"))
+        self.conn_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.conn_btn.clicked.connect(self.on_connect_toggle)
         conn_layout.addWidget(self.conn_btn)
         
         self.conn_status = QLabel("DISCONNECTED")
-        self.conn_status.setStyleSheet("color: #ff4444; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
         conn_layout.addWidget(self.conn_status)
 
         outer.addWidget(self.conn_panel)
@@ -556,20 +572,20 @@ class GCSWindow(QMainWindow):
                 font-family: Courier New; font-weight: bold;
             }}
             QPushButton:hover {{ background-color: {color}; color: {bg}; }}
-            QPushButton:disabled {{ border-color: #2a4a6a; color: #2a4a6a; }}
+            QPushButton:disabled {{ border-color: #cbd5e1; color: #cbd5e1; }}
         """
 
     def _input_style(self):
-        return """
-            QComboBox, QSpinBox {
-                background-color: #0d1b2a; color: #00e5ff;
-                border: 1px solid #2a4a6a; border-radius: 4px;
+        return f"""
+            QComboBox, QSpinBox {{
+                background-color: {THEME['panel_bg']}; color: {THEME['dark_text']};
+                border: 1px solid {THEME['panel_border']}; border-radius: 4px;
                 padding: 4px 8px; font-family: Courier New; font-size: 12px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #0d1b2a; color: #00e5ff;
-                selection-background-color: #2a4a6a;
-            }
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {THEME['panel_bg']}; color: {THEME['dark_text']};
+                selection-background-color: {THEME['panel_border']};
+            }}
         """
 
     def on_connect_toggle(self):
@@ -586,7 +602,7 @@ class GCSWindow(QMainWindow):
             self.conn_btn.setEnabled(False)
             self.conn_input.setEnabled(False)
             self.conn_status.setText("CONNECTING")
-            self.conn_status.setStyleSheet("color: #ffaa00; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+            self.conn_status.setStyleSheet(f"color: {THEME['warning']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
             
             self.conn_worker = ConnectionWorker(connection_string)
             self.conn_worker.connected.connect(self.on_connected)
@@ -659,15 +675,15 @@ class GCSWindow(QMainWindow):
         self.held_keys.clear()
         if hasattr(self, 'plot_panel'):
             self.plot_panel.plot_widget.clear()
-            self.plot_panel.alt_curve = self.plot_panel.plot_widget.plot(pen=pg.mkPen('#00e5ff', width=1.5))
-            self.plot_panel.speed_curve = self.plot_panel.plot_widget.plot(pen=pg.mkPen('#ffaa00', width=1.5))
+            self.plot_panel.alt_curve = self.plot_panel.plot_widget.plot(pen=pg.mkPen(THEME['primary'], width=1.5))
+            self.plot_panel.speed_curve = self.plot_panel.plot_widget.plot(pen=pg.mkPen(THEME['warning'], width=1.5))
 
         self.set_status("Disconnected.")
         self.conn_btn.setText("CONNECT")
         self.conn_btn.setEnabled(True)
         self.conn_input.setEnabled(True)
         self.conn_status.setText("DISCONNECTED")
-        self.conn_status.setStyleSheet("color: #ff4444; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
         self.set_controls_enabled(False)
 
     def set_controls_enabled(self, enabled):
@@ -1009,24 +1025,24 @@ class GCSWindow(QMainWindow):
         d = telemetry_data
 
         if not self.vehicle:
-            self.power_panel.set('battery', "---", "#5a7a9a")
-            self.power_panel.set('voltage', "---", "#5a7a9a")
-            self.gnss_panel.set('fix', "DISCONNECTED", "#ff4444")
-            self.gnss_panel.set('sats', "---", "#5a7a9a")
-            self.gnss_panel.set('lat', "---", "#5a7a9a")
-            self.gnss_panel.set('lon', "---", "#5a7a9a")
-            self.gnss_panel.set('alt', "---", "#5a7a9a")
-            self.attspeed_panel.set('roll', "---", "#5a7a9a")
-            self.attspeed_panel.set('pitch', "---", "#5a7a9a")
-            self.attspeed_panel.set('yaw', "---", "#5a7a9a")
-            self.attspeed_panel.set('speed', "---", "#5a7a9a")
-            self.alert_panel.set('status', "DISCONNECTED", "#ff4444")
-            self.alert_panel.set('alert_msg', "NO TELEMETRY", "#5a7a9a")
-            self.alert_panel.set('check_link', "DISCONNECTED", "#ff4444")
-            self.alert_panel.set('check_gps', "NO TELEMETRY", "#5a7a9a")
-            self.alert_panel.set('check_batt', "NO TELEMETRY", "#5a7a9a")
+            self.power_panel.set('battery', "---", THEME['muted'])
+            self.power_panel.set('voltage', "---", THEME['muted'])
+            self.gnss_panel.set('fix', "DISCONNECTED", THEME['danger'])
+            self.gnss_panel.set('sats', "---", THEME['muted'])
+            self.gnss_panel.set('lat', "---", THEME['muted'])
+            self.gnss_panel.set('lon', "---", THEME['muted'])
+            self.gnss_panel.set('alt', "---", THEME['muted'])
+            self.attspeed_panel.set('roll', "---", THEME['muted'])
+            self.attspeed_panel.set('pitch', "---", THEME['muted'])
+            self.attspeed_panel.set('yaw', "---", THEME['muted'])
+            self.attspeed_panel.set('speed', "---", THEME['muted'])
+            self.alert_panel.set('status', "DISCONNECTED", THEME['danger'])
+            self.alert_panel.set('alert_msg', "NO TELEMETRY", THEME['muted'])
+            self.alert_panel.set('check_link', "DISCONNECTED", THEME['danger'])
+            self.alert_panel.set('check_gps', "NO TELEMETRY", THEME['muted'])
+            self.alert_panel.set('check_batt', "NO TELEMETRY", THEME['muted'])
             self.conn_status.setText("DISCONNECTED")
-            self.conn_status.setStyleSheet("color: #ff4444; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+            self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
             self.console_view.refresh_logs()
             return
 
@@ -1035,24 +1051,24 @@ class GCSWindow(QMainWindow):
         is_link_lost = last_hb == 0.0 or (time.time() - last_hb) > 3.0
 
         if is_link_lost:
-            val_color = "#5a7a9a"
-            battery_color = "#5a7a9a"
-            fix_color = "#5a7a9a"
+            val_color = THEME['muted']
+            battery_color = THEME['muted']
+            fix_color = THEME['muted']
             status_text = "LINK LOST"
-            status_color = "#ff4444"
+            status_color = THEME['danger']
             alert_text = "NO TELEMETRY"
-            alert_color = "#5a7a9a"
-            self.alert_panel.set('check_link', "LOST", "#ff4444")
-            self.alert_panel.set('check_gps', "NO TELEMETRY", "#5a7a9a")
-            self.alert_panel.set('check_batt', "NO TELEMETRY", "#5a7a9a")
+            alert_color = THEME['muted']
+            self.alert_panel.set('check_link', "LOST", THEME['danger'])
+            self.alert_panel.set('check_gps', "NO TELEMETRY", THEME['muted'])
+            self.alert_panel.set('check_batt', "NO TELEMETRY", THEME['muted'])
             self.conn_status.setText("LINK LOST")
-            self.conn_status.setStyleSheet("color: #ff4444; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+            self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
         else:
-            val_color = "#00e5ff"
-            battery_color = "#ff4444" if d['battery'] < 20 else "#00e5ff"
-            fix_labels_colors = {0: "#ff4444", 1: "#ff4444", 2: "#ffaa00", 3: "#44ff88",
-                                 4: "#44ff88", 5: "#44ff88", 6: "#44ff88"}
-            fix_color = fix_labels_colors.get(d['fix_type'], "#ff4444")
+            val_color = THEME['dark_text']
+            battery_color = THEME['danger'] if d['battery'] < 20 else THEME['dark_text']
+            fix_labels_colors = {0: THEME['danger'], 1: THEME['danger'], 2: THEME['warning'], 3: THEME['success'],
+                                 4: THEME['success'], 5: THEME['success'], 6: THEME['success']}
+            fix_color = fix_labels_colors.get(d['fix_type'], THEME['danger'])
             
             # Check warning alerts
             active_alerts = []
@@ -1074,36 +1090,36 @@ class GCSWindow(QMainWindow):
 
             if active_alerts:
                 status_text = "ARM BLOCKED"
-                status_color = "#ff4444"
+                status_color = THEME['danger']
                 alert_text = ", ".join(active_alerts)
                 if len(alert_text) > 22:
                     alert_text = alert_text[:19] + "..."
-                alert_color = "#ff4444"
+                alert_color = THEME['danger']
             else:
                 status_text = "SAFE"
-                status_color = "#44ff88"
+                status_color = THEME['success']
                 alert_text = "NONE"
-                alert_color = "#44ff88"
+                alert_color = THEME['success']
 
-            self.alert_panel.set('check_link', "OK", "#44ff88")
+            self.alert_panel.set('check_link', "OK", THEME['success'])
             gps_ok = d['fix_type'] >= 3
             gps_text = "3D FIX" if gps_ok else f"NO 3D ({d['fix_type']}D)"
-            gps_color = "#44ff88" if gps_ok else "#ff4444"
+            gps_color = THEME['success'] if gps_ok else THEME['danger']
             self.alert_panel.set('check_gps', gps_text, gps_color)
             
             if d['battery'] >= 30:
                 batt_text = "OK"
-                batt_color = "#44ff88"
+                batt_color = THEME['success']
             elif d['battery'] >= 20:
                 batt_text = "LOW"
-                batt_color = "#ffaa00"
+                batt_color = THEME['warning']
             else:
                 batt_text = "CRIT"
-                batt_color = "#ff4444"
+                batt_color = THEME['danger']
             self.alert_panel.set('check_batt', f"{batt_text} ({d['battery']}%)", batt_color)
 
             self.conn_status.setText("CONNECTED")
-            self.conn_status.setStyleSheet("color: #44ff88; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+            self.conn_status.setStyleSheet(f"color: {THEME['success']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
 
             # Record history for plotting
             elapsed = time.time() - self.start_time
@@ -1141,17 +1157,17 @@ class GCSWindow(QMainWindow):
 
         self.alert_panel.set('status', status_text, status_color)
         if alert_text != "NONE" and self._alert_flash_toggle and not is_link_lost:
-            self.alert_panel.set('alert_msg', alert_text, "#ffffff") # flash to white text
+            self.alert_panel.set('alert_msg', alert_text, THEME['dark_text']) # flash text
         else:
             self.alert_panel.set('alert_msg', alert_text, alert_color)
 
         if not is_link_lost:
             if d['armed']:
                 self.arm_btn.setText("DISARM")
-                self.arm_btn.setStyleSheet(self._btn_style("#ff4444", "#0d1b2a"))
+                self.arm_btn.setStyleSheet(self._btn_style(THEME['danger'], THEME['panel_bg']))
             else:
                 self.arm_btn.setText("ARM")
-                self.arm_btn.setStyleSheet(self._btn_style("#44ff88", "#0d1b2a"))
+                self.arm_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
             
             self.map_view.update_position(d['lat'], d['lon'])
             self.plan_map_view.update_position(d['lat'], d['lon'])

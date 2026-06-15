@@ -7,16 +7,17 @@ MAP_HTML = """
     <meta charset="utf-8"/>
     <style>
         body { margin: 0; padding: 0; }
-        #map { width: 100%; height: 100vh; background: #0d1b2a; }
+        #map { width: 100%; height: 100vh; background: #f5f7fa; }
         #mode-controls {
             position: absolute;
             top: 10px;
             right: 10px;
             z-index: 1000;
-            background: rgba(30, 45, 61, 0.9);
+            background: rgba(255, 255, 255, 0.95);
             padding: 8px;
             border-radius: 6px;
-            border: 2px solid #2a4a6a;
+            border: 2px solid #cbd5e1;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             font-family: 'Courier New', monospace;
             display: flex;
             flex-direction: column;
@@ -32,16 +33,16 @@ MAP_HTML = """
             transition: all 0.2s ease;
         }
         #btn-takeoff {
-            border: 1.5px solid #44ff88;
-            color: #44ff88;
+            border: 1.5px solid #0f9d58;
+            color: #0f9d58;
         }
         #btn-waypoint {
-            border: 1.5px solid #00e5ff;
-            color: #00e5ff;
+            border: 1.5px solid #0b57d0;
+            color: #0b57d0;
         }
         #btn-landing {
-            border: 1.5px solid #ff4444;
-            color: #ff4444;
+            border: 1.5px solid #d93025;
+            color: #d93025;
         }
     </style>
     <link rel="stylesheet" href="http://localhost:PORT_PLACEHOLDER/static/leaflet.css"/>
@@ -64,14 +65,14 @@ MAP_HTML = """
         }).addTo(map);
 
         var droneIcon = L.divIcon({
-            html: '<div style="width:16px;height:16px;background:#00e5ff;border:2px solid white;border-radius:50%;box-shadow:0 0 8px #00e5ff;"></div>',
+            html: '<div style="width:16px;height:16px;background:#0b57d0;border:2px solid white;border-radius:50%;box-shadow:0 0 8px #0b57d0;"></div>',
             iconSize: [16, 16],
             iconAnchor: [8, 8],
             className: ''
         });
 
         var marker = L.marker([32.7157, -117.1611], {icon: droneIcon}).addTo(map);
-        var path = L.polyline([], {color: '#00e5ff', weight: 2, opacity: 0.7}).addTo(map);
+        var path = L.polyline([], {color: '#0b57d0', weight: 2, opacity: 0.7}).addTo(map);
         var positions = [];
 
         // Mission states
@@ -108,21 +109,21 @@ MAP_HTML = """
             
             // Reset button active styles to empty outline
             takeoffBtn.style.background = 'none';
-            takeoffBtn.style.color = '#44ff88';
+            takeoffBtn.style.color = '#0f9d58';
             waypointBtn.style.background = 'none';
-            waypointBtn.style.color = '#00e5ff';
+            waypointBtn.style.color = '#0b57d0';
             landingBtn.style.background = 'none';
-            landingBtn.style.color = '#ff4444';
+            landingBtn.style.color = '#d93025';
             
             // Set active mode style
             if (mode === 'takeoff') {
-                takeoffBtn.style.background = '#44ff88';
-                takeoffBtn.style.color = '#0d1b2a';
+                takeoffBtn.style.background = '#0f9d58';
+                takeoffBtn.style.color = '#ffffff';
             } else if (mode === 'waypoint') {
-                waypointBtn.style.background = '#00e5ff';
-                waypointBtn.style.color = '#0d1b2a';
+                waypointBtn.style.background = '#0b57d0';
+                waypointBtn.style.color = '#ffffff';
             } else if (mode === 'landing') {
-                landingBtn.style.background = '#ff4444';
+                landingBtn.style.background = '#d93025';
                 landingBtn.style.color = '#ffffff';
             }
         }
