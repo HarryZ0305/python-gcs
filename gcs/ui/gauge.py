@@ -16,10 +16,10 @@ class ArcGauge(QWidget):
         self.accent_color = QColor(accent_color)
         self.value = 0.0
         
-        # Color palette matching the light theme
-        self.track_color = QColor('#cbd5e1')  # THEME['panel_border'] fallback
-        self.text_color = QColor('#0f172a')   # THEME['dark_text'] fallback
-        self.muted_color = QColor('#5f6368')  # THEME['muted'] fallback
+        # Color palette matching the dark theme
+        self.track_color = QColor('#1e293b')  # THEME['panel_border'] fallback
+        self.text_color = QColor('#f8fafc')   # THEME['dark_text'] fallback
+        self.muted_color = QColor('#64748b')  # THEME['muted'] fallback
         
         self.setMinimumSize(100, 110)
 

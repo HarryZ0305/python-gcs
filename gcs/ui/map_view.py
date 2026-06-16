@@ -6,18 +6,19 @@ MAP_HTML = """
 <head>
     <meta charset="utf-8"/>
     <style>
-        body { margin: 0; padding: 0; }
-        #map { width: 100%; height: 100vh; background: #f5f7fa; }
+        body { margin: 0; padding: 0; background: #060a13; }
+        #map { width: 100%; height: 100vh; background: #060a13; filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%); }
         #mode-controls {
             position: absolute;
             top: 10px;
             right: 10px;
             z-index: 1000;
-            background: rgba(255, 255, 255, 0.95);
+            background: rgba(15, 23, 42, 0.95);
             padding: 8px;
             border-radius: 6px;
-            border: 2px solid #cbd5e1;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 2px solid #1e293b;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+            color: #f8fafc;
             font-family: 'Courier New', monospace;
             display: flex;
             flex-direction: column;
@@ -33,16 +34,16 @@ MAP_HTML = """
             transition: all 0.2s ease;
         }
         #btn-takeoff {
-            border: 1.5px solid #0f9d58;
-            color: #0f9d58;
+            border: 1.5px solid #39ff14;
+            color: #39ff14;
         }
         #btn-waypoint {
-            border: 1.5px solid #0b57d0;
-            color: #0b57d0;
+            border: 1.5px solid #00e5ff;
+            color: #00e5ff;
         }
         #btn-landing {
-            border: 1.5px solid #d93025;
-            color: #d93025;
+            border: 1.5px solid #ff003c;
+            color: #ff003c;
         }
     </style>
     <link rel="stylesheet" href="http://localhost:PORT_PLACEHOLDER/static/leaflet.css"/>
@@ -65,14 +66,14 @@ MAP_HTML = """
         }).addTo(map);
 
         var droneIcon = L.divIcon({
-            html: '<div style="width:16px;height:16px;background:#0b57d0;border:2px solid white;border-radius:50%;box-shadow:0 0 8px #0b57d0;"></div>',
+            html: '<div style="width:16px;height:16px;background:#00e5ff;border:2px solid white;border-radius:50%;box-shadow:0 0 8px #00e5ff;"></div>',
             iconSize: [16, 16],
             iconAnchor: [8, 8],
             className: ''
         });
 
         var marker = L.marker([32.7157, -117.1611], {icon: droneIcon}).addTo(map);
-        var path = L.polyline([], {color: '#0b57d0', weight: 2, opacity: 0.7}).addTo(map);
+        var path = L.polyline([], {color: '#00e5ff', weight: 2, opacity: 0.7}).addTo(map);
         var positions = [];
 
         // Mission states
@@ -109,21 +110,21 @@ MAP_HTML = """
             
             // Reset button active styles to empty outline
             takeoffBtn.style.background = 'none';
-            takeoffBtn.style.color = '#0f9d58';
+            takeoffBtn.style.color = '#39ff14';
             waypointBtn.style.background = 'none';
-            waypointBtn.style.color = '#0b57d0';
+            waypointBtn.style.color = '#00e5ff';
             landingBtn.style.background = 'none';
-            landingBtn.style.color = '#d93025';
+            landingBtn.style.color = '#ff003c';
             
             // Set active mode style
             if (mode === 'takeoff') {
-                takeoffBtn.style.background = '#0f9d58';
-                takeoffBtn.style.color = '#ffffff';
+                takeoffBtn.style.background = '#39ff14';
+                takeoffBtn.style.color = '#0f172a';
             } else if (mode === 'waypoint') {
-                waypointBtn.style.background = '#0b57d0';
-                waypointBtn.style.color = '#ffffff';
+                waypointBtn.style.background = '#00e5ff';
+                waypointBtn.style.color = '#0f172a';
             } else if (mode === 'landing') {
-                landingBtn.style.background = '#d93025';
+                landingBtn.style.background = '#ff003c';
                 landingBtn.style.color = '#ffffff';
             }
         }
@@ -149,7 +150,7 @@ MAP_HTML = """
                 map.removeLayer(takeoffMarker);
             }
             var icon = L.divIcon({
-                html: '<div style="width:20px;height:20px;background:#44ff88;border:2px solid white;border-radius:50%;box-shadow:0 0 8px #44ff88;text-align:center;color:#0d1b2a;font-size:11px;line-height:20px;font-weight:bold;">T</div>',
+                html: '<div style="width:20px;height:20px;background:#39ff14;border:2px solid white;border-radius:50%;box-shadow:0 0 8px #39ff14;text-align:center;color:#0d1b2a;font-size:11px;line-height:20px;font-weight:bold;">T</div>',
                 iconSize: [20, 20],
                 iconAnchor: [10, 10],
                 className: ''
@@ -165,7 +166,7 @@ MAP_HTML = """
                 map.removeLayer(landingMarker);
             }
             var icon = L.divIcon({
-                html: '<div style="width:20px;height:20px;background:#ff4444;border:2px solid white;border-radius:50%;box-shadow:0 0 8px #ff4444;text-align:center;color:#ffffff;font-size:11px;line-height:20px;font-weight:bold;">L</div>',
+                html: '<div style="width:20px;height:20px;background:#ff003c;border:2px solid white;border-radius:50%;box-shadow:0 0 8px #ff003c;text-align:center;color:#ffffff;font-size:11px;line-height:20px;font-weight:bold;">L</div>',
                 iconSize: [20, 20],
                 iconAnchor: [10, 10],
                 className: ''
@@ -239,13 +240,13 @@ MAP_HTML = """
             if (hasTakeoff) {
                 if (seq === 1) {
                     targetMarker = takeoffMarker;
-                    highlightColor = '#44ff88'; // green for takeoff
+                    highlightColor = '#39ff14'; // green for takeoff
                 } else if (seq > 1 && seq <= 1 + waypoints.length) {
                     targetMarker = waypointMarkers[seq - 2];
                     highlightColor = '#ffaa00'; // amber for waypoints
                 } else if (hasLanding && seq === 2 + waypoints.length) {
                     targetMarker = landingMarker;
-                    highlightColor = '#ff4444'; // red for landing
+                    highlightColor = '#ff003c'; // red for landing
                 }
             } else {
                 if (seq >= 1 && seq <= waypoints.length) {
@@ -253,7 +254,7 @@ MAP_HTML = """
                     highlightColor = '#ffaa00';
                 } else if (hasLanding && seq === 1 + waypoints.length) {
                     targetMarker = landingMarker;
-                    highlightColor = '#ff4444';
+                    highlightColor = '#ff003c';
                 }
             }
 

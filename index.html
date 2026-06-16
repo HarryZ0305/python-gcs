@@ -10,12 +10,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
   :root{
-    --bg:#eaeef4; --bg-2:#f5f8fc; --surface:#ffffff;
-    --line:#d4dce7; --line-soft:#e4eaf2;
-    --ink:#0d1626; --muted:#5b6675;
-    --blue:#0b57d0; --blue-bright:#2b7fff; --cyan:#0aa4c2;
-    --green:#0f9d58; --amber:#e08200; --red:#d93025;
-    --shadow:0 1px 2px rgba(13,22,38,.04), 0 12px 32px -12px rgba(13,22,38,.18);
+    --bg:#060a13; --bg-2:#0f172a; --surface:#0f172a;
+    --line:#1e293b; --line-soft:#1e293b;
+    --ink:#f8fafc; --muted:#64748b;
+    --blue:#00e5ff; --blue-bright:#00e5ff; --cyan:#00e5ff;
+    --green:#39ff14; --amber:#ffaa00; --red:#ff003c;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 32px -12px rgba(0,0,0,.8);
     --r:14px;
   }
   *{box-sizing:border-box}
@@ -43,7 +43,7 @@
   header{
     position:sticky; top:0; z-index:50;
     backdrop-filter:saturate(1.2) blur(10px);
-    background:rgba(234,238,244,.78);
+    background:rgba(6,10,19,.78);
     border-bottom:1px solid var(--line-soft);
   }
   .bar{display:flex; align-items:center; justify-content:space-between; height:62px}
@@ -79,10 +79,10 @@
     padding:14px 22px; border-radius:11px; border:1px solid transparent; transition:.18s;
     display:inline-flex; align-items:center; gap:10px;
   }
-  .btn-primary{background:var(--blue); color:#fff; box-shadow:0 8px 22px -8px rgba(11,87,208,.6)}
-  .btn-primary:hover{background:#0a4cb8; transform:translateY(-2px)}
+  .btn-primary{background:var(--blue); color:#0f172a; box-shadow:0 8px 22px -8px rgba(0,229,255,.6)}
+  .btn-primary:hover{background:#00b8cc; transform:translateY(-2px)}
   .btn-ghost{background:var(--surface); border-color:var(--line); color:var(--ink)}
-  .btn-ghost:hover{border-color:var(--muted); transform:translateY(-2px)}
+  .btn-ghost:hover{border-color:var(--blue); color:var(--blue); transform:translateY(-2px)}
   .badge{
     font-family:'JetBrains Mono',monospace; font-size:.62rem; font-weight:600; letter-spacing:.08em;
     background:rgba(255,255,255,.22); padding:3px 7px; border-radius:5px;
@@ -92,7 +92,7 @@
 
   /* ---- hero instrument panel (signature) ---- */
   .panel{
-    background:linear-gradient(180deg,#fff, #fbfdff);
+    background:linear-gradient(180deg,#0f172a, #060a13);
     border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow);
     padding:18px; position:relative; overflow:hidden;
   }
@@ -111,8 +111,8 @@
   .att{position:relative}
   .horizon-wrap{width:118px; height:118px; border-radius:50%; overflow:hidden; border:3px solid #cdd7e4; position:relative; margin:2px auto 0}
   .sky-ground{position:absolute; left:-30%; top:-30%; width:160%; height:160%; transition:transform .1s linear}
-  .sky{position:absolute; inset:0 0 50% 0; background:linear-gradient(#bfe0ff,#9cc9f5)}
-  .ground{position:absolute; inset:50% 0 0 0; background:linear-gradient(#b08a63,#8f6f4d)}
+  .sky{position:absolute; inset:0 0 50% 0; background:linear-gradient(#0b57d0,#0a4cb8)}
+  .ground{position:absolute; inset:50% 0 0 0; background:linear-gradient(#4b3c2e,#3f3226)}
   .hline{position:absolute; left:0; right:0; top:50%; height:2px; background:#fff; transform:translateY(-1px)}
   .acsym{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none}
   .acsym svg{filter:drop-shadow(0 1px 1px rgba(0,0,0,.25))}
@@ -122,7 +122,7 @@
   @keyframes scan{to{top:120%}}
 
   /* ---- spec ticker ---- */
-  .ticker{border-top:1px solid var(--line-soft); border-bottom:1px solid var(--line-soft); background:rgba(255,255,255,.5); margin-top:30px}
+  .ticker{border-top:1px solid var(--line-soft); border-bottom:1px solid var(--line-soft); background:rgba(15,23,42,.5); margin-top:30px}
   .ticker .wrap{display:flex; flex-wrap:wrap; gap:10px 34px; padding:15px 24px; font-family:'JetBrains Mono',monospace; font-size:.76rem; color:var(--muted); justify-content:center}
   .ticker b{color:var(--ink); font-weight:600}
 
@@ -139,20 +139,21 @@
     transition:.2s; position:relative; overflow:hidden;
   }
   .feat:hover{transform:translateY(-3px); border-color:#bcc8d8; box-shadow:var(--shadow)}
-  .feat .ic{width:38px; height:38px; border-radius:10px; background:rgba(11,87,208,.08); display:flex; align-items:center; justify-content:center; margin-bottom:16px; color:var(--blue)}
+  .feat .ic{width:38px; height:38px; border-radius:10px; background:rgba(0,229,255,.08); display:flex; align-items:center; justify-content:center; margin-bottom:16px; color:var(--blue)}
   .feat h3{font-family:'Space Grotesk'; font-weight:600; font-size:1.08rem; margin:0 0 7px; letter-spacing:-.01em}
   .feat p{margin:0; color:var(--muted); font-size:.93rem}
   .feat .no{position:absolute; top:16px; right:18px; font-family:'JetBrains Mono',monospace; font-size:.68rem; color:#c2ccd9}
+  .feat .no{position:absolute; top:16px; right:18px; font-family:'JetBrains Mono',monospace; font-size:.68rem; color:var(--line)}
   @media(max-width:860px){ .grid{grid-template-columns:1fr 1fr} }
   @media(max-width:560px){ .grid{grid-template-columns:1fr} }
 
   /* ---- download ---- */
   .dl{
-    background:linear-gradient(135deg,#0b1f3a,#0b57d0); color:#fff; border-radius:20px;
-    padding:48px; position:relative; overflow:hidden;
+    background:linear-gradient(135deg,#0a0a0c,#121214); color:#fff; border-radius:20px;
+    padding:48px; position:relative; overflow:hidden; border: 1px solid var(--line);
   }
   .dl::after{content:""; position:absolute; inset:0;
-    background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px);
+    background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);
     background-size:34px 34px; mask-image:radial-gradient(circle at 85% 20%,#000,transparent 70%); -webkit-mask-image:radial-gradient(circle at 85% 20%,#000,transparent 70%)}
   .dl-in{position:relative; z-index:1; max-width:34em}
   .dl h2{color:#fff}
@@ -233,9 +234,9 @@
         <!-- gauge: altitude -->
         <div class="gcard">
           <svg width="96" height="78" viewBox="0 0 96 78">
-            <path d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="#dde5ef" stroke-width="9" stroke-linecap="round"/>
+            <path d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="#1e293b" stroke-width="9" stroke-linecap="round"/>
             <path id="arc-alt" d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="url(#g1)" stroke-width="9" stroke-linecap="round"/>
-            <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2b7fff"/><stop offset="1" stop-color="#0b57d0"/></linearGradient></defs>
+            <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#00e5ff"/><stop offset="1" stop-color="#39ff14"/></linearGradient></defs>
           </svg>
           <div class="gval mono" data-to="48" data-suffix="">0</div>
           <div class="gunit">METERS</div>
@@ -244,9 +245,9 @@
         <!-- gauge: speed -->
         <div class="gcard">
           <svg width="96" height="78" viewBox="0 0 96 78">
-            <path d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="#dde5ef" stroke-width="9" stroke-linecap="round"/>
+            <path d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="#1e293b" stroke-width="9" stroke-linecap="round"/>
             <path id="arc-spd" d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="url(#g2)" stroke-width="9" stroke-linecap="round"/>
-            <defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0aa4c2"/><stop offset="1" stop-color="#0b57d0"/></linearGradient></defs>
+            <defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#39ff14"/><stop offset="1" stop-color="#00e5ff"/></linearGradient></defs>
           </svg>
           <div class="gval mono" data-to="9.4" data-dec="1">0</div>
           <div class="gunit">M / S</div>

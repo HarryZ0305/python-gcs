@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QComboBox, QSpinBox, QListWidget, QTabWidget,
     QLineEdit, QCheckBox, QProgressDialog, QGridLayout, QGraphicsDropShadowEffect
 )
+from PyQt6.QtTextToSpeech import QTextToSpeech
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 from gcs.telemetry import telemetry_data
@@ -21,16 +22,16 @@ from gcs.ui.setup_view import SetupView
 from gcs.ui.gauge import ArcGauge
 
 THEME = {
-    'bg': '#eef2f6',           # Softer cool gray-blue background for contrast
-    'panel_bg': '#ffffff',     # Pure white cards
-    'panel_border': '#e2e8f0', # Lighter, softer border (slate-200)
-    'primary': '#0b57d0',      # Deep aerospace royal blue
-    'success': '#0f9d58',      # Emerald green
-    'warning': '#e37400',      # Muted amber/orange
-    'danger': '#d93025',       # Crimson red
+    'bg': '#060a13',           # Deep dark blue/black background
+    'panel_bg': '#0f172a',     # Slate-900 for cards
+    'panel_border': '#1e293b', # Slate-800 for borders
+    'primary': '#00e5ff',      # Neon cyan
+    'success': '#39ff14',      # Neon green
+    'warning': '#ffaa00',      # Bright amber
+    'danger': '#ff003c',       # Neon red
     'muted': '#64748b',        # Slate-500 for secondary labels
-    'dark_text': '#0f172a',    # Slate-900 for readable value text
-    'plot_bg': '#ffffff',      # Pure white plot background
+    'dark_text': '#f8fafc',    # Light text for readable values (keeping key name for compatibility)
+    'plot_bg': '#0f172a',      # Match panel bg
 }
 
 
@@ -250,6 +251,12 @@ class GCSWindow(QMainWindow):
         self.landing_point = None
         self.conn_worker = None
         self.telemetry_thread = None
+        
+        self.tts = QTextToSpeech(self)
+        self.last_spoken_alert = ""
+        self.last_spoken_mode = "UNKNOWN"
+        self.was_armed = False
+        self.was_link_lost = False
         
         if self.vehicle is not None:
             from gcs.commands import _ensure_streamer
@@ -813,7 +820,7 @@ class GCSWindow(QMainWindow):
         self.conn_btn.setEnabled(True)
         self.conn_input.setEnabled(False)
         self.conn_status.setText("CONNECTED")
-        self.conn_status.setStyleSheet("color: #44ff88; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+        self.conn_status.setStyleSheet(f"color: {THEME['success']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
         self.set_controls_enabled(True)
 
         # Automatically request all parameters upon connection
@@ -826,9 +833,12 @@ class GCSWindow(QMainWindow):
 
     def disconnect_vehicle(self):
         if self.conn_worker is not None:
-            self.conn_worker.stop()
-            self.conn_worker.wait()
-            self.conn_worker = None
+            if self.conn_worker:
+                self.conn_worker.stop()
+                self.conn_worker.wait()
+            
+        from gcs.telemetry_logger import logger_instance
+        logger_instance.stop()
             
         import gcs.telemetry as telemetry
         telemetry.telemetry_active = False
@@ -1438,6 +1448,35 @@ class GCSWindow(QMainWindow):
         else:
             self.wp_progress_label.setText("Active: ---")
             self.wp_list.clearSelection()
+
+        # TTS Alerts
+        if is_link_lost and not self.was_link_lost:
+            self.tts.say("Warning, telemetry link lost.")
+        elif not is_link_lost and self.was_link_lost:
+            self.tts.say("Telemetry link recovered.")
+        
+        if not is_link_lost:
+            if d['armed'] and not self.was_armed:
+                self.tts.say("Vehicle armed.")
+            elif not d['armed'] and self.was_armed:
+                self.tts.say("Vehicle disarmed.")
+                
+            current_mode = d.get('mode', 'UNKNOWN')
+            if current_mode != self.last_spoken_mode and current_mode != 'UNKNOWN':
+                mode_spoken = current_mode.replace(".", " ")
+                self.tts.say(f"Flight mode {mode_spoken}.")
+                self.last_spoken_mode = current_mode
+
+            if active_alerts:
+                highest_alert = active_alerts[0]
+                if highest_alert != self.last_spoken_alert:
+                    self.tts.say(f"Alert: {highest_alert}.")
+                    self.last_spoken_alert = highest_alert
+            else:
+                self.last_spoken_alert = ""
+
+        self.was_link_lost = is_link_lost
+        self.was_armed = d['armed']
 
         self.console_view.refresh_logs()
 
