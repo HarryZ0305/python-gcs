@@ -65,7 +65,7 @@ class CameraView(QWidget):
             if self.static_images:
                 painter.drawImage(self.rect(), self.static_images[self.static_idx])
             else:
-                painter.fillRect(self.rect(), QColor("#060a13"))
+                painter.fillRect(self.rect(), QColor("#ffffff"))
         
         # 2. Extract Telemetry Variables
         roll = telemetry_data.get('roll', 0.0)      # radians
@@ -78,7 +78,7 @@ class CameraView(QWidget):
         sats = telemetry_data.get('satellites', 0)
         
         # 3. Setup HUD Colors & Styles
-        hud_color = QColor(0, 229, 255) # Cyan
+        hud_color = QColor("#0b57d0") # Primary
         hud_pen = QPen(hud_color, 1.5, Qt.PenStyle.SolidLine)
         painter.setPen(hud_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
@@ -121,11 +121,14 @@ class CameraView(QWidget):
         # 6. Draw Compass Heading Tape (Top Center)
         yaw_deg = math.degrees(yaw) % 360
         painter.setPen(hud_pen)
-        painter.fillRect(QRect(int(cx - 100), 10, 200, 30), QColor(15, 23, 42, 180))
+        
+        bg_color = QColor("#f5f7fa")
+        bg_color.setAlpha(180)
+        painter.fillRect(QRect(int(cx - 100), 10, 200, 30), bg_color)
         painter.drawRect(int(cx - 100), 10, 200, 30)
         
         # Draw heading triangle
-        painter.setBrush(QColor(0, 229, 255))
+        painter.setBrush(hud_color)
         painter.drawPolygon(QPolygon([
             QPoint(int(cx), 40), QPoint(int(cx - 5), 45), QPoint(int(cx + 5), 45)
         ]))
@@ -154,7 +157,7 @@ class CameraView(QWidget):
         # 8. Draw Airspeed Tape (Left Side)
         tape_w = 45
         tape_h = h - 100
-        painter.fillRect(QRect(10, 50, tape_w, int(tape_h)), QColor(15, 23, 42, 180))
+        painter.fillRect(QRect(10, 50, tape_w, int(tape_h)), bg_color)
         painter.drawRect(10, 50, tape_w, int(tape_h))
         # Speed ticks
         start_spd = max(0, int(speed - 10))
@@ -165,13 +168,13 @@ class CameraView(QWidget):
                 if sp % 2 == 0:
                     painter.drawText(22, int(sy + 4), f"{sp}")
         # Active speed readout box
-        painter.fillRect(QRect(5, int(cy - 12), 43, 24), QColor(0, 229, 255))
-        painter.setPen(QColor("#0f172a"))
+        painter.fillRect(QRect(5, int(cy - 12), 43, 24), hud_color)
+        painter.setPen(QColor("#ffffff"))
         painter.drawText(8, int(cy + 5), f"{speed:.1f}")
         
         # 9. Draw Altitude Tape (Right Side)
         painter.setPen(hud_pen)
-        painter.fillRect(QRect(w - 55, 50, tape_w, int(tape_h)), QColor(15, 23, 42, 180))
+        painter.fillRect(QRect(w - 55, 50, tape_w, int(tape_h)), bg_color)
         painter.drawRect(w - 55, 50, tape_w, int(tape_h))
         # Alt ticks
         start_alt = max(0, int(alt - 20))
@@ -182,8 +185,8 @@ class CameraView(QWidget):
                 if al % 10 == 0:
                     painter.drawText(w - 50, int(ay + 4), f"{al}")
         # Active alt readout box
-        painter.fillRect(QRect(w - 48, int(cy - 12), 43, 24), QColor(0, 229, 255))
-        painter.setPen(QColor("#0f172a"))
+        painter.fillRect(QRect(w - 48, int(cy - 12), 43, 24), hud_color)
+        painter.setPen(QColor("#ffffff"))
         painter.drawText(w - 45, int(cy + 5), f"{alt:.1f}")
         
         # 10. Top Info Overlay (Telemetry HUD Metadata)
@@ -194,7 +197,7 @@ class CameraView(QWidget):
         painter.drawText(w - 180, 25, status_info)
         
         # 11. Draw Bottom Blinking Status / Arm Status
-        state_color = QColor(255, 0, 60) if not armed else QColor(57, 255, 20) # Red if disarmed, Green if armed
+        state_color = QColor("#d93025") if not armed else QColor("#0f9d58") # Red if disarmed, Green if armed
         painter.setPen(QPen(state_color, 1.5))
         
         if armed:
@@ -210,6 +213,6 @@ class CameraView(QWidget):
             painter.setPen(QPen(QColor(0, 0, 0), 2))
             if self.blink_state:
                 painter.drawText(int(cx - 65), int(cy - 40), "NO SIGNAL")
-            painter.setPen(QPen(QColor(255, 0, 60, 220), 1.5))
+            painter.setPen(QPen(QColor(217, 48, 37, 220), 1.5))
             if self.blink_state:
                 painter.drawText(int(cx - 65), int(cy - 40), "NO SIGNAL")

@@ -10,15 +10,15 @@ class TelemetryLogger:
         self.is_logging = False
         self.thread = None
         self.file_path = None
-        self.log_dir = "logs"
-        
-        if not os.path.exists(self.log_dir):
-            os.makedirs(self.log_dir)
+        self.log_dir = os.path.join(os.path.expanduser("~"), ".python-gcs", "logs")
 
     def start(self):
         if self.is_logging:
             return
         
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir)
+            
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.file_path = os.path.join(self.log_dir, f"flight_{timestamp}.csv")
         self.is_logging = True

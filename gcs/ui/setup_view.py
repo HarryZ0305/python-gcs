@@ -29,8 +29,8 @@ class SetupView(QWidget):
         self.search_bar.setPlaceholderText("Filter parameters by name...")
         self.search_bar.setStyleSheet("""
             QLineEdit {
-                background-color: #0f172a; color: #f8fafc;
-                border: 1px solid #1e293b; border-radius: 4px;
+                background-color: #ffffff; color: #0f172a;
+                border: 1px solid #cbd5e1; border-radius: 4px;
                 padding: 4px 8px; font-family: Courier New; font-size: 12px;
             }
         """)
@@ -41,13 +41,13 @@ class SetupView(QWidget):
         self.refresh_btn.setFixedHeight(30)
         self.refresh_btn.setStyleSheet("""
             QPushButton {
-                background-color: #0f172a; color: #00e5ff;
-                border: 2px solid #00e5ff; border-radius: 6px;
+                background-color: #ffffff; color: #0b57d0;
+                border: 2px solid #0b57d0; border-radius: 6px;
                 font-family: Courier New; font-weight: bold;
                 padding: 4px 12px;
             }
-            QPushButton:hover { background-color: #00e5ff; color: #0f172a; }
-            QPushButton:disabled { border-color: #1e293b; color: #64748b; }
+            QPushButton:hover { background-color: #0b57d0; color: #ffffff; }
+            QPushButton:disabled { border-color: #cbd5e1; color: #5f6368; }
         """)
         self.refresh_btn.clicked.connect(self.on_refresh)
         top_row.addWidget(self.refresh_btn)
@@ -73,14 +73,14 @@ class SetupView(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setStyleSheet("""
             QTableWidget {
-                background-color: #0f172a; color: #f8fafc;
-                gridline-color: #1e293b;
-                border: 1px solid #1e293b; border-radius: 6px;
+                background-color: #ffffff; color: #0f172a;
+                gridline-color: #cbd5e1;
+                border: 1px solid #cbd5e1; border-radius: 6px;
                 font-family: Courier New; font-size: 12px;
             }
             QHeaderView::section {
-                background-color: #060a13; color: #00e5ff;
-                padding: 4px; font-weight: bold; border: 1px solid #1e293b;
+                background-color: #f5f7fa; color: #0b57d0;
+                padding: 4px; font-weight: bold; border: 1px solid #cbd5e1;
             }
         """)
         self.table.cellChanged.connect(self.on_cell_changed)
@@ -180,12 +180,12 @@ class SetupView(QWidget):
             # Name column (Read Only)
             name_item = QTableWidgetItem(name)
             name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            name_item.setForeground(QColor("#64748b"))
+            name_item.setForeground(QColor("#5f6368"))
             self.table.setItem(row, 0, name_item)
 
             # Value column (Editable)
             val_item = QTableWidgetItem(str(meta['value']))
-            val_item.setForeground(QColor("#00e5ff"))
+            val_item.setForeground(QColor("#0b57d0"))
             self.table.setItem(row, 1, val_item)
 
         self.table.blockSignals(False)

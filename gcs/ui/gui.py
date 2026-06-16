@@ -9,7 +9,11 @@ from PyQt6.QtWidgets import (
     QPushButton, QComboBox, QSpinBox, QListWidget, QTabWidget,
     QLineEdit, QCheckBox, QProgressDialog, QGridLayout, QGraphicsDropShadowEffect
 )
-from PyQt6.QtTextToSpeech import QTextToSpeech
+try:
+    from PyQt6.QtTextToSpeech import QTextToSpeech
+    TTS_AVAILABLE = True
+except ImportError:
+    TTS_AVAILABLE = False
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 from gcs.telemetry import telemetry_data
@@ -22,16 +26,16 @@ from gcs.ui.setup_view import SetupView
 from gcs.ui.gauge import ArcGauge
 
 THEME = {
-    'bg': '#060a13',           # Deep dark blue/black background
-    'panel_bg': '#0f172a',     # Slate-900 for cards
-    'panel_border': '#1e293b', # Slate-800 for borders
-    'primary': '#00e5ff',      # Neon cyan
-    'success': '#39ff14',      # Neon green
-    'warning': '#ffaa00',      # Bright amber
-    'danger': '#ff003c',       # Neon red
-    'muted': '#64748b',        # Slate-500 for secondary labels
-    'dark_text': '#f8fafc',    # Light text for readable values (keeping key name for compatibility)
-    'plot_bg': '#0f172a',      # Match panel bg
+    'bg':           '#f5f7fa',
+    'panel_bg':     '#ffffff',
+    'panel_border': '#cbd5e1',
+    'primary':      '#0b57d0',
+    'success':      '#0f9d58',
+    'warning':      '#e37400',
+    'danger':       '#d93025',
+    'muted':        '#5f6368',
+    'dark_text':    '#0f172a',
+    'plot_bg':      '#f8fafc',
 }
 
 
@@ -252,7 +256,10 @@ class GCSWindow(QMainWindow):
         self.conn_worker = None
         self.telemetry_thread = None
         
-        self.tts = QTextToSpeech(self)
+        if TTS_AVAILABLE:
+            self.tts = QTextToSpeech(self)
+        else:
+            self.tts = None
         self.last_spoken_alert = ""
         self.last_spoken_mode = "UNKNOWN"
         self.was_armed = False
@@ -1450,30 +1457,31 @@ class GCSWindow(QMainWindow):
             self.wp_list.clearSelection()
 
         # TTS Alerts
-        if is_link_lost and not self.was_link_lost:
-            self.tts.say("Warning, telemetry link lost.")
-        elif not is_link_lost and self.was_link_lost:
-            self.tts.say("Telemetry link recovered.")
-        
-        if not is_link_lost:
-            if d['armed'] and not self.was_armed:
-                self.tts.say("Vehicle armed.")
-            elif not d['armed'] and self.was_armed:
-                self.tts.say("Vehicle disarmed.")
-                
-            current_mode = d.get('mode', 'UNKNOWN')
-            if current_mode != self.last_spoken_mode and current_mode != 'UNKNOWN':
-                mode_spoken = current_mode.replace(".", " ")
-                self.tts.say(f"Flight mode {mode_spoken}.")
-                self.last_spoken_mode = current_mode
+        if self.tts:
+            if is_link_lost and not self.was_link_lost:
+                self.tts.say("Warning, telemetry link lost.")
+            elif not is_link_lost and self.was_link_lost:
+                self.tts.say("Telemetry link recovered.")
+            
+            if not is_link_lost:
+                if d['armed'] and not self.was_armed:
+                    self.tts.say("Vehicle armed.")
+                elif not d['armed'] and self.was_armed:
+                    self.tts.say("Vehicle disarmed.")
+                    
+                current_mode = d.get('mode', 'UNKNOWN')
+                if current_mode != self.last_spoken_mode and current_mode != 'UNKNOWN':
+                    mode_spoken = current_mode.replace(".", " ")
+                    self.tts.say(f"Flight mode {mode_spoken}.")
+                    self.last_spoken_mode = current_mode
 
-            if active_alerts:
-                highest_alert = active_alerts[0]
-                if highest_alert != self.last_spoken_alert:
-                    self.tts.say(f"Alert: {highest_alert}.")
-                    self.last_spoken_alert = highest_alert
-            else:
-                self.last_spoken_alert = ""
+                if active_alerts:
+                    highest_alert = active_alerts[0]
+                    if highest_alert != self.last_spoken_alert:
+                        self.tts.say(f"Alert: {highest_alert}.")
+                        self.last_spoken_alert = highest_alert
+                else:
+                    self.last_spoken_alert = ""
 
         self.was_link_lost = is_link_lost
         self.was_armed = d['armed']
