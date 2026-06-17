@@ -36,9 +36,9 @@ FROM its old ArduCopter conventions TO PX4 — see "PX4 specifics" below.
 - refresh() runs on a 500ms QTimer.
 - Angles are radians internally, shown in degrees in the UI.
 - Style buttons with self._btn_style(color, bg), inputs with _input_style().
-  Palette: bg #060a13, panel #0f172a, border #1e293b, primary(cyan) #00e5ff,
-  success(green) #39ff14, warning(amber) #ffaa00, danger(red) #ff003c,
-  muted #64748b, dark_text #f8fafc. Font: Courier New.
+  Palette: bg #f5f7fa, panel #ffffff, border #cbd5e1, primary(blue) #0b57d0,
+  success(green) #0f9d58, warning(amber) #e37400, danger(red) #d93025,
+  muted #5f6368, dark_text #0f172a. Font: Courier New.
 
 ## How to run / verify
 - Sim, easy path (Windows-friendly, Docker):
