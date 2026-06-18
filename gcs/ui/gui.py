@@ -138,7 +138,7 @@ class StatPanel(QFrame):
         lbl.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none; background: transparent;")
         
         val = QLabel("---")
-        val.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
+        val.setFont(QFont("Google Sans Code", 12, QFont.Weight.Bold))
         val.setStyleSheet(f"color: {THEME['dark_text']}; border: none; background: transparent;")
         
         # Make the active alert message full-width spanning multiple columns
@@ -283,7 +283,7 @@ class GCSWindow(QMainWindow):
             QTabBar::tab {{
                 background-color: {THEME['panel_border']};
                 color: {THEME['muted']};
-                font-family: Courier New;
+                font-family: Google Sans Code;
                 font-weight: bold;
                 font-size: 13px;
                 padding: 8px 20px;
@@ -352,7 +352,7 @@ class GCSWindow(QMainWindow):
         # Arm button
         self.arm_btn = QPushButton("ARM")
         self.arm_btn.setFixedHeight(44)
-        self.arm_btn.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
+        self.arm_btn.setFont(QFont("Google Sans Code", 12, QFont.Weight.Bold))
         self.arm_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
         self.arm_btn.clicked.connect(self.on_arm_disarm)
 
@@ -458,7 +458,7 @@ class GCSWindow(QMainWindow):
         self.kb_checkbox.setStyleSheet(f"""
             QCheckBox {{
                 color: {THEME['muted']};
-                font-family: Courier New;
+                font-family: Google Sans Code;
                 font-size: 11px;
                 background: transparent;
             }}
@@ -501,13 +501,13 @@ class GCSWindow(QMainWindow):
             QListWidget {{
                 background-color: {THEME['panel_bg']}; color: {THEME['primary']};
                 border: 1px solid {THEME['panel_border']}; border-radius: 4px;
-                font-family: Courier New; font-size: 11px;
+                font-family: Google Sans Code; font-size: 11px;
             }}
         """)
         mp.addWidget(self.wp_list)
         
         self.wp_progress_label = QLabel("Active Waypoint: ---")
-        self.wp_progress_label.setStyleSheet(f"color: {THEME['primary']}; font-family: Courier New; font-size: 11px; border: none; background: transparent;")
+        self.wp_progress_label.setStyleSheet(f"color: {THEME['primary']}; font-family: Google Sans Code; font-size: 11px; border: none; background: transparent;")
         mp.addWidget(self.wp_progress_label)
         
         m_row = QHBoxLayout()
@@ -718,7 +718,7 @@ class GCSWindow(QMainWindow):
         conn_layout.setSpacing(10)
         
         conn_lbl = QLabel("CONNECTION:")
-        conn_lbl.setStyleSheet(f"color: {THEME['primary']}; font-family: Courier New; font-weight: bold; font-size: 12px; border: none; background: transparent;")
+        conn_lbl.setStyleSheet(f"color: {THEME['primary']}; font-family: Google Sans Code; font-weight: bold; font-size: 12px; border: none; background: transparent;")
         conn_layout.addWidget(conn_lbl)
         
         self.conn_input = QLineEdit()
@@ -727,7 +727,7 @@ class GCSWindow(QMainWindow):
             QLineEdit {{
                 background-color: {THEME['panel_bg']}; color: {THEME['dark_text']};
                 border: 1px solid {THEME['panel_border']}; border-radius: 4px;
-                padding: 4px 8px; font-family: Courier New; font-size: 12px;
+                padding: 4px 8px; font-family: Google Sans Code; font-size: 12px;
             }}
         """)
         conn_layout.addWidget(self.conn_input, stretch=1)
@@ -740,7 +740,7 @@ class GCSWindow(QMainWindow):
         conn_layout.addWidget(self.conn_btn)
         
         self.conn_status = QLabel("DISCONNECTED")
-        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none; background: transparent;")
+        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none; background: transparent;")
         conn_layout.addWidget(self.conn_status)
 
         outer.addWidget(self.conn_panel)
@@ -763,7 +763,7 @@ class GCSWindow(QMainWindow):
             QPushButton {{
                 background-color: {bg}; color: {color};
                 border: 2px solid {color}; border-radius: 6px;
-                font-family: Courier New; font-weight: bold;
+                font-family: Google Sans Code; font-weight: bold;
             }}
             QPushButton:hover {{ background-color: {color}; color: {bg}; }}
             QPushButton:disabled {{ border-color: #cbd5e1; color: #cbd5e1; }}
@@ -774,7 +774,7 @@ class GCSWindow(QMainWindow):
             QComboBox, QSpinBox {{
                 background-color: {THEME['panel_bg']}; color: {THEME['dark_text']};
                 border: 1px solid {THEME['panel_border']}; border-radius: 4px;
-                padding: 4px 8px; font-family: Courier New; font-size: 12px;
+                padding: 4px 8px; font-family: Google Sans Code; font-size: 12px;
             }}
             QComboBox QAbstractItemView {{
                 background-color: {THEME['panel_bg']}; color: {THEME['dark_text']};
@@ -796,7 +796,7 @@ class GCSWindow(QMainWindow):
             self.conn_btn.setEnabled(False)
             self.conn_input.setEnabled(False)
             self.conn_status.setText("CONNECTING")
-            self.conn_status.setStyleSheet(f"color: {THEME['warning']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+            self.conn_status.setStyleSheet(f"color: {THEME['warning']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
             
             self.conn_worker = ConnectionWorker(connection_string)
             self.conn_worker.connected.connect(self.on_connected)
@@ -827,7 +827,7 @@ class GCSWindow(QMainWindow):
         self.conn_btn.setEnabled(True)
         self.conn_input.setEnabled(False)
         self.conn_status.setText("CONNECTED")
-        self.conn_status.setStyleSheet(f"color: {THEME['success']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+        self.conn_status.setStyleSheet(f"color: {THEME['success']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
         self.set_controls_enabled(True)
 
         # Automatically request all parameters upon connection
@@ -880,7 +880,7 @@ class GCSWindow(QMainWindow):
         self.conn_btn.setEnabled(True)
         self.conn_input.setEnabled(True)
         self.conn_status.setText("DISCONNECTED")
-        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
         self.set_controls_enabled(False)
 
     def set_controls_enabled(self, enabled):
@@ -1257,7 +1257,7 @@ class GCSWindow(QMainWindow):
             self.gps_gauge.set_accent(THEME['muted'])
             
             self.conn_status.setText("DISCONNECTED")
-            self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+            self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
             self.console_view.refresh_logs()
             return
 
@@ -1294,7 +1294,7 @@ class GCSWindow(QMainWindow):
             self.aircraft_status_panel.set('throttle', "---", THEME['muted'])
             
             self.conn_status.setText("LINK LOST")
-            self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+            self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
         else:
             val_color = THEME['dark_text']
             battery_color = THEME['danger'] if d['battery'] < 20 else THEME['dark_text']
@@ -1351,7 +1351,7 @@ class GCSWindow(QMainWindow):
             self.alert_panel.set('check_batt', f"{batt_text} ({d['battery']}%)", batt_color)
 
             self.conn_status.setText("CONNECTED")
-            self.conn_status.setStyleSheet(f"color: {THEME['success']}; font-weight: bold; font-family: Courier New; font-size: 12px; border: none;")
+            self.conn_status.setStyleSheet(f"color: {THEME['success']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
 
             # Record history for plotting
             elapsed = time.time() - self.start_time
@@ -1509,6 +1509,30 @@ class GCSWindow(QMainWindow):
 
 def launch_gui(vehicle=None):
     app = QApplication(sys.argv)
+    
+    # Register Google Sans Code font weights
+    from gcs.paths import resource_path
+    from PyQt6.QtGui import QFontDatabase, QFont
+    import os
+    
+    font_files = [
+        "GoogleSansCode-Regular.ttf",
+        "GoogleSansCode-Medium.ttf",
+        "GoogleSansCode-Bold.ttf"
+    ]
+    family_name = None
+    for f in font_files:
+        f_path = resource_path(os.path.join("gcs", "ui", "fonts", f))
+        if os.path.exists(f_path):
+            fid = QFontDatabase.addApplicationFont(f_path)
+            if fid != -1 and family_name is None:
+                families = QFontDatabase.applicationFontFamilies(fid)
+                if families:
+                    family_name = families[0]
+                    
+    if family_name:
+        app.setFont(QFont(family_name))
+        
     window = GCSWindow(vehicle)
     window.show()
     app.exec()

@@ -6,6 +6,10 @@ MAP_HTML = """
 <head>
     <meta charset="utf-8"/>
     <style>
+        @font-face {
+            font-family: 'Google Sans Code';
+            src: url('http://localhost:PORT_PLACEHOLDER/static/fonts/GoogleSansCode-Regular.ttf') format('truetype');
+        }
         body { margin: 0; padding: 0; background: #f5f7fa; }
         #map { width: 100%; height: 100vh; background: #f5f7fa; }
         #mode-controls {
@@ -19,7 +23,7 @@ MAP_HTML = """
             border: 2px solid #cbd5e1;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
             color: #0f172a;
-            font-family: 'Courier New', monospace;
+            font-family: 'Google Sans Code', monospace;
             display: flex;
             flex-direction: column;
             gap: 6px;

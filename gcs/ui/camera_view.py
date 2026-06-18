@@ -82,7 +82,7 @@ class CameraView(QWidget):
         hud_pen = QPen(hud_color, 1.5, Qt.PenStyle.SolidLine)
         painter.setPen(hud_pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
+        painter.setFont(QFont("Google Sans Code", 10, QFont.Weight.Bold))
         
         cx, cy = w / 2, h / 2
         
@@ -208,7 +208,7 @@ class CameraView(QWidget):
             
         # Draw "NO SIGNAL" blinking text if live stream is missing
         if not self.live_pixmap:
-            painter.setFont(QFont("Courier New", 18, QFont.Weight.Bold))
+            painter.setFont(QFont("Google Sans Code", 18, QFont.Weight.Bold))
             # Black border for text
             painter.setPen(QPen(QColor(0, 0, 0), 2))
             if self.blink_state:

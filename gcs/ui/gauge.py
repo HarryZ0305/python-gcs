@@ -89,7 +89,7 @@ class ArcGauge(QWidget):
 
         # Value text placement inside the arc
         value_font_size = max(9, int(arc_size / 5))
-        value_font = QFont("Courier New", value_font_size, QFont.Weight.Bold)
+        value_font = QFont("Google Sans Code", value_font_size, QFont.Weight.Bold)
         painter.setFont(value_font)
         painter.setPen(self.text_color)
         value_rect = QRectF(center_x - arc_size / 2, center_y - arc_size / 3.5, arc_size, arc_size / 2.2)
@@ -97,14 +97,14 @@ class ArcGauge(QWidget):
 
         # 5. Draw unit text below the value text
         unit_font_size = max(7, int(arc_size / 8.5))
-        unit_font = QFont("Courier New", unit_font_size, QFont.Weight.Bold)
+        unit_font = QFont("Google Sans Code", unit_font_size, QFont.Weight.Bold)
         painter.setFont(unit_font)
         painter.setPen(self.muted_color)
         unit_rect = QRectF(center_x - arc_size / 2, center_y + arc_size / 10, arc_size, arc_size / 3.5)
         painter.drawText(unit_rect, Qt.AlignmentFlag.AlignCenter, self.unit)
 
         # 6. Draw label below the entire gauge
-        label_font = QFont("Courier New", 9, QFont.Weight.Bold)
+        label_font = QFont("Google Sans Code", 9, QFont.Weight.Bold)
         painter.setFont(label_font)
         painter.setPen(self.text_color)
         label_rect = QRectF(0, height - label_height, width, label_height)

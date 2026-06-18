@@ -6,7 +6,7 @@ class ConsoleView(QTextEdit):
     def __init__(self):
         super().__init__()
         self.setReadOnly(True)
-        self.setFont(QFont("Courier New", 9))
+        self.setFont(QFont("Google Sans Code", 9))
         self.setStyleSheet("""
             QTextEdit {
                 background-color: #ffffff; color: #0f172a;

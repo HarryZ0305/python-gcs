@@ -31,7 +31,7 @@ class SetupView(QWidget):
             QLineEdit {
                 background-color: #ffffff; color: #0f172a;
                 border: 1px solid #cbd5e1; border-radius: 4px;
-                padding: 4px 8px; font-family: Courier New; font-size: 12px;
+                padding: 4px 8px; font-family: Google Sans Code; font-size: 12px;
             }
         """)
         self.search_bar.textChanged.connect(self.on_search_changed)
@@ -43,7 +43,7 @@ class SetupView(QWidget):
             QPushButton {
                 background-color: #ffffff; color: #0b57d0;
                 border: 2px solid #0b57d0; border-radius: 6px;
-                font-family: Courier New; font-weight: bold;
+                font-family: Google Sans Code; font-weight: bold;
                 padding: 4px 12px;
             }
             QPushButton:hover { background-color: #0b57d0; color: #ffffff; }
@@ -76,7 +76,7 @@ class SetupView(QWidget):
                 background-color: #ffffff; color: #0f172a;
                 gridline-color: #cbd5e1;
                 border: 1px solid #cbd5e1; border-radius: 6px;
-                font-family: Courier New; font-size: 12px;
+                font-family: Google Sans Code; font-size: 12px;
             }
             QHeaderView::section {
                 background-color: #f5f7fa; color: #0b57d0;
