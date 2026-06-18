@@ -648,6 +648,23 @@
       opacity: .7
     }
 
+    .plat.ready {
+      background: #fff;
+      color: var(--ink);
+      cursor: pointer;
+      transition: .18s
+    }
+
+    .plat.ready:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px -8px rgba(0, 0, 0, .35)
+    }
+
+    .plat.ready small {
+      opacity: .85;
+      color: var(--blue)
+    }
+
     .notify {
       font-family: 'JetBrains Mono', monospace;
       font-size: .8rem;
@@ -749,12 +766,13 @@
         <p class="lede">A clean MAVLink ground control station for PX4 multirotors — live telemetry, satellite maps that
           work in the field, a 3D attitude view, and full mission planning. Built by a builder, for a real Pixhawk.</p>
         <div class="cta">
-          <a class="btn btn-primary" href="#download">Get it <span class="badge">SOON</span></a>
+          <a class="btn btn-primary"
+            href="https://github.com/HarryZ0305/python-gcs/releases/latest/download/PythonGCS-windows.zip">Download for
+            Windows</a>
           <a class="btn btn-ghost" href="https://github.com/HarryZ0305/python-gcs" target="_blank" rel="noopener">View
             the source</a>
         </div>
-        <div class="meta-line">v1.0 &middot; status: <b>in development</b> &middot; Windows desktop &middot; PX4 /
-          MAVLink</div>
+        <div class="meta-line">v1.0 &middot; <b>available for Windows</b> &middot; PX4 / MAVLink</div>
       </div>
 
       <div class="panel" id="cluster">
@@ -933,14 +951,17 @@
       <div class="dl">
         <div class="dl-in">
           <span class="sec-eyebrow" style="color:#9ec6ff">Download</span>
-          <h2>Almost cleared for takeoff.</h2>
-          <p>Python GCS is still in active development — v1 isn't packaged yet. Star the repo and you'll see it the
-            moment the first release drops.</p>
+          <h2>Cleared for takeoff.</h2>
+          <p>Grab the latest Windows build below, unzip it, and run <span class="mono"
+              style="color:#fff">PythonGCS.exe</span>. You'll need PX4 SITL or a Pixhawk-based PX4 vehicle to connect
+            to.</p>
           <div class="plats">
-            <div class="plat soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+            <a class="plat ready"
+              href="https://github.com/HarryZ0305/python-gcs/releases/latest/download/PythonGCS-windows.zip"><svg
+                width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path
                   d="M3 5.5 10 4.5v7H3v-6Zm0 13L10 19.5v-7H3v6ZM11 4.3 21 3v8.5H11V4.3Zm0 15.4L21 21v-8.5H11v7.2Z" />
-              </svg> Windows <small>SOON</small></div>
+              </svg> Windows <small>.ZIP</small></a>
             <div class="plat soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path
                   d="M16.4 1.6c.1 1-.3 2-.9 2.8-.7.8-1.7 1.4-2.7 1.3-.1-1 .4-2 1-2.7.6-.8 1.7-1.3 2.6-1.4ZM19 17.3c-.5 1.1-.7 1.6-1.3 2.6-.9 1.4-2.1 3.1-3.6 3.1-1.3 0-1.7-.8-3.4-.8-1.8 0-2.2.8-3.5.8-1.5 0-2.6-1.5-3.5-2.9C-.2 16-.6 9.9 2.3 7.6c1-.8 2.4-1.3 3.6-1.3 1.4 0 2.3.8 3.5.8 1.1 0 1.8-.8 3.4-.8 1.1 0 2.3.3 3.2 1.1-2.8 1.6-2.4 5.7.0 6.9Z" />
@@ -950,7 +971,7 @@
               </svg> Linux <small>LATER</small></div>
           </div>
           <p class="notify">→ <a href="https://github.com/HarryZ0305/python-gcs" target="_blank" rel="noopener">Star or
-              watch the repo on GitHub</a> to get notified at launch.</p>
+              watch the repo on GitHub</a> to follow new releases.</p>
         </div>
       </div>
     </section>
