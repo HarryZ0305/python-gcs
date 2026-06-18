@@ -14,20 +14,20 @@
     rel="stylesheet" />
   <style>
     :root {
-      --bg: #f5f7fa;
-      --bg-2: #ffffff;
+      --bg: #eaeef4;
+      --bg-2: #f5f8fc;
       --surface: #ffffff;
-      --line: #cbd5e1;
-      --line-soft: #cbd5e1;
-      --ink: #0f172a;
-      --muted: #5f6368;
+      --line: #d4dce7;
+      --line-soft: #e4eaf2;
+      --ink: #0d1626;
+      --muted: #5b6675;
       --blue: #0b57d0;
-      --blue-bright: #0b57d0;
-      --cyan: #0b57d0;
+      --blue-bright: #2b7fff;
+      --cyan: #0aa4c2;
       --green: #0f9d58;
-      --amber: #e37400;
+      --amber: #e08200;
       --red: #d93025;
-      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 32px -12px rgba(0, 0, 0, .8);
+      --shadow: 0 1px 2px rgba(13, 22, 38, .04), 0 12px 32px -12px rgba(13, 22, 38, .18);
       --r: 14px;
     }
 
@@ -48,7 +48,6 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* blueprint grid backdrop */
     body::before {
       content: "";
       position: fixed;
@@ -80,13 +79,12 @@
       font-family: 'JetBrains Mono', monospace
     }
 
-    /* ---- top bar ---- */
     header {
       position: sticky;
       top: 0;
       z-index: 50;
       backdrop-filter: saturate(1.2) blur(10px);
-      background: rgba(6, 10, 19, .78);
+      background: rgba(234, 238, 244, .78);
       border-bottom: 1px solid var(--line-soft);
     }
 
@@ -150,7 +148,6 @@
       }
     }
 
-    /* ---- hero ---- */
     .hero {
       padding: 64px 0 28px;
       display: grid;
@@ -227,7 +224,7 @@
     }
 
     .btn-primary:hover {
-      background: #00b8cc;
+      background: #0a4cb8;
       transform: translateY(-2px)
     }
 
@@ -238,8 +235,7 @@
     }
 
     .btn-ghost:hover {
-      border-color: var(--blue);
-      color: var(--blue);
+      border-color: var(--muted);
       transform: translateY(-2px)
     }
 
@@ -265,7 +261,6 @@
       font-weight: 600
     }
 
-    /* ---- hero instrument panel (signature) ---- */
     .panel {
       background: linear-gradient(180deg, #fff, #fbfdff);
       border: 1px solid var(--line);
@@ -370,7 +365,6 @@
       margin-top: 8px
     }
 
-    /* attitude */
     .att {
       position: relative
     }
@@ -397,13 +391,13 @@
     .sky {
       position: absolute;
       inset: 0 0 50% 0;
-      background: linear-gradient(#0b57d0, #0a4cb8)
+      background: linear-gradient(#bfe0ff, #9cc9f5)
     }
 
     .ground {
       position: absolute;
       inset: 50% 0 0 0;
-      background: linear-gradient(#4b3c2e, #3f3226)
+      background: linear-gradient(#b08a63, #8f6f4d)
     }
 
     .hline {
@@ -465,11 +459,10 @@
       }
     }
 
-    /* ---- spec ticker ---- */
     .ticker {
       border-top: 1px solid var(--line-soft);
       border-bottom: 1px solid var(--line-soft);
-      background: rgba(15, 23, 42, .5);
+      background: rgba(255, 255, 255, .5);
       margin-top: 30px
     }
 
@@ -489,7 +482,6 @@
       font-weight: 600
     }
 
-    /* ---- sections ---- */
     section {
       padding: 72px 0;
       position: relative
@@ -580,15 +572,6 @@
       color: #c2ccd9
     }
 
-    .feat .no {
-      position: absolute;
-      top: 16px;
-      right: 18px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .68rem;
-      color: var(--line)
-    }
-
     @media(max-width:860px) {
       .grid {
         grid-template-columns: 1fr 1fr
@@ -601,22 +584,20 @@
       }
     }
 
-    /* ---- download ---- */
     .dl {
-      background: linear-gradient(135deg, #0a0a0c, #121214);
+      background: linear-gradient(135deg, #0b1f3a, #0b57d0);
       color: #fff;
       border-radius: 20px;
       padding: 48px;
       position: relative;
       overflow: hidden;
-      border: 1px solid var(--line);
     }
 
     .dl::after {
       content: "";
       position: absolute;
       inset: 0;
-      background-image: linear-gradient(rgba(255, 255, 255, .03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .03) 1px, transparent 1px);
+      background-image: linear-gradient(rgba(255, 255, 255, .06) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .06) 1px, transparent 1px);
       background-size: 34px 34px;
       mask-image: radial-gradient(circle at 85% 20%, #000, transparent 70%);
       -webkit-mask-image: radial-gradient(circle at 85% 20%, #000, transparent 70%)
@@ -656,17 +637,6 @@
       font-weight: 500;
     }
 
-    .plat.ready {
-      background: #fff;
-      color: var(--ink);
-      cursor: pointer;
-      transition: .18s
-    }
-
-    .plat.ready:hover {
-      transform: translateY(-2px)
-    }
-
     .plat small {
       font-family: 'JetBrains Mono', monospace;
       font-size: .62rem;
@@ -690,7 +660,6 @@
       text-underline-offset: 3px
     }
 
-    /* ---- footer ---- */
     footer {
       padding: 40px 0 56px;
       border-top: 1px solid var(--line-soft);
@@ -788,7 +757,6 @@
           MAVLink</div>
       </div>
 
-      <!-- signature: live instrument cluster -->
       <div class="panel" id="cluster">
         <div class="scan"></div>
         <div class="panel-h">
@@ -796,7 +764,6 @@
           <span class="live"><span class="dot"></span>LINK ACTIVE</span>
         </div>
         <div class="gauges">
-          <!-- gauge: altitude -->
           <div class="gcard">
             <svg width="96" height="78" viewBox="0 0 96 78">
               <path d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="#dde5ef" stroke-width="9"
@@ -814,7 +781,6 @@
             <div class="gunit">METERS</div>
             <div class="glabel">ALTITUDE</div>
           </div>
-          <!-- gauge: speed -->
           <div class="gcard">
             <svg width="96" height="78" viewBox="0 0 96 78">
               <path d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="#dde5ef" stroke-width="9"
@@ -832,7 +798,6 @@
             <div class="gunit">M / S</div>
             <div class="glabel">GROUND SPD</div>
           </div>
-          <!-- attitude indicator -->
           <div class="gcard att">
             <div class="horizon-wrap">
               <div class="sky-ground" id="horizon">
@@ -1015,13 +980,12 @@
     (function () {
       var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-      // arc length of the 270° gauge path
       function setArc(id, frac) {
         var p = document.getElementById(id);
         if (!p) return;
         var len = p.getTotalLength();
         p.style.strokeDasharray = len;
-        p.style.strokeDashoffset = len;            // start empty
+        p.style.strokeDashoffset = len;
         if (reduce) { p.style.strokeDashoffset = len * (1 - frac); return; }
         requestAnimationFrame(function () {
           p.style.transition = 'stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1)';
@@ -1029,7 +993,6 @@
         });
       }
 
-      // count-up numbers
       function countUp(el) {
         var to = parseFloat(el.dataset.to), dec = parseInt(el.dataset.dec || '0');
         if (reduce) { el.textContent = to.toFixed(dec); return; }
@@ -1049,7 +1012,6 @@
         document.querySelectorAll('.gval').forEach(countUp);
       }
 
-      // gentle attitude idle
       var horizon = document.getElementById('horizon'), t = 0;
       function idle() {
         t += 0.02;
@@ -1058,7 +1020,6 @@
         requestAnimationFrame(idle);
       }
 
-      // small live readout flicker for realism
       var sat = document.getElementById('r-sat');
       function flicker() {
         var s = 12 + (Math.random() < 0.3 ? -1 : 0);
