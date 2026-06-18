@@ -10,8 +10,10 @@ from gcs.logs import log
 PORT = 5501
 server_instance = None
 server_thread = None
-tile_cache_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'tile_cache'))
-static_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'static'))
+from gcs.paths import resource_path
+
+tile_cache_dir = os.path.join(os.path.expanduser("~"), ".python-gcs", "tile_cache")
+static_dir = resource_path(os.path.join('gcs', 'ui', 'static'))
 
 def bootstrap_leaflet():
     """Download Leaflet JS, CSS and marker images for offline use if not present."""
