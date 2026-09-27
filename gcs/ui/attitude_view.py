@@ -63,6 +63,11 @@ ATTITUDE_HTML = """
         let scene, camera, renderer, drone;
 
         function init3D() {
+            if (typeof THREE === 'undefined') {
+                console.warn('Three.js CDN not available (offline). Switching to PFD HUD.');
+                setViewMode('pfd');
+                return;
+            }
             const container = document.getElementById('viewer-3d');
             const w = container.clientWidth || 300, h = container.clientHeight || 200;
 

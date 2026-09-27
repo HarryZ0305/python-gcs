@@ -387,11 +387,13 @@ MAP_HTML = """
         }
 
         function updateHomeLine() {
-            if (!homePoint) return;
+            if (!homePoint || !marker) return;
             var dronePos = marker.getLatLng();
+            if (!dronePos) return;
             homeLine.setLatLngs([homePoint, [dronePos.lat, dronePos.lng]]);
             var dist = calculateDistance(dronePos.lat, dronePos.lng, homePoint[0], homePoint[1]);
-            document.getElementById('hud-home-dist').textContent = dist.toFixed(1) + ' m';
+            var hudDist = document.getElementById('hud-home-dist');
+            if (hudDist) hudDist.textContent = dist.toFixed(1) + ' m';
         }
 
         function updateDrone(lat, lon, headingDeg, speed, alt) {
@@ -616,6 +618,10 @@ class MapView(QWebEngineView):
         self._last_pos = (lat, lon)
         if self._is_loaded:
             self.page().runJavaScript(f"if (typeof updateDrone === 'function') updateDrone({lat}, {lon}, {heading_deg:.1f}, {speed:.1f}, {alt:.1f});")
+
+    def set_mode(self, mode_name):
+        if self._is_loaded:
+            self.page().runJavaScript(f"if (typeof setMode === 'function') setMode('{mode_name}');")
 
     def set_home(self, lat, lon):
         if self._is_loaded and (lat != 0.0 or lon != 0.0):

@@ -1,144 +1,166 @@
-# Python MAVLink Ground Control Station
+# Python MAVLink Ground Control Station (PythonGCS)
 
-A desktop **Ground Control Station (GCS)** built in Python with **PyQt6** and raw **pymavlink**. It connects to flight controllers running **PX4 Autopilot**, with live telemetry, an interactive map, a real-time 3D attitude view, manual offboard control, waypoint mission planning, and full parameter management.
+A modern, high-performance desktop **Ground Control Station (GCS)** built in Python with **PyQt6** and native **pymavlink**. Engineered for flight controllers running **PX4 Autopilot**, PythonGCS provides situational awareness on par with industry leaders like QGroundControl and Mission Planner: dual-mode aviation Primary Flight Display (PFD), tactical guided flight, aerial survey grid generation, 6-point pre-flight diagnostics, and offline terrain mapping.
 
-Developed and tested against **PX4 SITL** (Gazebo `gz_x500`), targeting a **Holybro S500** airframe with a **Pixhawk 6C** flight controller.
-
----
-
-## Features
-
-### FLY — telemetry & flight control
-- **Aerospace Dashboard Layout** — A clean 3-column aerospace-themed dashboard containing control systems, large map display, gauges, and attitude metrics.
-- **Custom Arc Gauges** — Beautiful custom half-circle gauges visualizing Altitude (0-120 m), Speed (0-30 m/s), Battery (0-100 %), and GPS Strength (0-20 satellites). They adaptively flash/change colors to warn of low battery or connection issues.
-- **Aircraft Status panel** — Instant text metrics reporting Pitch, Roll, Yaw, Mode, and Throttle.
-- **Interactive map** — An expanded Leaflet/OpenStreetMap view embedded in `QWebEngineView` that tracks the vehicle's position live.
-- **3D attitude viewer** — A procedural three.js quadcopter that mirrors the vehicle's real-time orientation.
-- **Command controls** — ARM / DISARM, flight-mode selector (PX4 modes), TAKEOFF, RTL, and LAND.
-- **Manual flight controls** — FORWARD / YAW LEFT / YAW RIGHT / HOVER, driven by a continuous PX4 **OFFBOARD** setpoint stream.
-- **Console acknowledgement log** — Decodes `COMMAND_ACK` and `STATUSTEXT` messages into plain-English console output (`ACCEPTED`, `DENIED`, `FAILED`, plus autopilot status text) inside a dedicated horizontal console strip.
-
-### CAMERAS — camera feeds
-- **Dedicated cameras panel** — Displays placeholder Front View and Bottom View camera feeds, isolated into their own tab to optimize flight telemetry space.
-
-### PLAN — mission planning
-- **Click-to-add waypoints** directly on the map, drawn as a dashed flight path.
-- **Sync** waypoints from the map into the GCS, then **upload** them to the vehicle using the MAVLink mission protocol (home mapped to `seq 0`, waypoints `seq 1..N`).
-
-### SETUP — parameters
-- **Live parameter table** with instant name filtering.
-- **Inline editing** — double-click a value to send a `PARAM_SET` back to the autopilot, with type handling for integer and real parameters.
-
-### Connection
-- **Non-blocking** connect/disconnect handled on a background `QThread`, so the UI never freezes.
-- **Configurable connection string** (defaults to `udpin:0.0.0.0:14540`).
-- **Safety lockout** — flight commands stay disabled until a connection is verified.
-- **Thread-safe transmits** — all MAVLink writes are serialized behind a single lock to prevent packet corruption from concurrent commands and the offboard stream.
+Developed and bench-tested against **PX4 SITL** (Gazebo `gz_x500`), targeting a **Holybro S500 / X500** airframe paired with a **Pixhawk 6C** autopilot.
 
 ---
 
-## Tech stack
+## Key Features
+
+### 1. FLY — Situational Awareness & Telemetry
+- **Global Mission Flight Ribbon** — QGC-style real-time header displaying vehicle Armed state, Flight Mode, GNSS fix (with satellite count), Battery status & voltage, airborne Flight Timer (`⏱️ MM:SS`), total distance flown (`🚩 m`), emergency `🛑 HOLD`, and master `🔊 VOICE: ON/MUTE`.
+- **Aviation Primary Flight Display (PFD) & 3D Attitude** — Switch seamlessly between:
+  - **PFD HUD**: Real-time artificial horizon with a pitch ladder (-40° to +40°), bank roll arc with angle pointer, dynamic compass heading tape (with cardinal markers N/E/S/W), airspeed tape, and altitude tape.
+  - **3D Model**: Procedural Three.js quadcopter mirroring physical vehicle orientation in radians.
+- **Tactical Leaflet Map with Offline Caching** — Embedded vector map featuring:
+  - **Directional Drone SVG**: Rotates smoothly with vehicle compass heading.
+  - **Live Map Telemetry HUD**: Floating card showing Distance to Home, AGL Altitude, Groundspeed, and Heading.
+  - **Home Tracking**: Automatic Home `[H]` marker drop with dynamic bearing line.
+  - **Map Tools**: Quick Center on Drone, Auto-Follow toggle (for unrestricted terrain inspection), and Clear Flight Breadcrumbs.
+  - **Guided "Fly to Here" Repositioning**: Click anywhere on the map to command a safe reposition setpoint (`MAV_CMD_DO_REPOSITION`) with target pulse marker and altitude confirmation.
+  - **⛶ Maximize Map Toggle**: One-click toggle between standard 3-column dashboard and full-width tactical map.
+- **Custom Half-Circle Arc Gauges** — High-contrast radial gauges for Altitude (0–120 m), Speed (0–30 m/s), Battery (0–100 %), and GPS Strength (0–20 sats) with adaptive warning colors.
+- **Real-Time Historical Trend Plots** — Live strip charts plotting Altitude and Groundspeed over elapsed mission time.
+- **6-Point Pre-Flight Safety Verification Modal** — Interactive checklist auditing MAVLink stream health, GNSS 3D fix (min 6 sats), battery power reserve, IMU levelness (±15°), autopilot prearm status, and Home coordinates with a definitive **`GO FOR FLIGHT`** / **`NO-GO`** banner.
+- **Emergency Abort / Hold** — Dedicated instant-action hold button that immediately zeroes velocity setpoints and engages `AUTO.LOITER`.
+- **Keyboard Flight Controls** — Smooth offboard flying via WASD / QE / IK keys with auto-hover release.
+- **3D Google Earth KML & GeoJSON Export** — One-click export of recorded GPS trajectories into 3D extruded ribbons (`.kml`) or GeoJSON for GIS spatial analysis.
+
+### 2. PLAN — Waypoint & Aerial Survey Missions
+- **Interactive Waypoint Planning** — Click-to-add waypoints directly on the map connected by dashed flight trajectories.
+- **Aerial Survey Grid Generator** — Automatically plans serpentine (lawnmower) flight patterns for photogrammetry, mapping, or search & rescue missions based on custom Width, Height, Lane Spacing, and Altitude.
+- **Mission Statistics & Duration Estimator** — Live computation of total planned trajectory distance and estimated flight duration at nominal cruise speed.
+- **Configurable Cruising Altitude** — Dedicated altitude spinbox wired directly into the MAVLink mission protocol (`upload_mission`).
+- **Import & Export** — Save and load mission plans as `.plan` / `.json` files.
+
+### 3. SETUP — Full Parameter Management
+- **Live Parameter Table** — Instant parameter download on connection with real-time text search filtering.
+- **Inline Value Editing** — Double-click any value to send a `PARAM_SET` back to the autopilot with automatic integer/float type casting.
+- **Backup & Restore** — Save all vehicle parameters to `.param` / `.json` files, or write entire configurations back to the flight controller.
+
+### 4. CONSOLE — Pro MAVLink Engineering Log
+- **Decoded Acknowledgment Stream** — Decodes `COMMAND_ACK` and `STATUSTEXT` into plain-English notifications (`ACCEPTED`, `DENIED`, `FAILED`).
+- **Search & Categorization** — Filter logs by keyword or category buttons (**`ALL`**, **`ERRORS`**, **`ACKS`**).
+- **Color-Coded Feedback** — Red for critical errors, Green for command acks, Sky Blue for autopilot text, and Purple for pilot commands.
+- **Auto-Scroll & Clear** — Built-in controls for live mission monitoring.
+
+---
+
+## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Language | Python 3 |
-| GUI | PyQt6 (+ QtWebEngine) |
-| MAVLink | pymavlink (raw) |
-| Map | Leaflet / OpenStreetMap |
-| 3D | three.js |
-| Firmware target | PX4 Autopilot |
-| Simulator | PX4 SITL (Gazebo `gz_x500`) |
+|---|---|
+| **Language** | Python 3.10+ |
+| **GUI Framework** | PyQt6 (+ PyQt6-WebEngine) |
+| **Telemetry & Commands** | Raw `pymavlink` (thread-safe serialization) |
+| **Tactical Map** | Leaflet / OpenStreetMap + Offline Tile HTTP Server |
+| **Flight Instruments** | HTML5 Canvas (PFD HUD) + Three.js (3D Quad) |
+| **Packaging** | PyInstaller (Standalone Windows `.exe`) |
+| **Target Firmware** | PX4 Autopilot (v1.14+) |
+| **Simulation Airframe** | PX4 SITL Gazebo Harmonic (`gz_x500`) |
+| **Target Hardware** | Holybro S500 / X500 + Pixhawk 6C |
 
 ---
 
-## Project structure
+## Project Structure
 
 ```
 python-gcs/
-├── main.py              # Entry point — launches the GUI
-├── requirements.txt
+├── main.py                     # Entry point: initializes tile server, Qt app, and GUI
+├── requirements.txt            # Runtime dependencies
+├── requirements-dev.txt        # Development dependencies (PyInstaller)
+├── PythonGCS.spec              # PyInstaller Windows packaging specification
+├── index.html                  # Product landing and distribution website
 └── gcs/
-    ├── connection.py    # connect() + telemetry stream setup (SET_MESSAGE_INTERVAL)
-    ├── telemetry.py     # MAVLink receive loop, telemetry_data store, mission/param queues
-    ├── commands.py      # Flight commands + OFFBOARD setpoint streamer + mission/param protocols
-    ├── logs.py          # Shared timestamped log buffer
+    ├── connection.py           # Non-blocking MAVLink connect worker & telemetry setup
+    ├── telemetry.py            # Centralized telemetry store & packet receive loop
+    ├── telemetry_logger.py     # Background CSV telemetry logging & trajectory recorder
+    ├── commands.py             # Flight commands, guided reposition, offboard streamer, mission protocol
+    ├── logs.py                 # Timestamped log buffer
+    ├── paths.py                # Asset and font resolution helper
     └── ui/
-        ├── gui.py       # Main window, layout, tabs, button handlers
-        ├── gauge.py     # Custom radial ArcGauge widget
-        ├── map_view.py  # Leaflet map widget
-        ├── attitude_view.py # three.js 3D attitude widget
-        ├── console_view.py  # Live log console
-        ├── camera_view.py   # Camera feed placeholders
-        └── setup_view.py    # Parameter management table
+        ├── gui.py              # Main window, flight ribbon, dialogs, keyboard flight handlers
+        ├── gauge.py            # Custom vector half-circle ArcGauge widgets
+        ├── map_view.py         # Leaflet tactical map widget (HUD, guided go-to, follow mode)
+        ├── tile_server.py      # Local offline tile HTTP server and downloader
+        ├── attitude_view.py    # Dual-mode widget: Three.js 3D Quad & Aviation PFD HUD
+        ├── console_view.py     # Searchable, categorized MAVLink engineering console
+        ├── camera_view.py      # Dual camera feed panels (Front and Bottom view)
+        └── setup_view.py       # Live parameter viewer and editor
 ```
 
 ---
 
-## Getting started
+## Getting Started
 
 ### 1. Prerequisites
 - Python 3.10+
-- A running PX4 instance — either **PX4 SITL** (for simulation) or a real PX4 flight controller.
+- PX4 Autopilot simulator (**PX4 SITL**) or a physical PX4 flight controller (**Pixhawk 6C**).
 
-### 2. Install
+### 2. Installation
 ```bash
 git clone https://github.com/HarryZ0305/python-gcs.git
 cd python-gcs
 pip install -r requirements.txt
 ```
 
-### 3. Run the PX4 simulator
+### 3. Launch the Simulator
 From a built [PX4-Autopilot](https://github.com/PX4/PX4-Autopilot) source tree:
 ```bash
-make px4_sitl gz_x500          # add HEADLESS=1 in front to skip the Gazebo window
+make px4_sitl gz_x500          # Add HEADLESS=1 to run without the Gazebo window
 ```
-PX4 exposes MAVLink on UDP **14540** (developer/offboard API) and **14550** (ground stations).
+Or run headless via Docker:
+```bash
+docker run --rm -it -p 14540:14540/udp jonasvautherin/px4-gazebo-headless:1.16.1
+```
+*PX4 exposes MAVLink on UDP **14540** (offboard/API port) and **14550** (QGroundControl).*
 
-> **Windows + WSL2 note:** PX4 SITL runs inside WSL2, which by default isolates its network from Windows — the GCS will sit on "connecting" with no heartbeat. Fix it by enabling mirrored networking: create `C:\Users\<you>\.wslconfig` containing
-> ```
-> [wsl2]
-> networkingMode=mirrored
-> ```
-> then run `wsl --shutdown`, restart Ubuntu, and relaunch the sim. (Requires Windows 11 and a recent WSL; run `wsl --update` if needed.)
-
-### 4. Launch the GCS
+### 4. Run the GCS
 ```bash
 python main.py
 ```
-Enter your connection string (default `udpin:0.0.0.0:14540`) and click **CONNECT**. The panels should populate within a few seconds.
+Leave the connection string at default (`udpin:0.0.0.0:14540`) and click **CONNECT**. The ribbon, gauges, and map will populate within seconds.
 
 ---
 
-## Quick flight (simulation)
+## Keyboard Flight Controls
 
-1. **Connect** and wait for the GPS fix to reach 3D and the panels to fill in.
-2. **ARM**, then **TAKEOFF** promptly — PX4 auto-disarms if you arm without taking off within ~10 seconds.
-3. Select **OFFBOARD** and click **FORWARD** / **YAW** — watch the drone move in Gazebo and the 3D viewer mirror its attitude. **HOVER** zeroes the velocity.
-4. **RTL** or **LAND** to bring it home.
+When **Enable Keyboard Flight** is checked on the FLY tab:
 
-Keep the console panel visible throughout — it reports every command's acknowledgement and any autopilot status messages.
-
----
-
-## Firmware & hardware
-
-This GCS targets **PX4** (it was originally prototyped against ArduCopter SITL and then ported). Movement uses PX4 **OFFBOARD** mode with a continuously streamed body-frame velocity setpoint, and flight modes use PX4 names (`POSCTL`, `OFFBOARD`, `AUTO.RTL`, `AUTO.LAND`, etc.).
-
-The intended hardware platform is a **Holybro S500** quadcopter with a **Pixhawk 6C**, which ships with PX4 firmware.
+| Key | Action |
+|---|---|
+| `W` / `S` | Move Forward / Backward (vx ±2.0 m/s) |
+| `A` / `D` | Move Left / Right (vy ∓2.0 m/s) |
+| `Q` / `E` | Yaw Rotate Left / Right (yaw_rate ∓0.5 rad/s) |
+| `I` / `K` | Climb Up / Descend Down (vz ∓1.5 m/s) |
+| `Space` or `H` | Zero velocities and **HOVER** in place |
 
 ---
 
-## Roadmap
+## Pre-Flight & Guided Flight Workflow
 
-- [ ] **Execute missions** — a "Start Mission" button (AUTO.MISSION) with live waypoint-progress feedback to complete the PLAN tab.
-- [ ] **Live video** — real camera/FPV feed into the placeholder camera panels.
-- [ ] **Health & failsafe indicators** — battery-low, EKF, and RC-link warnings surfaced in the HUD.
-- [ ] **Flight logging** — GCS-side telemetry recording and replay.
-- [ ] **Hardware bring-up** — verified flight on the physical S500 / Pixhawk 6C.
-- [ ] **Cleanup** — drop legacy dependencies (e.g. `dronekit-sitl`) now that the project runs on PX4 SITL.
+1. **Connect**: Click **CONNECT** to establish MAVLink heartbeat.
+2. **Pre-Flight Verification**: Click **📋 PRE-FLIGHT CHECKLIST** in the left panel to verify telemetry rate, GPS 3D fix, battery power, and attitude horizon.
+3. **Arm & Takeoff**: Click **ARM**, choose your altitude preset (e.g., `5m` or `10m`), and click **TAKEOFF**.
+4. **Guided Go-To**: On the map, click **FLY TO HERE**, click anywhere on the satellite view, and confirm the dialog to have the vehicle navigate and hold at that target coordinate.
+5. **Aviation PFD**: In the attitude card, toggle between **3D MODEL** and **PFD HUD** to monitor bank angle, pitch ladder, and compass ribbon.
+6. **Return Home**: Click **RTL** to bring the drone back to launch coordinates, or **HOLD** for immediate loiter.
+7. **Export Log**: In the map toolbar, click **🌐 EXPORT FLIGHT TRAIL** to save your flight trajectory as a Google Earth 3D `.kml` or `.geojson` file.
+
+---
+
+## Standalone Windows Executable
+
+To compile a standalone zero-dependency Windows `.exe`:
+```bash
+pip install -r requirements-dev.txt
+pyinstaller PythonGCS.spec
+```
+The compiled executable will be located in `dist/PythonGCS/PythonGCS.exe`.
 
 ---
 
 ## License
 
-See [LICENSE](LICENSE).
+Released under the [MIT License](LICENSE).

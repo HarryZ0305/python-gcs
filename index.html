@@ -1,1058 +1,1142 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Python GCS — open-source ground control for your build</title>
-  <meta name="description"
-    content="A clean, open-source MAVLink ground control station for PX4 multirotors. Live telemetry, satellite maps with offline caching, 3D attitude, and mission planning — built for the Holybro S500 + Pixhawk 6C." />
+  <title>Python GCS — Professional Open-Source Ground Control Station for PX4</title>
+  <meta name="description" content="A modern, high-performance desktop Ground Control Station for PX4 Autopilot and MAVLink multirotors. Features an aviation Primary Flight Display (PFD), interactive guided flight, aerial survey grid generation, and offline maps." />
+  
+  <!-- Modern Typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap"
-    rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
   <style>
     :root {
-      --bg: #eaeef4;
-      --bg-2: #f5f8fc;
-      --surface: #ffffff;
-      --line: #d4dce7;
-      --line-soft: #e4eaf2;
-      --ink: #0d1626;
-      --muted: #5b6675;
-      --blue: #0b57d0;
-      --blue-bright: #2b7fff;
-      --cyan: #0aa4c2;
-      --green: #0f9d58;
-      --amber: #e08200;
-      --red: #d93025;
-      --shadow: 0 1px 2px rgba(13, 22, 38, .04), 0 12px 32px -12px rgba(13, 22, 38, .18);
-      --r: 14px;
+      --bg: #090d16;
+      --bg-card: rgba(17, 24, 39, 0.85);
+      --bg-card-hover: rgba(30, 41, 59, 0.95);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(56, 189, 248, 0.3);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --primary: #0284c7;
+      --primary-bright: #38bdf8;
+      --primary-glow: rgba(56, 189, 248, 0.25);
+      --accent-green: #10b981;
+      --accent-green-glow: rgba(16, 185, 129, 0.2);
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+      --accent-purple: #8b5cf6;
+      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --shadow-subtle: 0 4px 20px rgba(0, 0, 0, 0.4);
+      --shadow-glow: 0 0 35px var(--primary-glow);
     }
 
-    * {
-      box-sizing: border-box
-    }
-
-    html {
-      scroll-behavior: smooth
-    }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; font-size: 16px; }
     body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--ink);
-      font-family: 'Inter', system-ui, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: var(--font-sans);
       line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 50% 0%, rgba(2, 132, 199, 0.15) 0%, transparent 60%),
+        radial-gradient(circle at 90% 20%, rgba(139, 92, 246, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 10% 80%, rgba(16, 185, 129, 0.06) 0%, transparent 50%);
+      background-attachment: fixed;
     }
 
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-      background-image:
-        linear-gradient(rgba(11, 87, 208, .045) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(11, 87, 208, .045) 1px, transparent 1px);
-      background-size: 46px 46px;
-      mask-image: radial-gradient(ellipse 90% 70% at 70% 0%, #000 30%, transparent 80%);
-      -webkit-mask-image: radial-gradient(ellipse 90% 70% at 70% 0%, #000 30%, transparent 80%);
-    }
-
-    .wrap {
-      max-width: 1140px;
+    /* Container */
+    .container {
+      max-width: 1200px;
       margin: 0 auto;
       padding: 0 24px;
-      position: relative;
-      z-index: 1
     }
 
-    a {
-      color: inherit;
-      text-decoration: none
-    }
-
-    .mono {
-      font-family: 'JetBrains Mono', monospace
-    }
-
-    header {
+    /* Top Navigation */
+    nav {
       position: sticky;
       top: 0;
-      z-index: 50;
-      backdrop-filter: saturate(1.2) blur(10px);
-      background: rgba(234, 238, 244, .78);
-      border-bottom: 1px solid var(--line-soft);
+      z-index: 1000;
+      background: rgba(9, 13, 22, 0.85);
+      backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
     }
-
-    .bar {
+    .nav-inner {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      height: 62px
+      height: 72px;
     }
-
     .brand {
       display: flex;
       align-items: center;
-      gap: 11px;
-      font-family: 'Space Grotesk';
-      font-weight: 700;
-      letter-spacing: -.01em;
-      font-size: 1.02rem
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-main);
+      font-weight: 800;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
     }
-
-    .glyph {
-      width: 26px;
-      height: 26px;
-      flex: none
-    }
-
-    nav.links {
+    .brand-icon {
+      width: 38px;
+      height: 38px;
+      background: linear-gradient(135deg, var(--primary-bright), var(--primary));
+      border-radius: var(--radius-sm);
       display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 16px var(--primary-glow);
+    }
+    .brand-badge {
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--primary-bright);
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border-accent);
+      font-weight: 600;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
       gap: 28px;
-      font-size: .9rem;
-      color: var(--muted);
-      font-weight: 500
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.92rem;
+      font-weight: 600;
+      transition: color 0.15s ease;
+    }
+    .nav-links a:hover {
+      color: var(--text-main);
+    }
+    .nav-cta {
+      background: linear-gradient(135deg, var(--primary), #0369a1);
+      color: #ffffff !important;
+      padding: 9px 18px;
+      border-radius: var(--radius-sm);
+      box-shadow: 0 0 20px var(--primary-glow);
+      transition: all 0.2s ease !important;
+    }
+    .nav-cta:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 28px rgba(56, 189, 248, 0.4);
     }
 
-    nav.links a:hover {
-      color: var(--ink)
+    /* Hero Section */
+    .hero {
+      padding: 90px 0 70px;
+      text-align: center;
+      position: relative;
     }
-
-    .ghbtn {
+    .hero-pill {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      font-size: .84rem;
+      padding: 6px 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.85rem;
       font-weight: 600;
-      padding: 8px 14px;
-      border: 1px solid var(--line);
-      border-radius: 9px;
-      background: var(--surface);
-      transition: .18s;
+      color: var(--primary-bright);
+      margin-bottom: 24px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
     }
-
-    .ghbtn:hover {
-      border-color: var(--blue);
-      color: var(--blue);
-      transform: translateY(-1px)
-    }
-
-    @media(max-width:760px) {
-      nav.links {
-        display: none
-      }
-    }
-
-    .hero {
-      padding: 64px 0 28px;
-      display: grid;
-      grid-template-columns: 1.05fr .95fr;
-      gap: 54px;
-      align-items: center
-    }
-
-    .eyebrow {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .74rem;
-      font-weight: 500;
-      letter-spacing: .16em;
-      color: var(--blue);
-      text-transform: uppercase;
-      display: inline-flex;
-      align-items: center;
-      gap: 9px;
-      margin-bottom: 20px;
-    }
-
-    .eyebrow::before {
-      content: "";
-      width: 22px;
-      height: 1px;
-      background: var(--blue)
-    }
-
-    h1 {
-      font-family: 'Space Grotesk';
-      font-weight: 700;
-      letter-spacing: -.025em;
-      font-size: clamp(2.3rem, 4.6vw, 3.5rem);
-      line-height: 1.04;
-      margin: 0 0 20px;
-    }
-
-    h1 .b {
-      color: var(--blue)
-    }
-
-    .lede {
-      font-size: 1.08rem;
-      color: var(--muted);
-      max-width: 30em;
-      margin: 0 0 30px
-    }
-
-    .cta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 13px;
-      align-items: center
-    }
-
-    .btn {
-      font-family: 'Inter';
-      font-weight: 600;
-      font-size: .95rem;
-      cursor: pointer;
-      padding: 14px 22px;
-      border-radius: 11px;
-      border: 1px solid transparent;
-      transition: .18s;
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .btn-primary {
-      background: var(--blue);
-      color: #fff;
-      box-shadow: 0 8px 22px -8px rgba(11, 87, 208, .6)
-    }
-
-    .btn-primary:hover {
-      background: #0a4cb8;
-      transform: translateY(-2px)
-    }
-
-    .btn-ghost {
-      background: var(--surface);
-      border-color: var(--line);
-      color: var(--ink)
-    }
-
-    .btn-ghost:hover {
-      border-color: var(--muted);
-      transform: translateY(-2px)
-    }
-
-    .badge {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .62rem;
-      font-weight: 600;
-      letter-spacing: .08em;
-      background: rgba(255, 255, 255, .22);
-      padding: 3px 7px;
-      border-radius: 5px;
-    }
-
-    .meta-line {
-      margin-top: 18px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .76rem;
-      color: var(--muted)
-    }
-
-    .meta-line b {
-      color: var(--green);
-      font-weight: 600
-    }
-
-    .panel {
-      background: linear-gradient(180deg, #fff, #fbfdff);
-      border: 1px solid var(--line);
-      border-radius: var(--r);
-      box-shadow: var(--shadow);
-      padding: 18px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .panel-h {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px
-    }
-
-    .panel-h .t {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .68rem;
-      letter-spacing: .18em;
-      color: var(--blue);
-      font-weight: 600
-    }
-
-    .live {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .64rem;
-      color: var(--muted);
-      letter-spacing: .1em
-    }
-
-    .dot {
+    .hero-pill span.dot {
       width: 7px;
       height: 7px;
+      background: var(--accent-green);
       border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 0 0 rgba(15, 157, 88, .5);
-      animation: pulse 2.2s infinite
+      box-shadow: 0 0 8px var(--accent-green);
+      animation: pulse 2s infinite;
     }
-
     @keyframes pulse {
-      0% {
-        box-shadow: 0 0 0 0 rgba(15, 157, 88, .45)
-      }
-
-      70% {
-        box-shadow: 0 0 0 7px rgba(15, 157, 88, 0)
-      }
-
-      100% {
-        box-shadow: 0 0 0 0 rgba(15, 157, 88, 0)
-      }
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.3); }
+      100% { opacity: 1; transform: scale(1); }
     }
-
-    .gauges {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1.15fr;
-      gap: 12px;
-      align-items: stretch
+    .hero h1 {
+      font-size: clamp(2.5rem, 5.5vw, 4.2rem);
+      font-weight: 800;
+      line-height: 1.12;
+      letter-spacing: -0.035em;
+      margin-bottom: 20px;
+      max-width: 950px;
+      margin-left: auto;
+      margin-right: auto;
     }
-
-    .gcard {
-      background: var(--bg-2);
-      border: 1px solid var(--line-soft);
-      border-radius: 11px;
-      padding: 12px 10px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center
+    .hero h1 .highlight {
+      background: linear-gradient(135deg, #ffffff 30%, var(--primary-bright) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
-
-    .gcard svg {
-      display: block
+    .hero p {
+      font-size: clamp(1.05rem, 2vw, 1.25rem);
+      color: var(--text-muted);
+      max-width: 720px;
+      margin: 0 auto 36px;
+      font-weight: 400;
     }
-
-    .gval {
-      font-family: 'JetBrains Mono', monospace;
-      font-weight: 600;
-      font-size: 1.32rem;
-      line-height: 1;
-      margin-top: -46px;
-      margin-bottom: 30px
-    }
-
-    .gunit {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .6rem;
-      color: var(--muted);
-      margin-top: -26px
-    }
-
-    .glabel {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .6rem;
-      letter-spacing: .12em;
-      color: var(--muted);
-      margin-top: 8px
-    }
-
-    .att {
-      position: relative
-    }
-
-    .horizon-wrap {
-      width: 118px;
-      height: 118px;
-      border-radius: 50%;
-      overflow: hidden;
-      border: 3px solid #cdd7e4;
-      position: relative;
-      margin: 2px auto 0
-    }
-
-    .sky-ground {
-      position: absolute;
-      left: -30%;
-      top: -30%;
-      width: 160%;
-      height: 160%;
-      transition: transform .1s linear
-    }
-
-    .sky {
-      position: absolute;
-      inset: 0 0 50% 0;
-      background: linear-gradient(#bfe0ff, #9cc9f5)
-    }
-
-    .ground {
-      position: absolute;
-      inset: 50% 0 0 0;
-      background: linear-gradient(#b08a63, #8f6f4d)
-    }
-
-    .hline {
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 50%;
-      height: 2px;
-      background: #fff;
-      transform: translateY(-1px)
-    }
-
-    .acsym {
-      position: absolute;
-      inset: 0;
+    .hero-actions {
       display: flex;
       align-items: center;
       justify-content: center;
-      pointer-events: none
-    }
-
-    .acsym svg {
-      filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .25))
-    }
-
-    .readout {
-      margin-top: 14px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px 18px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .7rem
-    }
-
-    .readout .k {
-      color: var(--muted)
-    }
-
-    .readout .v {
-      text-align: right;
-      color: var(--ink);
-      font-weight: 500
-    }
-
-    .scan {
-      position: absolute;
-      left: 0;
-      right: 0;
-      height: 38%;
-      top: -40%;
-      background: linear-gradient(180deg, transparent, rgba(43, 127, 255, .07), transparent);
-      animation: scan 6s linear infinite;
-      pointer-events: none
-    }
-
-    @keyframes scan {
-      to {
-        top: 120%
-      }
-    }
-
-    .ticker {
-      border-top: 1px solid var(--line-soft);
-      border-bottom: 1px solid var(--line-soft);
-      background: rgba(255, 255, 255, .5);
-      margin-top: 30px
-    }
-
-    .ticker .wrap {
-      display: flex;
+      gap: 16px;
       flex-wrap: wrap;
-      gap: 10px 34px;
-      padding: 15px 24px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .76rem;
-      color: var(--muted);
-      justify-content: center
+      margin-bottom: 40px;
     }
-
-    .ticker b {
-      color: var(--ink);
-      font-weight: 600
-    }
-
-    section {
-      padding: 72px 0;
-      position: relative
-    }
-
-    .sec-head {
-      max-width: 34em;
-      margin-bottom: 40px
-    }
-
-    .sec-eyebrow {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .72rem;
-      letter-spacing: .16em;
-      color: var(--blue);
-      text-transform: uppercase;
-      font-weight: 500
-    }
-
-    h2 {
-      font-family: 'Space Grotesk';
-      font-weight: 700;
-      letter-spacing: -.02em;
-      font-size: clamp(1.7rem, 3vw, 2.3rem);
-      margin: .5rem 0 .4rem
-    }
-
-    .sec-head p {
-      color: var(--muted);
-      margin: 0;
-      font-size: 1.02rem
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px
-    }
-
-    .feat {
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: var(--r);
-      padding: 24px;
-      transition: .2s;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .feat:hover {
-      transform: translateY(-3px);
-      border-color: #bcc8d8;
-      box-shadow: var(--shadow)
-    }
-
-    .feat .ic {
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
-      background: rgba(11, 87, 208, .08);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 16px;
-      color: var(--blue)
-    }
-
-    .feat h3 {
-      font-family: 'Space Grotesk';
-      font-weight: 600;
-      font-size: 1.08rem;
-      margin: 0 0 7px;
-      letter-spacing: -.01em
-    }
-
-    .feat p {
-      margin: 0;
-      color: var(--muted);
-      font-size: .93rem
-    }
-
-    .feat .no {
-      position: absolute;
-      top: 16px;
-      right: 18px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .68rem;
-      color: #c2ccd9
-    }
-
-    @media(max-width:860px) {
-      .grid {
-        grid-template-columns: 1fr 1fr
-      }
-    }
-
-    @media(max-width:560px) {
-      .grid {
-        grid-template-columns: 1fr
-      }
-    }
-
-    .dl {
-      background: linear-gradient(135deg, #0b1f3a, #0b57d0);
-      color: #fff;
-      border-radius: 20px;
-      padding: 48px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .dl::after {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background-image: linear-gradient(rgba(255, 255, 255, .06) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, .06) 1px, transparent 1px);
-      background-size: 34px 34px;
-      mask-image: radial-gradient(circle at 85% 20%, #000, transparent 70%);
-      -webkit-mask-image: radial-gradient(circle at 85% 20%, #000, transparent 70%)
-    }
-
-    .dl-in {
-      position: relative;
-      z-index: 1;
-      max-width: 34em
-    }
-
-    .dl h2 {
-      color: #fff
-    }
-
-    .dl p {
-      color: rgba(255, 255, 255, .82);
-      margin: .4rem 0 26px
-    }
-
-    .plats {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 11px;
-      margin-bottom: 18px
-    }
-
-    .plat {
-      display: flex;
+    .btn {
+      display: inline-flex;
       align-items: center;
       gap: 10px;
-      padding: 12px 17px;
-      border-radius: 11px;
-      background: rgba(255, 255, 255, .1);
-      border: 1px solid rgba(255, 255, 255, .18);
-      font-size: .9rem;
-      font-weight: 500;
-    }
-
-    .plat small {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .62rem;
-      opacity: .7;
-      letter-spacing: .05em
-    }
-
-    .plat.soon {
-      opacity: .7
-    }
-
-    .plat.ready {
-      background: #fff;
-      color: var(--ink);
+      font-size: 0.98rem;
+      font-weight: 700;
+      padding: 14px 26px;
+      border-radius: var(--radius-sm);
+      text-decoration: none;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
       cursor: pointer;
-      transition: .18s
     }
-
-    .plat.ready:hover {
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #0369a1);
+      color: #ffffff;
+      box-shadow: 0 0 25px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    }
+    .btn-primary:hover {
       transform: translateY(-2px);
-      box-shadow: 0 8px 20px -8px rgba(0, 0, 0, .35)
+      box-shadow: 0 0 35px rgba(56, 189, 248, 0.45);
+    }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.09);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-2px);
     }
 
-    .plat.ready small {
-      opacity: .85;
-      color: var(--blue)
-    }
-
-    .notify {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .8rem;
-      color: rgba(255, 255, 255, .85)
-    }
-
-    .notify a {
-      color: #fff;
-      text-decoration: underline;
-      text-underline-offset: 3px
-    }
-
-    footer {
-      padding: 40px 0 56px;
-      border-top: 1px solid var(--line-soft);
-      margin-top: 8px
-    }
-
-    .foot {
+    /* Trust Pill Bar */
+    .trust-bar {
       display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      gap: 18px;
       align-items: center;
-      color: var(--muted);
-      font-size: .85rem
+      justify-content: center;
+      gap: 32px;
+      flex-wrap: wrap;
+      font-size: 0.86rem;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+    .trust-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .trust-item svg {
+      color: var(--accent-green);
     }
 
-    .foot .mono {
-      font-size: .76rem
+    /* Interactive Cockpit Preview Frame */
+    .cockpit-preview {
+      margin: 30px auto 90px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-subtle), 0 0 50px rgba(0, 0, 0, 0.6);
+      overflow: hidden;
+      backdrop-filter: blur(20px);
+      position: relative;
+    }
+    .preview-header {
+      background: rgba(15, 23, 42, 0.95);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .window-dots {
+      display: flex;
+      gap: 8px;
+    }
+    .dot-circle {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+    }
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #f59e0b; }
+    .dot-green { background: #10b981; }
+
+    /* Interactive Tab Buttons in Preview */
+    .cockpit-tabs {
+      display: flex;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 4px;
+      border-radius: 8px;
+      gap: 4px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .tab-btn.active {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 0 10px var(--primary-glow);
     }
 
-    .disclaimer {
-      font-size: .74rem;
-      color: #8a94a3;
-      margin-top: 14px;
-      max-width: 46em;
-      line-height: 1.5
+    /* Cockpit Body */
+    .cockpit-body {
+      padding: 20px;
+      background: #0f172a;
+      min-height: 480px;
     }
 
-    @media(max-width:860px) {
-      .hero {
-        grid-template-columns: 1fr;
-        gap: 36px;
-        padding-top: 44px
-      }
+    /* Top Ribbon Mockup */
+    .mock-ribbon {
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+    }
+    .mock-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .mock-pill {
+      padding: 4px 8px;
+      border-radius: 5px;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+    .pill-armed { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border-color: var(--accent-green); }
+    .pill-mode { background: rgba(2, 132, 199, 0.15); color: var(--primary-bright); border-color: var(--primary); }
+    .pill-gps { background: rgba(255, 255, 255, 0.05); color: var(--text-main); border-color: var(--border); }
+    .pill-batt { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); border-color: var(--accent-green); }
+    .pill-timer { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border-color: var(--accent-amber); }
 
-      .dl {
-        padding: 32px 24px
-      }
+    /* Mock Grid Content */
+    .cockpit-grid {
+      display: grid;
+      grid-template-columns: 280px 1fr 300px;
+      gap: 16px;
+    }
+    @media (max-width: 960px) {
+      .cockpit-grid { grid-template-columns: 1fr; }
     }
 
-    @media (prefers-reduced-motion: reduce) {
-      * {
-        animation: none !important;
-        transition: none !important;
-        scroll-behavior: auto
-      }
+    /* Mock Cards */
+    .mock-card {
+      background: rgba(30, 41, 59, 0.5);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+    }
+    .mock-card-title {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--primary-bright);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
 
-      .sky-ground {
-        transform: none !important
-      }
+    /* Mock Gauges 2x2 */
+    .gauge-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .gauge-box {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      text-align: center;
+    }
+    .gauge-val {
+      font-family: var(--font-mono);
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--primary-bright);
+    }
+    .gauge-lbl {
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    /* Mock Map Graphic */
+    .mock-map {
+      background: #1e293b;
+      background-image: 
+        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      background-size: 30px 30px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      height: 380px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .mock-drone {
+      position: absolute;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: rotate(45deg);
+      animation: hoverDrone 3s ease-in-out infinite alternate;
+    }
+    @keyframes hoverDrone {
+      0% { transform: translate(-5px, -5px) rotate(40deg); }
+      100% { transform: translate(5px, 5px) rotate(50deg); }
+    }
+    .mock-trail {
+      position: absolute;
+      width: 140px;
+      height: 100px;
+      border: 2px dashed rgba(56, 189, 248, 0.5);
+      border-radius: 40px;
+      pointer-events: none;
+    }
+    .mock-home {
+      position: absolute;
+      top: 60px;
+      left: 70px;
+      width: 24px;
+      height: 24px;
+      background: #0f172a;
+      border: 2px solid #ffffff;
+      border-radius: 50%;
+      color: #ffffff;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .mock-hud-badge {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      display: flex;
+      gap: 12px;
+    }
+
+    /* PFD Canvas View (Tab 2) */
+    .pfd-container {
+      display: none;
+      height: 380px;
+      background: #000000;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .pfd-horizon {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .pfd-sky { flex: 1; background: #0284c7; }
+    .pfd-ground { flex: 1; background: #78350f; border-top: 2px solid #ffffff; }
+    .pfd-reticle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 120px;
+      height: 12px;
+      border-top: 3px solid #fbbf24;
+      display: flex;
+      justify-content: center;
+    }
+    .pfd-reticle::after {
+      content: '';
+      width: 8px;
+      height: 8px;
+      background: #fbbf24;
+      border-radius: 50%;
+      position: absolute;
+      top: -5px;
+    }
+
+    /* Section Styles */
+    section {
+      padding: 90px 0;
+      border-top: 1px solid var(--border);
+    }
+    .section-tag {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--primary-bright);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 12px;
+      display: block;
+    }
+    .section-title {
+      font-size: clamp(2rem, 3.5vw, 2.8rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 18px;
+      max-width: 650px;
+    }
+    .section-desc {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      max-width: 650px;
+      margin-bottom: 50px;
+    }
+
+    /* 6 Pillars Feature Grid */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 24px;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 32px;
+      transition: all 0.25s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .feature-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-accent);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+    }
+    .feature-icon-wrap {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      margin-bottom: 20px;
+      color: var(--primary-bright);
+    }
+    .feature-card h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: -0.01em;
+    }
+    .feature-card p {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Hardware Specs & SITL Section */
+    .specs-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      align-items: center;
+    }
+    @media (max-width: 850px) {
+      .specs-grid { grid-template-columns: 1fr; }
+    }
+    .spec-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+    .spec-table tr {
+      border-bottom: 1px solid var(--border);
+    }
+    .spec-table td {
+      padding: 14px 10px;
+    }
+    .spec-table td.label {
+      color: var(--text-muted);
+      font-weight: 500;
+      width: 40%;
+    }
+    .spec-table td.val {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .code-block {
+      background: #0f172a;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 20px;
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      color: #38bdf8;
+      overflow-x: auto;
+      line-height: 1.7;
+    }
+    .code-block span.comment { color: var(--text-dim); }
+
+    /* Steps Quickstart */
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+    .step-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 28px;
+      position: relative;
+    }
+    .step-num {
+      width: 32px;
+      height: 32px;
+      background: var(--primary);
+      color: #ffffff;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      font-weight: 800;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+    }
+
+    /* CTA Bottom Banner */
+    .cta-banner {
+      background: linear-gradient(135deg, rgba(2, 132, 199, 0.2), rgba(15, 23, 42, 0.8));
+      border: 1px solid var(--border-accent);
+      border-radius: var(--radius-lg);
+      padding: 60px 40px;
+      text-align: center;
+      margin: 40px 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+      font-size: 0.88rem;
+      color: var(--text-dim);
+    }
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 20px;
     }
   </style>
 </head>
-
 <body>
 
-  <header>
-    <div class="wrap bar">
-      <div class="brand">
-        <svg class="glyph" viewBox="0 0 32 32" fill="none">
-          <circle cx="16" cy="16" r="14.5" stroke="#0b57d0" stroke-width="1.4" />
-          <path d="M16 4 L16 28 M4 16 L28 16" stroke="#0b57d0" stroke-width="1" opacity=".4" />
-          <path d="M16 8 L22 22 L16 18.5 L10 22 Z" fill="#0b57d0" />
-        </svg>
-        Python<span style="color:var(--blue)">GCS</span>
-      </div>
-      <nav class="links">
-        <a href="#features">Features</a>
-        <a href="#hardware">Hardware</a>
-        <a href="#download">Download</a>
-      </nav>
-      <a class="ghbtn" href="https://github.com/HarryZ0305/python-gcs" target="_blank" rel="noopener">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-          <path
-            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.71 1.23 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.52.56.83 1.28.83 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-        </svg>
-        Star
+  <!-- Navigation -->
+  <nav>
+    <div class="container nav-inner">
+      <a href="#" class="brand">
+        <div class="brand-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 19 21 12 17 5 21 12 2"></polygon>
+          </svg>
+        </div>
+        <span>PythonGCS</span>
+        <span class="brand-badge">v2.2 PX4</span>
       </a>
+
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#preview">Cockpit</a></li>
+        <li><a href="#hardware">Hardware & SITL</a></li>
+        <li><a href="#quickstart">Quickstart</a></li>
+        <li><a href="https://github.com/HarryZ0305/python-gcs" target="_blank">GitHub</a></li>
+        <li><a href="dist/PythonGCS/PythonGCS.exe" class="nav-cta" download>Download .exe</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <header class="hero">
+    <div class="container">
+      <div class="hero-pill">
+        <span class="dot"></span>
+        <span>Built for PX4 Autopilot & Pixhawk 6C Systems</span>
+      </div>
+
+      <h1>
+        Ground Control, <br />
+        <span class="highlight">Engineered for Flight Precision.</span>
+      </h1>
+
+      <p>
+        A modern, zero-bloat desktop Ground Control Station built in Python & PyQt6 with native MAVLink. Featuring an aviation Primary Flight Display (PFD), tactical guided flight, aerial survey grids, and offline terrain mapping.
+      </p>
+
+      <div class="hero-actions">
+        <a href="dist/PythonGCS/PythonGCS.exe" class="btn btn-primary" download>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Download Windows App (.exe)
+        </a>
+        <a href="#preview" class="btn btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="10 8 16 12 10 16 10 8"></polygon>
+          </svg>
+          Explore Cockpit Demo
+        </a>
+        <a href="https://github.com/HarryZ0305/python-gcs" target="_blank" class="btn btn-secondary">
+          View Source Code
+        </a>
+      </div>
+
+      <div class="trust-bar">
+        <div class="trust-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span>100% Offline Tile Caching</span>
+        </div>
+        <div class="trust-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span>Raw pymavlink Reliability</span>
+        </div>
+        <div class="trust-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span>Sub-Millisecond Thread Locking</span>
+        </div>
+        <div class="trust-item">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          <span>Free & Open Source (MIT)</span>
+        </div>
+      </div>
     </div>
   </header>
 
-  <div class="wrap">
-    <section class="hero">
-      <div>
-        <span class="eyebrow">Open-source ground control</span>
-        <h1>Fly your build with <span class="b">full situational awareness.</span></h1>
-        <p class="lede">A clean MAVLink ground control station for PX4 multirotors — live telemetry, satellite maps that
-          work in the field, a 3D attitude view, and full mission planning. Built by a builder, for a real Pixhawk.</p>
-        <div class="cta">
-          <a class="btn btn-primary"
-            href="https://github.com/HarryZ0305/python-gcs/releases/latest/download/PythonGCS-windows.zip">Download for
-            Windows</a>
-          <a class="btn btn-ghost" href="https://github.com/HarryZ0305/python-gcs" target="_blank" rel="noopener">View
-            the source</a>
-        </div>
-        <div class="meta-line">v1.0 &middot; <b>available for Windows</b> &middot; PX4 / MAVLink</div>
-      </div>
+  <!-- Interactive Cockpit Preview -->
+  <section id="preview" style="padding-top: 10px;">
+    <div class="container">
+      <div class="cockpit-preview">
+        <!-- Preview Window Titlebar -->
+        <div class="preview-header">
+          <div class="window-dots">
+            <span class="dot-circle dot-red"></span>
+            <span class="dot-circle dot-yellow"></span>
+            <span class="dot-circle dot-green"></span>
+          </div>
 
-      <div class="panel" id="cluster">
-        <div class="scan"></div>
-        <div class="panel-h">
-          <span class="t">TELEMETRY</span>
-          <span class="live"><span class="dot"></span>LINK ACTIVE</span>
+          <!-- Interactive Mode Switcher -->
+          <div class="cockpit-tabs">
+            <button class="tab-btn active" onclick="switchPreview('fly')">FLY DASHBOARD</button>
+            <button class="tab-btn" onclick="switchPreview('pfd')">AVIATION PFD</button>
+            <button class="tab-btn" onclick="switchPreview('plan')">SURVEY & PLAN</button>
+            <button class="tab-btn" onclick="switchPreview('console')">CONSOLE ACK</button>
+          </div>
+
+          <div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--primary-bright);">
+            udpin:0.0.0.0:14540 [CONNECTED]
+          </div>
         </div>
-        <div class="gauges">
-          <div class="gcard">
-            <svg width="96" height="78" viewBox="0 0 96 78">
-              <path d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="#dde5ef" stroke-width="9"
-                stroke-linecap="round" />
-              <path id="arc-alt" d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="url(#g1)" stroke-width="9"
-                stroke-linecap="round" />
-              <defs>
-                <linearGradient id="g1" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0" stop-color="#2b7fff" />
-                  <stop offset="1" stop-color="#0b57d0" />
-                </linearGradient>
-              </defs>
-            </svg>
-            <div class="gval mono" data-to="48" data-suffix="">0</div>
-            <div class="gunit">METERS</div>
-            <div class="glabel">ALTITUDE</div>
+
+        <!-- Cockpit Body -->
+        <div class="cockpit-body">
+          <!-- Top Flight Telemetry Ribbon -->
+          <div class="mock-ribbon">
+            <div class="mock-pills">
+              <span class="mock-pill pill-armed">ARMED</span>
+              <span class="mock-pill pill-mode">MODE: POSCTL</span>
+              <span class="mock-pill pill-gps">GPS: 3D FIX (14 sats)</span>
+              <span class="mock-pill pill-batt">BATT: 86% | 15.8V</span>
+              <span class="mock-pill pill-timer">FLIGHT: 04:18</span>
+              <span class="mock-pill pill-gps">DIST: 382 m</span>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <span class="mock-pill" style="background:#ef4444; color:#fff;">HOLD</span>
+              <span class="mock-pill" style="background:#0284c7; color:#fff;">VOICE: ON</span>
+            </div>
           </div>
-          <div class="gcard">
-            <svg width="96" height="78" viewBox="0 0 96 78">
-              <path d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="#dde5ef" stroke-width="9"
-                stroke-linecap="round" />
-              <path id="arc-spd" d="M14 70 A38 38 0 1 1 82 70" fill="none" stroke="url(#g2)" stroke-width="9"
-                stroke-linecap="round" />
-              <defs>
-                <linearGradient id="g2" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0" stop-color="#0aa4c2" />
-                  <stop offset="1" stop-color="#0b57d0" />
-                </linearGradient>
-              </defs>
-            </svg>
-            <div class="gval mono" data-to="9.4" data-dec="1">0</div>
-            <div class="gunit">M / S</div>
-            <div class="glabel">GROUND SPD</div>
-          </div>
-          <div class="gcard att">
-            <div class="horizon-wrap">
-              <div class="sky-ground" id="horizon">
-                <div class="sky"></div>
-                <div class="ground"></div>
-                <div class="hline"></div>
+
+          <!-- Tab Content 1: FLY Dashboard -->
+          <div id="content-fly" class="cockpit-grid">
+            <!-- Left Column: Actions & Safety -->
+            <div class="mock-card">
+              <div class="mock-card-title">Flight Controls</div>
+              <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+                <button class="tab-btn active" style="flex:1;">TAKEOFF</button>
+                <button class="tab-btn" style="flex:1; border: 1px solid var(--border);">RTL</button>
+                <button class="tab-btn" style="flex:1; border: 1px solid var(--border);">LAND</button>
               </div>
-              <div class="acsym">
-                <svg width="70" height="20" viewBox="0 0 70 20">
-                  <path d="M6 10 H26 M44 10 H64" stroke="#ffcc33" stroke-width="3" stroke-linecap="round" />
-                  <circle cx="35" cy="10" r="2.5" fill="#ffcc33" />
+              <div style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 8px;">Takeoff Altitude:</div>
+              <div style="display: flex; gap: 4px; margin-bottom: 14px;">
+                <span class="mock-pill" style="background: rgba(255,255,255,0.06); font-size: 10px;">2.5m</span>
+                <span class="mock-pill pill-mode" style="font-size: 10px;">5m</span>
+                <span class="mock-pill" style="background: rgba(255,255,255,0.06); font-size: 10px;">10m</span>
+                <span class="mock-pill" style="background: rgba(255,255,255,0.06); font-size: 10px;">20m</span>
+              </div>
+              <div class="mock-card-title" style="margin-top: 18px;">6-Point Safety Checklist</div>
+              <div style="font-size: 0.78rem; display: flex; flex-direction: column; gap: 6px; color: var(--accent-green);">
+                <span>✓ MAVLink Stream: 10 Hz</span>
+                <span>✓ GPS 3D Fix (14 Satellites)</span>
+                <span>✓ Battery: 15.8V (Healthy)</span>
+                <span>✓ IMU & Horizon Level (0.2°)</span>
+                <span>✓ Pre-arm Readiness: PASSED</span>
+              </div>
+            </div>
+
+            <!-- Center Column: Tactical Map -->
+            <div class="mock-map">
+              <div class="mock-hud-badge">
+                <span>HOME: 42.5m</span>
+                <span>SPD: 3.8m/s</span>
+                <span>ALT: 12.4m</span>
+                <span>HDG: 045°</span>
+              </div>
+
+              <div class="mock-home">H</div>
+              <div class="mock-trail"></div>
+
+              <div class="mock-drone">
+                <svg width="40" height="40" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="20" fill="#0b57d0" stroke="#ffffff" stroke-width="4"/>
+                  <polygon points="50,14 42,28 58,28" fill="#38bdf8" stroke="#ffffff" stroke-width="1.5"/>
+                  <line x1="22" y1="22" x2="78" y2="78" stroke="#94a3b8" stroke-width="4"/>
+                  <line x1="78" y1="22" x2="22" y2="78" stroke="#94a3b8" stroke-width="4"/>
+                  <circle cx="22" cy="22" r="8" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+                  <circle cx="78" cy="22" r="8" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+                  <circle cx="22" cy="78" r="8" fill="#ef4444" stroke="#ffffff" stroke-width="2"/>
+                  <circle cx="78" cy="78" r="8" fill="#ef4444" stroke="#ffffff" stroke-width="2"/>
                 </svg>
               </div>
             </div>
-            <div class="glabel">ATTITUDE</div>
+
+            <!-- Right Column: Gauges & PFD Mini -->
+            <div class="mock-card">
+              <div class="mock-card-title">Live Telemetry</div>
+              <div class="gauge-grid">
+                <div class="gauge-box">
+                  <div class="gauge-val">12.4</div>
+                  <div class="gauge-lbl">Altitude (m)</div>
+                </div>
+                <div class="gauge-box">
+                  <div class="gauge-val">3.8</div>
+                  <div class="gauge-lbl">Speed (m/s)</div>
+                </div>
+                <div class="gauge-box">
+                  <div class="gauge-val" style="color: var(--accent-green);">86%</div>
+                  <div class="gauge-lbl">Battery</div>
+                </div>
+                <div class="gauge-box">
+                  <div class="gauge-val">14</div>
+                  <div class="gauge-lbl">GPS Sats</div>
+                </div>
+              </div>
+              <div class="mock-card-title">Attitude Metrics</div>
+              <div style="font-family: var(--font-mono); font-size: 0.8rem; display: flex; justify-content: space-between; color: var(--text-muted); line-height: 1.8;">
+                <span>Roll: 1.2°</span>
+                <span>Pitch: -2.4°</span>
+                <span>Yaw: 045°</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab Content 2: Aviation PFD (Hidden by default) -->
+          <div id="content-pfd" class="pfd-container">
+            <div class="pfd-horizon">
+              <div class="pfd-sky"></div>
+              <div class="pfd-ground"></div>
+            </div>
+            <div class="pfd-reticle"></div>
+            <div style="position: absolute; top: 12px; left: 20px; font-family: var(--font-mono); color: #38bdf8; font-size: 14px; font-weight: bold;">
+              SPEED: 3.8 m/s
+            </div>
+            <div style="position: absolute; top: 12px; right: 20px; font-family: var(--font-mono); color: #38bdf8; font-size: 14px; font-weight: bold;">
+              ALT: 12.4 m
+            </div>
+            <div style="position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-family: var(--font-mono); color: #fbbf24; font-size: 13px; font-weight: bold;">
+              HDG: 045° NE
+            </div>
+          </div>
+
+          <!-- Tab Content 3: Plan & Survey -->
+          <div id="content-plan" style="display: none;" class="mock-card">
+            <div class="mock-card-title">Aerial Survey Grid & Waypoint Plan</div>
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 14px;">
+              Auto-generated serpentine lawnmower pattern for 80m x 80m survey area at 15m cruising altitude.
+            </p>
+            <div style="font-family: var(--font-mono); font-size: 0.82rem; background: rgba(0,0,0,0.4); padding: 12px; border-radius: 6px; line-height: 1.8;">
+              <div>TAKEOFF: 32.715700, -117.161100 (Alt: 15.0m)</div>
+              <div>WP 1: 32.715900, -117.161400 (Lane 1 West)</div>
+              <div>WP 2: 32.715900, -117.160800 (Lane 1 East)</div>
+              <div>WP 3: 32.716100, -117.160800 (Lane 2 East)</div>
+              <div>WP 4: 32.716100, -117.161400 (Lane 2 West)</div>
+              <div>LAND: 32.715700, -117.161100 (Home)</div>
+              <div style="color: var(--primary-bright); margin-top: 8px;">Total Planned Distance: 342.5m | Est. Duration: 01m 08s</div>
+            </div>
+          </div>
+
+          <!-- Tab Content 4: Console Log -->
+          <div id="content-console" style="display: none;" class="mock-card">
+            <div class="mock-card-title">Live Engineering Acknowledgement Stream</div>
+            <div style="font-family: var(--font-mono); font-size: 0.8rem; background: rgba(0,0,0,0.5); padding: 14px; border-radius: 6px; line-height: 1.8; color: #cbd5e1;">
+              <div>[12:04:12] MAVLink connection established over udpin:0.0.0.0:14540</div>
+              <div>[12:04:13] <span style="color: #38bdf8;">FCU: PX4 Autopilot v1.16.1 (Gazebo gz_x500)</span></div>
+              <div>[12:04:14] Command 511 (SET_MESSAGE_INTERVAL) ACK: <span style="color: #10b981;">ACCEPTED</span></div>
+              <div>[12:04:18] Parameter sync: Received 482 parameters from vehicle.</div>
+              <div>[12:04:22] Pre-flight 6-point checklist: <span style="color: #10b981;">ALL SYSTEMS GO</span></div>
+              <div>[12:04:25] <span style="color: #a855f7;">ARM initiated by pilot</span> -> MAV_CMD_COMPONENT_ARM_DISARM ACK: <span style="color: #10b981;">ACCEPTED</span></div>
+              <div>[12:04:28] Mode change: <span style="color: #38bdf8;">POSCTL</span> set successfully.</div>
+            </div>
           </div>
         </div>
-        <div class="readout">
-          <span class="k">LAT</span><span class="v" id="r-lat">32.7157</span>
-          <span class="k">SATS</span><span class="v" id="r-sat">12</span>
-          <span class="k">LON</span><span class="v" id="r-lon">-117.1611</span>
-          <span class="k">BATT</span><span class="v" id="r-bat" style="color:var(--green)">88%</span>
-        </div>
       </div>
-    </section>
-  </div>
-
-  <div class="ticker">
-    <div class="wrap">
-      <span>FW&nbsp; <b>PX4</b></span>
-      <span>PROTOCOL&nbsp; <b>MAVLink</b></span>
-      <span>FRAME&nbsp; <b>Holybro S500</b></span>
-      <span>FCU&nbsp; <b>Pixhawk 6C</b></span>
-      <span>STACK&nbsp; <b>Python · PyQt6</b></span>
-      <span>SIM&nbsp; <b>PX4 SITL</b></span>
     </div>
-  </div>
+  </section>
 
-  <div class="wrap">
-    <section id="features">
-      <div class="sec-head">
-        <span class="sec-eyebrow">What's on the glass</span>
-        <h2>Everything you need on one screen.</h2>
-        <p>The features that ship in v1 — pulled straight from the build, not a wishlist.</p>
-      </div>
-      <div class="grid">
-        <div class="feat"><span class="no mono">01</span>
-          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2">
-              <path d="M3 15a9 9 0 0 1 18 0" stroke-linecap="round" />
-              <path d="M12 15l4-4" stroke-linecap="round" />
-            </svg></div>
-          <h3>Live telemetry gauges</h3>
-          <p>Altitude, speed, battery, and GPS strength on sweeping arc gauges — readable at a glance from across the
-            field.</p>
+  <!-- Core Features Section (6 Pillars) -->
+  <section id="features">
+    <div class="container">
+      <span class="section-tag">Capabilities</span>
+      <h2 class="section-title">Everything you need to command your flight.</h2>
+      <p class="section-desc">Designed from the ground up for PX4 drones, combining aerospace-grade instruments with the speed and flexibility of modern software.</p>
+
+      <div class="features-grid">
+        <!-- Feature 1 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrap">🧭</div>
+          <h3>Primary Flight Display (PFD)</h3>
+          <p>Toggle seamlessly between an authentic aviation artificial horizon (pitch ladder, compass tape, airspeed/alt tapes) and an interactive 3D procedural quadcopter model.</p>
         </div>
-        <div class="feat"><span class="no mono">02</span>
-          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2">
-              <path d="M9 3 3 6v15l6-3 6 3 6-3V3l-6 3-6-3Z" stroke-linejoin="round" />
-              <path d="M9 3v15M15 6v15" />
-            </svg></div>
-          <h3>Maps that work offline</h3>
-          <p>Plan on a real map, then cache the area to disk before you drive out — no signal needed once you're
-            standing in the field.</p>
+
+        <!-- Feature 2 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrap">🎯</div>
+          <h3>Guided "Fly to Here" Repositioning</h3>
+          <p>Click anywhere on the satellite map to dispatch instantaneous guided reposition setpoints (<code>MAV_CMD_DO_REPOSITION</code>) with target pulse markers and altitude safeguards.</p>
         </div>
-        <div class="feat"><span class="no mono">03</span>
-          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2">
-              <path d="M12 2 2 7l10 5 10-5-10-5Z" stroke-linejoin="round" />
-              <path d="M2 17l10 5 10-5M2 12l10 5 10-5" />
-            </svg></div>
-          <h3>3D attitude view</h3>
-          <p>A live model that banks and pitches with the aircraft, so you can verify orientation before you ever leave
-            the ground.</p>
+
+        <!-- Feature 3 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrap">🗺️</div>
+          <h3>Aerial Survey Grid Generator</h3>
+          <p>Automatically plan serpentine lawnmower grid patterns for aerial photogrammetry, surveying, or search & rescue missions with configurable lane spacing and altitude.</p>
         </div>
-        <div class="feat"><span class="no mono">04</span>
-          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2">
-              <circle cx="6" cy="6" r="2.5" />
-              <circle cx="18" cy="18" r="2.5" />
-              <path d="M8 6h7a3 3 0 0 1 3 3v6" stroke-linecap="round" />
-            </svg></div>
-          <h3>Mission planning</h3>
-          <p>Drop waypoints with takeoff and landing, upload to the vehicle, and save or load full missions as files for
-            next time.</p>
+
+        <!-- Feature 4 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrap">📋</div>
+          <h3>6-Point Pre-Flight Health Checklist</h3>
+          <p>Comprehensive pre-arm verification modal auditing telemetry rates, GNSS 3D fix, battery power thresholds, IMU horizon levelness, and autopilot prearm readiness.</p>
         </div>
-        <div class="feat"><span class="no mono">05</span>
-          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2">
-              <rect x="3" y="6" width="18" height="12" rx="2" />
-              <path d="M7 10h.01M11 10h.01M15 10h2M8 14h8" stroke-linecap="round" />
-            </svg></div>
-          <h3>Keyboard flight</h3>
-          <p>Take manual offboard control with the keyboard to nudge the aircraft and bench-test attitude response in
-            the simulator.</p>
+
+        <!-- Feature 5 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrap">🌐</div>
+          <h3>3D KML & GeoJSON Trail Export</h3>
+          <p>Record flight paths and export them with a single click to Google Earth 3D extruded ribbons (<code>.kml</code>) or standard GeoJSON for GIS spatial analysis.</p>
         </div>
-        <div class="feat"><span class="no mono">06</span>
-          <div class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              stroke-width="2">
-              <path d="M12 2 4 5v6c0 5 3.5 8 8 11 4.5-3 8-6 8-11V5l-8-3Z" stroke-linejoin="round" />
-              <path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round" />
-            </svg></div>
-          <h3>Pre-flight safety checks</h3>
-          <p>A live checklist and alert panel that flags GPS, battery, and link issues — and tells you exactly what's
-            blocking arming.</p>
+
+        <!-- Feature 6 -->
+        <div class="feature-card">
+          <div class="feature-icon-wrap">💾</div>
+          <h3>Full MAVLink Parameter Engine</h3>
+          <p>Real-time parameter search, double-click inline value editing with automatic type-checking, and one-click <code>.param</code> backup and restore.</p>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
-    <section id="hardware" style="padding-top:12px">
-      <div class="panel"
-        style="display:grid; grid-template-columns:1.2fr 1fr; gap:30px; padding:34px; align-items:center">
+  <!-- Hardware Target Section -->
+  <section id="hardware" style="background: rgba(15, 23, 42, 0.4);">
+    <div class="container">
+      <div class="specs-grid">
         <div>
-          <span class="sec-eyebrow">Built for real iron</span>
-          <h2 style="margin-top:.4rem">Bench-tested against the gear it's made for.</h2>
-          <p style="color:var(--muted)">Python GCS is developed against PX4 SITL and targets a Holybro S500 quad running
-            a Pixhawk 6C. If you fly the same setup, it's built for your bird. If you fly something else PX4-based, it
-            speaks plain MAVLink — give it a try.</p>
-        </div>
-        <div class="readout" style="font-size:.82rem; gap:12px 18px">
-          <span class="k">AIRFRAME</span><span class="v">Holybro S500 V2</span>
-          <span class="k">FLIGHT CTRL</span><span class="v">Pixhawk 6C</span>
-          <span class="k">FIRMWARE</span><span class="v">PX4</span>
-          <span class="k">SIMULATOR</span><span class="v">PX4 SITL · Gazebo</span>
-          <span class="k">LINK</span><span class="v">UDP / MAVLink</span>
-          <span class="k">PLATFORM</span><span class="v">Windows desktop</span>
-        </div>
-      </div>
-    </section>
+          <span class="section-tag">Tested Hardware</span>
+          <h2 class="section-title">Built for Real Airframes & SITL Simulators.</h2>
+          <p style="color: var(--text-muted); margin-bottom: 24px;">
+            Targeted specifically at the Holybro S500 quadcopter with a Pixhawk 6C flight controller, perfectly matched against PX4 SITL Gazebo simulation.
+          </p>
 
-    <section id="download" style="padding-top:24px">
-      <div class="dl">
-        <div class="dl-in">
-          <span class="sec-eyebrow" style="color:#9ec6ff">Download</span>
-          <h2>Cleared for takeoff.</h2>
-          <p>Grab the latest Windows build below, unzip it, and run <span class="mono"
-              style="color:#fff">PythonGCS.exe</span>. You'll need PX4 SITL or a Pixhawk-based PX4 vehicle to connect
-            to.</p>
-          <div class="plats">
-            <a class="plat ready"
-              href="https://github.com/HarryZ0305/python-gcs/releases/latest/download/PythonGCS-windows.zip"><svg
-                width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M3 5.5 10 4.5v7H3v-6Zm0 13L10 19.5v-7H3v6ZM11 4.3 21 3v8.5H11V4.3Zm0 15.4L21 21v-8.5H11v7.2Z" />
-              </svg> Windows <small>.ZIP</small></a>
-            <div class="plat soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M16.4 1.6c.1 1-.3 2-.9 2.8-.7.8-1.7 1.4-2.7 1.3-.1-1 .4-2 1-2.7.6-.8 1.7-1.3 2.6-1.4ZM19 17.3c-.5 1.1-.7 1.6-1.3 2.6-.9 1.4-2.1 3.1-3.6 3.1-1.3 0-1.7-.8-3.4-.8-1.8 0-2.2.8-3.5.8-1.5 0-2.6-1.5-3.5-2.9C-.2 16-.6 9.9 2.3 7.6c1-.8 2.4-1.3 3.6-1.3 1.4 0 2.3.8 3.5.8 1.1 0 1.8-.8 3.4-.8 1.1 0 2.3.3 3.2 1.1-2.8 1.6-2.4 5.7.0 6.9Z" />
-              </svg> macOS <small>LATER</small></div>
-            <div class="plat soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="12" r="10" />
-              </svg> Linux <small>LATER</small></div>
+          <table class="spec-table">
+            <tr>
+              <td class="label">Airframe Target</td>
+              <td class="val">Holybro S500 / X500 Multirotor</td>
+            </tr>
+            <tr>
+              <td class="label">Flight Controller</td>
+              <td class="val">Holybro Pixhawk 6C / 6X</td>
+            </tr>
+            <tr>
+              <td class="label">Autopilot Firmware</td>
+              <td class="val">PX4 Autopilot (v1.14+)</td>
+            </tr>
+            <tr>
+              <td class="label">MAVLink Port</td>
+              <td class="val">UDP 14540 (API/Offboard)</td>
+            </tr>
+            <tr>
+              <td class="label">Simulator Airframe</td>
+              <td class="val">Gazebo Harmonic / SITL <code>gz_x500</code></td>
+            </tr>
+          </table>
+        </div>
+
+        <div>
+          <div class="mock-card-title" style="margin-bottom: 8px;">Run PX4 SITL Simulator</div>
+          <div class="code-block">
+            <span class="comment"># In PX4-Autopilot directory:</span><br />
+            make px4_sitl gz_x500<br /><br />
+            <span class="comment"># Or run headless in Docker (Windows/Mac/Linux):</span><br />
+            docker run --rm -it -p 14540:14540/udp \<br />
+            &nbsp;&nbsp;jonasvautherin/px4-gazebo-headless:1.16.1
           </div>
-          <p class="notify">→ <a href="https://github.com/HarryZ0305/python-gcs" target="_blank" rel="noopener">Star or
-              watch the repo on GitHub</a> to follow new releases.</p>
         </div>
       </div>
-    </section>
-  </div>
+    </div>
+  </section>
 
-  <footer>
-    <div class="wrap">
-      <div class="foot">
-        <div class="brand" style="font-size:.95rem">
-          <svg class="glyph" viewBox="0 0 32 32" fill="none" style="width:22px;height:22px">
-            <circle cx="16" cy="16" r="14.5" stroke="#0b57d0" stroke-width="1.4" />
-            <path d="M16 8 L22 22 L16 18.5 L10 22 Z" fill="#0b57d0" />
-          </svg>
-          Python<span style="color:var(--blue)">GCS</span>
+  <!-- Quickstart Section -->
+  <section id="quickstart">
+    <div class="container">
+      <span class="section-tag">Fast Setup</span>
+      <h2 class="section-title">Take off in less than 3 minutes.</h2>
+      <p class="section-desc">Zero complex dependencies. Run the standalone Windows binary directly, or run from Python source.</p>
+
+      <div class="steps-grid">
+        <div class="step-box">
+          <div class="step-num">1</div>
+          <h3 style="font-size: 1.15rem; margin-bottom: 8px;">Download or Clone</h3>
+          <p style="color: var(--text-muted); font-size: 0.92rem;">
+            Grab the standalone <code>PythonGCS.exe</code> bundle, or clone the repository and run <code>pip install -r requirements.txt</code>.
+          </p>
         </div>
-        <span class="mono">© 2026 · MAVLink ground control station</span>
-        <a class="ghbtn" href="https://github.com/HarryZ0305/python-gcs" target="_blank"
-          rel="noopener">github.com/HarryZ0305/python-gcs</a>
+
+        <div class="step-box">
+          <div class="step-num">2</div>
+          <h3 style="font-size: 1.15rem; margin-bottom: 8px;">Start SITL or FCU</h3>
+          <p style="color: var(--text-muted); font-size: 0.92rem;">
+            Power up your Pixhawk 6C telemetry radio or launch PX4 SITL Gazebo. The default port is <code>udpin:0.0.0.0:14540</code>.
+          </p>
+        </div>
+
+        <div class="step-box">
+          <div class="step-num">3</div>
+          <h3 style="font-size: 1.15rem; margin-bottom: 8px;">Connect & Fly</h3>
+          <p style="color: var(--text-muted); font-size: 0.92rem;">
+            Click <strong>CONNECT</strong>. Telemetry, maps, and instruments will populate within seconds. Run your pre-flight checklist and fly!
+          </p>
+        </div>
       </div>
-      <p class="disclaimer">Python GCS is an independent, open-source hobby project for controlling PX4 multirotors.
-        Always follow your local drone regulations and operate within visual line of sight. This software is provided
-        as-is, with no warranty — verify all flight behavior in simulation before flying real hardware.</p>
+
+      <!-- Call to Action Banner -->
+      <div class="cta-banner">
+        <h2 style="font-size: 2.2rem; font-weight: 800; margin-bottom: 16px;">Ready for your next flight?</h2>
+        <p style="color: var(--text-muted); max-width: 600px; margin: 0 auto 30px;">
+          Download the latest standalone Windows build or inspect the source on GitHub.
+        </p>
+        <div style="display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;">
+          <a href="dist/PythonGCS/PythonGCS.exe" class="btn btn-primary" download>Download Windows Package (.exe)</a>
+          <a href="https://github.com/HarryZ0305/python-gcs" target="_blank" class="btn btn-secondary">Star on GitHub</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container footer-inner">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-weight: 700; color: var(--text-main);">PythonGCS</span>
+        <span>— Released under the MIT License.</span>
+      </div>
+      <div>
+        Targeting Holybro S500 + Pixhawk 6C & PX4 Autopilot.
+      </div>
     </div>
   </footer>
 
+  <!-- Interactive Demo Logic -->
   <script>
-    (function () {
-      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function switchPreview(mode) {
+      const tabs = document.querySelectorAll('.tab-btn');
+      tabs.forEach(t => t.classList.remove('active'));
 
-      function setArc(id, frac) {
-        var p = document.getElementById(id);
-        if (!p) return;
-        var len = p.getTotalLength();
-        p.style.strokeDasharray = len;
-        p.style.strokeDashoffset = len;
-        if (reduce) { p.style.strokeDashoffset = len * (1 - frac); return; }
-        requestAnimationFrame(function () {
-          p.style.transition = 'stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1)';
-          p.style.strokeDashoffset = len * (1 - frac);
-        });
+      const fly = document.getElementById('content-fly');
+      const pfd = document.getElementById('content-pfd');
+      const plan = document.getElementById('content-plan');
+      const con = document.getElementById('content-console');
+
+      fly.style.display = 'none';
+      pfd.style.display = 'none';
+      plan.style.display = 'none';
+      con.style.display = 'none';
+
+      if (mode === 'fly') {
+        fly.style.display = 'grid';
+        tabs[0].classList.add('active');
+      } else if (mode === 'pfd') {
+        pfd.style.display = 'block';
+        tabs[1].classList.add('active');
+      } else if (mode === 'plan') {
+        plan.style.display = 'block';
+        tabs[2].classList.add('active');
+      } else if (mode === 'console') {
+        con.style.display = 'block';
+        tabs[3].classList.add('active');
       }
-
-      function countUp(el) {
-        var to = parseFloat(el.dataset.to), dec = parseInt(el.dataset.dec || '0');
-        if (reduce) { el.textContent = to.toFixed(dec); return; }
-        var t0 = null, dur = 1400;
-        function step(ts) {
-          if (!t0) t0 = ts; var k = Math.min((ts - t0) / dur, 1);
-          var e = 1 - Math.pow(1 - k, 3);
-          el.textContent = (to * e).toFixed(dec);
-          if (k < 1) requestAnimationFrame(step);
-        }
-        requestAnimationFrame(step);
-      }
-
-      function run() {
-        setArc('arc-alt', 0.62);
-        setArc('arc-spd', 0.40);
-        document.querySelectorAll('.gval').forEach(countUp);
-      }
-
-      var horizon = document.getElementById('horizon'), t = 0;
-      function idle() {
-        t += 0.02;
-        var roll = Math.sin(t) * 6, pitch = Math.cos(t * 0.7) * 7;
-        horizon.style.transform = 'rotate(' + roll + 'deg) translateY(' + pitch + 'px)';
-        requestAnimationFrame(idle);
-      }
-
-      var sat = document.getElementById('r-sat');
-      function flicker() {
-        var s = 12 + (Math.random() < 0.3 ? -1 : 0);
-        sat.textContent = s;
-      }
-
-      window.addEventListener('load', function () {
-        run();
-        if (!reduce) { idle(); setInterval(flicker, 2600); }
-      });
-    })();
+    }
   </script>
 </body>
-
 </html>

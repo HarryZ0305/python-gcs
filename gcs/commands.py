@@ -223,24 +223,41 @@ def takeoff(vehicle, altitude_m):
 
 def goto(vehicle, lat, lon, alt):
     _ensure_streamer(vehicle)
-    log(f"Flying to {lat}, {lon} @ {alt}m...")
+    log(f"Guided Fly-To: Navigating to {lat:.6f}, {lon:.6f} @ {alt:.1f}m AGL...")
+    from math import nan
     with mav_lock:
+        # 1. Primary QGC/PX4 command: MAV_CMD_DO_REPOSITION (Command 192)
+        vehicle.mav.command_long_send(
+            vehicle.target_system,
+            vehicle.target_component,
+            mavutil.mavlink.MAV_CMD_DO_REPOSITION,
+            0, # confirmation
+            -1.0, # param 1: ground speed (-1 default)
+            1.0,  # param 2: MAV_DO_REPOSITION_FLAGS_CHANGE_MODE
+            0.0,  # param 3: reserved
+            nan,  # param 4: yaw (NaN uses current heading)
+            float(lat),  # param 5: latitude
+            float(lon),  # param 6: longitude
+            float(alt)   # param 7: altitude relative to launch
+        )
+        # 2. Secondary global position target message for broader firmware compatibility
         vehicle.mav.send(  
-            mavutil.mavlink.MAVLink_set_position_target_global_int_message( # drone's target position
+            mavutil.mavlink.MAVLink_set_position_target_global_int_message(
                 0,
                 vehicle.target_system,  
                 vehicle.target_component,  
-                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, # drone's relative height to launch point
-                0b0000111111111000, # bitmask for position
+                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                0b0000111111111000,
                 int(lat * 1e7),
                 int(lon * 1e7),
-                alt,
+                float(alt),
                 0, 0, 0,
                 0, 0, 0,
                 0, 0
             )
         )
-    log("Goto command sent!")
+    log("Goto reposition command dispatched to flight controller!")
+    return True
 
 def upload_mission(vehicle, waypoints, takeoff_point=None, landing_point=None, target_alt=10.0):
     log("Mission upload: Starting transaction...")
