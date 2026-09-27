@@ -963,16 +963,16 @@
             <div class="cad-header">
               <div class="cad-title-box">
                 <span class="pulse-dot"></span>
-                <span>3D CAD LIVE ATTITUDE</span>
+                <span>3D DRONE ATTITUDE</span>
               </div>
               <button class="btn-cad-reset" onclick="resetCadCamera()">RESET VIEW</button>
             </div>
 
             <div class="cad-container" id="cad-3d-box">
               <div class="cad-hud-pills">
-                <div class="cad-pill" id="cad-hud-roll">ROLL: +0.0°</div>
-                <div class="cad-pill" id="cad-hud-pitch">PITCH: +0.0°</div>
-                <div class="cad-pill" id="cad-hud-yaw" style="color:var(--primary-bright)">YAW: 045°</div>
+                <div class="cad-pill" id="cad-hud-roll">ROLL: +0.0&deg;°</div>
+                <div class="cad-pill" id="cad-hud-pitch">PITCH: +0.0&deg;°</div>
+                <div class="cad-pill" id="cad-hud-yaw" style="color:var(--primary-bright)">YAW: 045&deg;°</div>
               </div>
             </div>
 
@@ -1352,8 +1352,8 @@
     let propMeshes = [];
     let isCadDragging = false;
     let prevMouseX = 0, prevMouseY = 0;
-    let cadRotY = 0.5, cadRotX = 0.4;
-    let cadZoom = 4.2;
+    let cadRotY = 0.0, cadRotX = 0.52;
+    let cadZoom = 6.95;
 
     function init3DCAD() {
       const container = document.getElementById('cad-3d-box');
@@ -1383,152 +1383,58 @@
       fillLight.position.set(-5, -5, -5);
       cadScene.add(fillLight);
 
-      // Polar CAD Grid
-      const polarGrid = new THREE.PolarGridHelper(4.5, 16, 8, 32, 0x0284c7, 0x1e293b);
-      polarGrid.position.y = -0.6;
-      cadScene.add(polarGrid);
 
-      // Coordinate Gizmo
-      const axes = new THREE.AxesHelper(0.8);
-      axes.position.set(-1.8, -0.5, 1.8);
-      cadScene.add(axes);
 
-      // Quadcopter CAD Hierarchy
+      // Reference Grid (Horizon)
+      const grid = new THREE.GridHelper(20, 20, 0x0b57d0, 0x334155);
+      grid.position.y = -1.5;
+      cadScene.add(grid);
+
+      // Drone model
       droneRoot = new THREE.Group();
       cadScene.add(droneRoot);
 
-      // Materials
-      const carbonMat = new THREE.MeshStandardMaterial({
-        color: 0x182030,
-        roughness: 0.35,
-        metalness: 0.6
-      });
-
-      const blueMetalMat = new THREE.MeshStandardMaterial({
-        color: 0x0284c7,
-        roughness: 0.2,
-        metalness: 0.9
-      });
-
-      // Upper & Lower Chassis Plates
-      const topPlate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.05, 1.1), carbonMat);
-      topPlate.position.y = 0.12;
-      droneRoot.add(topPlate);
-
-      const bottomPlate = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 1.2), carbonMat);
-      bottomPlate.position.y = -0.12;
-      droneRoot.add(bottomPlate);
-
-      // Standoffs
-      const standoffGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.24, 8);
-      [[-0.45, -0.45], [0.45, -0.45], [-0.45, 0.45], [0.45, 0.45]].forEach(pos => {
-        const s = new THREE.Mesh(standoffGeo, blueMetalMat);
-        s.position.set(pos[0], 0, pos[1]);
-        droneRoot.add(s);
-      });
-
-      // Pixhawk 6C Flight Controller
-      const fcu = new THREE.Mesh(
-        new THREE.BoxGeometry(0.5, 0.12, 0.65),
-        new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 })
+      // Center body (White metallic)
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 0.3, 1),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.8 })
       );
-      fcu.position.y = 0.20;
-      droneRoot.add(fcu);
+      droneRoot.add(body);
 
-      // Pixhawk Status LED
-      const led = new THREE.Mesh(
-        new THREE.BoxGeometry(0.12, 0.02, 0.12),
-        new THREE.MeshBasicMaterial({ color: 0x10b981 })
-      );
-      led.position.set(0, 0.27, -0.05);
-      droneRoot.add(led);
-
-      // GPS Mast & Antenna Puck
-      const mast = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.025, 0.025, 0.45, 8),
-        new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 })
-      );
-      mast.position.set(-0.25, 0.35, 0.25);
-      droneRoot.add(mast);
-
-      const puck = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.22, 0.22, 0.08, 16),
-        new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3 })
-      );
-      puck.position.set(-0.25, 0.58, 0.25);
-      droneRoot.add(puck);
-
-      // Forward Direction Indicator (Cyan Chevron)
-      const noseArrow = new THREE.Mesh(
-        new THREE.ConeGeometry(0.15, 0.35, 4),
-        new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.8 })
-      );
-      noseArrow.rotation.x = -Math.PI / 2;
-      noseArrow.position.set(0, 0.2, -0.75);
-      droneRoot.add(noseArrow);
-
-      // 4 Arms, Motors, and Spinning Propellers
-      const armAngles = [
-        Math.PI * 0.25,
-        Math.PI * 0.75,
-        Math.PI * 1.25,
-        Math.PI * 1.75
+      // Arms + Rotors in X-config. Front rotors cyan, rear green.
+      const arms = [
+        { x:  1.3, z:  1.3, front: true  },
+        { x: -1.3, z:  1.3, front: true  },
+        { x:  1.3, z: -1.3, front: false },
+        { x: -1.3, z: -1.3, front: false }
       ];
 
-      const armLen = 1.35;
-      const propMat = new THREE.MeshStandardMaterial({
-        color: 0x38bdf8,
-        transparent: true,
-        opacity: 0.75,
-        roughness: 0.2
-      });
-
-      armAngles.forEach((angle, idx) => {
-        const isFront = (angle > Math.PI);
-        const ringColor = isFront ? 0x10b981 : 0xef4444;
-
-        // Arm
-        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, armLen, 12), carbonMat);
-        arm.rotation.z = Math.PI / 2;
-        arm.rotation.y = angle;
-        arm.position.set((Math.cos(angle) * armLen) / 2, 0, (Math.sin(angle) * armLen) / 2);
+      arms.forEach(a => {
+        // Arm (thin box from center to motor)
+        const arm = new THREE.Mesh(
+          new THREE.BoxGeometry(0.15, 0.1, 0.15),
+          new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.5 })
+        );
+        arm.scale.z = Math.hypot(a.x, a.z) * 5;
+        arm.position.set(a.x / 2, 0, a.z / 2);
+        arm.lookAt(0, 0, 0);
         droneRoot.add(arm);
 
-        // Brushless Motor
-        const motorX = Math.cos(angle) * armLen;
-        const motorZ = Math.sin(angle) * armLen;
-        const motor = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.14, 0.14, 0.16, 16),
-          new THREE.MeshStandardMaterial({ color: 0x0b1320, metalness: 0.9, roughness: 0.2 })
+        // Rotor Disc (Glowing emissive)
+        const rotorColor = a.front ? 0x0b57d0 : 0x0f9d58;
+        const rotor = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.5, 0.5, 0.05, 24),
+          new THREE.MeshStandardMaterial({
+            color: rotorColor,
+            emissive: rotorColor,
+            emissiveIntensity: 0.5,
+            transparent: true,
+            opacity: 0.85
+          })
         );
-        motor.position.set(motorX, 0.08, motorZ);
-        droneRoot.add(motor);
-
-        // Motor Stator Accent Ring
-        const ring = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.145, 0.145, 0.03, 16),
-          new THREE.MeshBasicMaterial({ color: ringColor })
-        );
-        ring.position.set(motorX, 0.15, motorZ);
-        droneRoot.add(ring);
-
-        // Propeller Rotor Disc
-        const propGroup = new THREE.Group();
-        propGroup.position.set(motorX, 0.18, motorZ);
-
-        const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.015, 0.1), propMat);
-        const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.015, 0.95), propMat);
-        propGroup.add(b1);
-        propGroup.add(b2);
-
-        droneRoot.add(propGroup);
-        propMeshes.push(propGroup);
-
-        // Landing Skid
-        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.45, 8), carbonMat);
-        leg.position.set(motorX * 0.7, -0.3, motorZ * 0.7);
-        leg.rotation.x = (motorZ > 0 ? 0.2 : -0.2);
-        droneRoot.add(leg);
+        rotor.position.set(a.x, 0.15, a.z);
+        droneRoot.add(rotor);
+        propMeshes.push(rotor);
       });
 
       // Mouse Orbit Controls
@@ -1576,9 +1482,9 @@
     }
 
     function resetCadCamera() {
-      cadRotY = 0.5;
-      cadRotX = 0.4;
-      cadZoom = 4.2;
+      cadRotY = 0.0;
+      cadRotX = 0.52;
+      cadZoom = 6.95;
       updateCadCameraPos();
     }
 
