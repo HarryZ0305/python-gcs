@@ -17,7 +17,7 @@ except ImportError:
 from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 from gcs.telemetry import telemetry_data
-from gcs.commands import arm, disarm, set_mode, takeoff, set_offboard_targets, reset_offboard_targets, stop_streamer
+from gcs.commands import arm, disarm, set_mode, takeoff, set_offboard_targets, reset_offboard_targets, stop_streamer, emergency_hold, goto
 from gcs.ui.map_view import MapView
 from gcs.ui.attitude_view import AttitudeView
 from gcs.ui.console_view import ConsoleView
@@ -264,6 +264,9 @@ class GCSWindow(QMainWindow):
         self.last_spoken_mode = "UNKNOWN"
         self.was_armed = False
         self.was_link_lost = False
+        self.armed_start_time = None
+        self.total_flight_dist = 0.0
+        self.last_flight_coord = None
         
         if self.vehicle is not None:
             from gcs.commands import _ensure_streamer
@@ -362,6 +365,7 @@ class GCSWindow(QMainWindow):
 
         # Map + 3D
         self.map_view = MapView()
+        self.map_view.goto_requested.connect(self.on_map_goto_requested)
         self.attitude_view = AttitudeView()
 
         # Console
@@ -445,8 +449,41 @@ class GCSWindow(QMainWindow):
         ap_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
         ap.addWidget(ap_title)
         r1 = QHBoxLayout(); r1.addWidget(self.mode_combo); r1.addWidget(self.mode_btn); ap.addLayout(r1)
-        r2 = QHBoxLayout(); r2.addWidget(self.alt_spin); r2.addWidget(self.takeoff_btn); ap.addLayout(r2)
-        r3 = QHBoxLayout(); r3.addWidget(self.rtl_btn); r3.addWidget(self.land_btn); ap.addLayout(r3)
+        r2 = QHBoxLayout()
+        r2.addWidget(self.alt_spin)
+        r2.addWidget(self.takeoff_btn)
+        ap.addLayout(r2)
+
+        # Quick Altitude presets
+        r2_presets = QHBoxLayout()
+        r2_presets.setSpacing(4)
+        for preset_val in [2.5, 5.0, 10.0, 20.0]:
+            p_btn = QPushButton(f"{preset_val:g}m")
+            p_btn.setFixedHeight(22)
+            p_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {THEME['panel_bg']}; color: {THEME['muted']};
+                    border: 1px solid {THEME['panel_border']}; border-radius: 4px;
+                    font-family: Google Sans Code; font-size: 10px; font-weight: bold;
+                    padding: 1px 4px;
+                }}
+                QPushButton:hover {{
+                    background-color: {THEME['primary']}; color: #ffffff; border-color: {THEME['primary']};
+                }}
+            """)
+            p_btn.clicked.connect(lambda checked, val=preset_val: self.alt_spin.setValue(int(val)))
+            r2_presets.addWidget(p_btn)
+        ap.addLayout(r2_presets)
+        r3 = QHBoxLayout()
+        r3.addWidget(self.rtl_btn)
+        r3.addWidget(self.land_btn)
+        ap.addLayout(r3)
+
+        self.action_hold_btn = QPushButton("🛑 EMERGENCY HOLD")
+        self.action_hold_btn.setFixedHeight(30)
+        self.action_hold_btn.setStyleSheet(self._btn_style(THEME['danger'], THEME['panel_bg']))
+        self.action_hold_btn.clicked.connect(self.on_emergency_hold)
+        ap.addWidget(self.action_hold_btn)
         r4 = QHBoxLayout()
         r4.addWidget(self.yawl_btn)
         r4.addWidget(self.fwd_btn)
@@ -781,6 +818,49 @@ class GCSWindow(QMainWindow):
                 selection-background-color: {THEME['panel_border']};
             }}
         """
+
+    
+    def _pill_style(self, border_color, text_color, bg="#ffffff"):
+        return f"""
+            QLabel {{
+                background-color: {bg};
+                color: {text_color};
+                border: 1.5px solid {border_color};
+                border-radius: 6px;
+                padding: 3px 8px;
+                font-family: Google Sans Code;
+                font-weight: bold;
+                font-size: 11px;
+            }}
+        """
+
+    def on_emergency_hold(self):
+        if not self.vehicle:
+            return
+        from gcs.commands import emergency_hold
+        threading.Thread(target=emergency_hold, args=(self.vehicle,), daemon=True).start()
+        self.set_status("EMERGENCY HOLD: Loitering in place, velocity zeroed!")
+        if self.tts:
+            self.tts.say("Emergency hold engaged.")
+
+    def on_map_goto_requested(self, lat, lon):
+        if not self.vehicle:
+            self.set_status("Guided Fly-To failed: No vehicle connection.")
+            return
+        curr_alt = telemetry_data.get('alt', 10.0)
+        target_alt = max(5.0, curr_alt)
+        reply = QMessageBox.question(
+            self, "Guided Fly To Here",
+            f"Fly vehicle to clicked position?\n\nLatitude: {lat:.6f}\nLongitude: {lon:.6f}\nTarget Altitude: {target_alt:.1f} m AGL",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            from gcs.commands import goto
+            threading.Thread(target=goto, args=(self.vehicle, lat, lon, target_alt), daemon=True).start()
+            self.set_status(f"Guided target dispatched to ({lat:.5f}, {lon:.5f}) @ {target_alt:.1f}m")
+            if self.tts:
+                self.tts.say("Flying to guided waypoint.")
 
     def on_connect_toggle(self):
         if self.vehicle is not None:
@@ -1257,7 +1337,15 @@ class GCSWindow(QMainWindow):
             self.gps_gauge.set_accent(THEME['muted'])
             
             self.conn_status.setText("DISCONNECTED")
-            self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
+            self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Google Sans Code; font-size: 11px; border: none;")
+            if hasattr(self, 'ribbon_arm_pill'):
+                self.ribbon_arm_pill.setText("DISARMED")
+                self.ribbon_arm_pill.setStyleSheet(self._pill_style(THEME['danger'], THEME['danger']))
+                self.ribbon_mode_pill.setText("MODE: ---")
+                self.ribbon_gps_pill.setText("GPS: DISCONNECTED")
+                self.ribbon_batt_pill.setText("BATT: ---")
+                self.ribbon_timer_pill.setText("⏱️ 00:00")
+                self.ribbon_dist_pill.setText("🚩 0 m")
             self.console_view.refresh_logs()
             return
 
@@ -1429,9 +1517,56 @@ class GCSWindow(QMainWindow):
                 self.arm_btn.setText("ARM")
                 self.arm_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
             
-            self.map_view.update_position(d['lat'], d['lon'])
-            self.plan_map_view.update_position(d['lat'], d['lon'])
+            yaw_deg = math.degrees(d['yaw']) % 360
+            self.map_view.update_position(d['lat'], d['lon'], yaw_deg, d.get('groundspeed', 0.0), d.get('alt', 0.0))
+            self.plan_map_view.update_position(d['lat'], d['lon'], yaw_deg, d.get('groundspeed', 0.0), d.get('alt', 0.0))
             self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'])
+
+            # Set Home on map if armed and position valid
+            if d['armed'] and d['lat'] != 0.0 and d['lon'] != 0.0:
+                self.map_view.set_home(d['lat'], d['lon'])
+                self.plan_map_view.set_home(d['lat'], d['lon'])
+
+            # Update Ribbon Pills
+            if hasattr(self, 'ribbon_arm_pill'):
+                if d['armed']:
+                    self.ribbon_arm_pill.setText("ARMED")
+                    self.ribbon_arm_pill.setStyleSheet(self._pill_style(THEME['success'], '#ffffff', THEME['success']))
+                else:
+                    self.ribbon_arm_pill.setText("DISARMED")
+                    self.ribbon_arm_pill.setStyleSheet(self._pill_style(THEME['danger'], THEME['danger']))
+                
+                self.ribbon_mode_pill.setText(f"MODE: {d.get('mode', 'UNKNOWN')}")
+                gps_str = f"GPS: {d.get('fix_type', 0)}D ({d.get('satellites', 0)}s)"
+                self.ribbon_gps_pill.setText(gps_str)
+                self.ribbon_batt_pill.setText(f"BATT: {d.get('battery', 0)}% | {d.get('voltage', 0.0):.1f}V")
+
+                # Flight duration timer & distance calculation
+                if d['armed']:
+                    if not self.was_armed:
+                        self.armed_start_time = time.time()
+                        self.total_flight_dist = 0.0
+                        self.last_flight_coord = (d['lat'], d['lon'])
+                    
+                    if self.armed_start_time:
+                        elapsed = time.time() - self.armed_start_time
+                        mins = int(elapsed // 60)
+                        secs = int(elapsed % 60)
+                        self.ribbon_timer_pill.setText(f"⏱️ {mins:02d}:{secs:02d}")
+                    
+                    if self.last_flight_coord and d['lat'] != 0.0 and d['lon'] != 0.0:
+                        lat1, lon1 = self.last_flight_coord
+                        lat2, lon2 = d['lat'], d['lon']
+                        R = 6371e3
+                        p1, p2 = math.radians(lat1), math.radians(lat2)
+                        dp = math.radians(lat2 - lat1)
+                        dl = math.radians(lon2 - lon1)
+                        a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+                        dist_step = 2 * R * math.asin(math.sqrt(a))
+                        if 0.5 <= dist_step <= 50.0:
+                            self.total_flight_dist += dist_step
+                            self.last_flight_coord = (lat2, lon2)
+                    self.ribbon_dist_pill.setText(f"🚩 {self.total_flight_dist:.0f} m")
             
             # Update active waypoint highlight on map views
             wp_idx = d.get('wp_current', -1)

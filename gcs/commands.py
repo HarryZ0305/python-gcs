@@ -83,6 +83,13 @@ def reset_offboard_targets():
     target_yaw_rate = 0.0
     log("Offboard targets reset to hover.")
 
+
+def emergency_hold(vehicle):
+    """Halts all motion and enters AUTO.LOITER mode immediately."""
+    reset_offboard_targets()
+    log("EMERGENCY HOLD triggered: Zeroing velocity setpoints and switching to AUTO.LOITER...")
+    set_mode(vehicle, 'AUTO.LOITER')
+
 def stop_streamer():
     global _streamer_vehicle
     _streamer_vehicle = None
