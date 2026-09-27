@@ -573,7 +573,10 @@ MAP_HTML = """
             if (takeoffPoint) points.push(takeoffPoint);
             for (var i = 0; i < waypoints.length; i++) points.push(waypoints[i]);
             if (landingPoint) points.push(landingPoint);
-            if (points.length > 0) map.fitBounds(points);
+            if (points.length > 0) {
+                map.invalidateSize();
+                setTimeout(function() { map.fitBounds(points, { padding: [30, 30] }); }, 50);
+            }
         }
     </script>
 </body>

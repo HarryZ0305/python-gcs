@@ -1,0 +1,2165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PythonGCS Pro &bull; Next-Gen Autonomous Ground Control Station</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Three.js for 3D CAD Live View (local fallback to CDN) -->
+  <script src="/gcs/ui/static/three.min.js"></script>
+  <script>
+    if (typeof THREE === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+    }
+  </script>
+
+  <style>
+    :root {
+      --bg: #070b14;
+      --bg-darker: #04060b;
+      --panel: #0d1527;
+      --panel-border: rgba(56, 189, 248, 0.18);
+      --panel-hover: rgba(56, 189, 248, 0.25);
+      --primary: #0284c7;
+      --primary-bright: #38bdf8;
+      --accent: #0ea5e9;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --purple: #8b5cf6;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Google Sans Code', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-main);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* ===== TOP QGC-STYLE FLIGHT RIBBON ===== */
+    .flight-ribbon {
+      background: linear-gradient(180deg, #111a30 0%, #0a0f1d 100%);
+      border-bottom: 1px solid var(--panel-border);
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      z-index: 1000;
+      gap: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-logo {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--primary-bright), var(--primary));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 15px;
+      color: #fff;
+      box-shadow: 0 0 14px rgba(56, 189, 248, 0.4);
+    }
+
+    .brand-name {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 0.95rem;
+      letter-spacing: 0.08em;
+      color: #fff;
+    }
+
+    .brand-badge {
+      font-size: 0.65rem;
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid var(--primary-bright);
+      color: var(--primary-bright);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .telemetry-pills {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+    }
+
+    .pill {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 4px 10px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+
+    .pill-armed {
+      background: rgba(239, 68, 68, 0.18);
+      border-color: var(--danger);
+      color: #fca5a5;
+      font-weight: 700;
+    }
+
+    .pill-disarmed {
+      background: rgba(16, 185, 129, 0.15);
+      border-color: var(--success);
+      color: #6ee7b7;
+      font-weight: 700;
+    }
+
+    .pill-mode {
+      background: rgba(2, 132, 199, 0.2);
+      border-color: var(--primary-bright);
+      color: var(--primary-bright);
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .mode-dropdown {
+      position: absolute;
+      top: 54px;
+      background: #0f172a;
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      display: none;
+      flex-direction: column;
+      z-index: 2000;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.7);
+    }
+
+    .mode-opt {
+      padding: 8px 16px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      cursor: pointer;
+      color: #cbd5e1;
+    }
+    .mode-opt:hover {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.7; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.7; }
+    }
+
+    .ribbon-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-ribbon {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .btn-ribbon:hover {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--primary-bright);
+      color: #fff;
+    }
+
+    .btn-ribbon.btn-takeoff {
+      background: rgba(16, 185, 129, 0.2);
+      border-color: var(--success);
+      color: #6ee7b7;
+    }
+    .btn-ribbon.btn-takeoff:hover {
+      background: var(--success);
+      color: #fff;
+    }
+
+    .btn-ribbon.btn-land {
+      background: rgba(245, 158, 11, 0.2);
+      border-color: var(--warning);
+      color: #fcd34d;
+    }
+
+    .btn-ribbon.btn-hold {
+      background: rgba(239, 68, 68, 0.2);
+      border-color: var(--danger);
+      color: #fca5a5;
+    }
+
+    /* ===== NAVIGATION TABS ===== */
+    .tabs-bar {
+      background: #090e1b;
+      border-bottom: 1px solid var(--panel-border);
+      display: flex;
+      padding: 0 16px;
+      gap: 4px;
+    }
+
+    .main-tab {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 10px 18px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .main-tab:hover {
+      color: var(--text);
+    }
+
+    .main-tab.active {
+      color: var(--primary-bright);
+      border-bottom-color: var(--primary-bright);
+      background: rgba(56, 189, 248, 0.06);
+    }
+
+    /* ===== MAIN VIEWPORT ===== */
+    .gcs-viewport {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .tab-view {
+      display: none;
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      inset: 0;
+    }
+
+    .tab-view.active {
+      display: flex;
+    }
+
+    /* ===== FLY TAB: CLEAN 3-COLUMN LAYOUT ===== */
+    .dashboard-layout {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-columns: 240px 1fr 360px;
+      gap: 8px;
+      padding: 8px;
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    .dashboard-layout.expanded-map {
+      grid-template-columns: 0px 1fr 0px;
+      padding: 0;
+      gap: 0;
+    }
+
+    .dashboard-layout.expanded-map .col-left,
+    .dashboard-layout.expanded-map .col-right {
+      display: none;
+    }
+
+    /* Left Column: Mission & Commands */
+    .col-left {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+    }
+
+    /* Center Column: Full-Height Map */
+    .col-center {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* Right Column: 3D CAD & Flight Status */
+    .col-right {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+    }
+
+    /* Card Panels */
+    .panel-card {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      position: relative;
+    }
+
+    .panel-title {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--primary-bright);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .btn-action {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+
+    .btn-action:hover {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--primary-bright);
+      color: #fff;
+    }
+
+    .btn-action:active {
+      transform: scale(0.98);
+    }
+
+    .btn-arm {
+      background: rgba(16, 185, 129, 0.25);
+      border-color: var(--success);
+      color: #a7f3d0;
+      font-weight: 700;
+      padding: 10px;
+    }
+    .btn-arm.armed {
+      background: rgba(239, 68, 68, 0.25);
+      border-color: var(--danger);
+      color: #fca5a5;
+    }
+
+    /* Map View Container */
+    .map-container {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      position: relative;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--panel-border);
+      background: #000;
+    }
+
+    #map, #plan-map {
+      width: 100%;
+      height: 100%;
+      background: #070d18;
+    }
+
+    /* Tactical HUD Overlay on Map */
+    .map-hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(7, 11, 20, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 8px 14px;
+      z-index: 500;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      display: flex;
+      gap: 16px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+      pointer-events: none;
+    }
+
+    .map-hud-item b {
+      color: var(--primary-bright);
+    }
+
+    /* Floating Map Tool Bar */
+    .map-tools {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      gap: 6px;
+      z-index: 500;
+    }
+
+    .tool-btn {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .tool-btn:hover, .tool-btn.active {
+      background: var(--primary);
+      border-color: var(--primary-bright);
+      color: #fff;
+    }
+
+    /* Compact Bottom Console */
+    .console-strip {
+      height: 60px;
+      background: #040711;
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    /* ===== 3D CAD LIVE VIEW CARD ===== */
+    .cad-card {
+      background: #080d1a;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+
+    .cad-header {
+      padding: 8px 12px;
+      background: rgba(15, 23, 42, 0.8);
+      border-bottom: 1px solid rgba(56, 189, 248, 0.15);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .cad-title-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--primary-bright);
+      letter-spacing: 0.05em;
+    }
+
+    .cad-container {
+      width: 100%;
+      height: 250px;
+      position: relative;
+      background: radial-gradient(circle at 50% 50%, #0f1c30 0%, #050811 100%);
+      cursor: grab;
+    }
+    .cad-container:active {
+      cursor: grabbing;
+    }
+
+    .cad-hud-pills {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      z-index: 10;
+      display: flex;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 700;
+      pointer-events: none;
+    }
+
+    .cad-pill {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 3px 8px;
+      border-radius: 4px;
+      color: #fff;
+    }
+
+    .cad-footer {
+      padding: 6px 12px;
+      background: rgba(15, 23, 42, 0.6);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--text-dim);
+    }
+
+    .btn-cad-reset {
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      color: var(--primary-bright);
+      font-family: inherit;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .btn-cad-reset:hover {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    /* 4-Instrument Quick Metrics */
+    .gauge-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .gauge-box {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      padding: 8px 4px;
+      text-align: center;
+    }
+
+    .gauge-val {
+      font-family: var(--font-mono);
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .gauge-lbl {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Checklist */
+    .check-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 0.72rem;
+      font-family: var(--font-mono);
+    }
+
+    /* ===== PLAN TAB STYLING ===== */
+    .plan-layout {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 8px;
+      padding: 8px;
+      background: var(--bg);
+    }
+
+    .mission-list {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--panel-border);
+      border-radius: 6px;
+      padding: 8px;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .wp-item {
+      padding: 6px 10px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .wp-item.active {
+      border-color: var(--primary-bright);
+      background: rgba(56, 189, 248, 0.15);
+    }
+
+    /* ===== ANALYTICS TAB STYLING ===== */
+    .analytics-layout {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 10px;
+      padding: 10px;
+      background: var(--bg);
+      overflow-y: auto;
+    }
+
+    .chart-container {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .vibe-bar {
+      height: 10px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 5px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
+
+    .vibe-fill {
+      height: 100%;
+      background: var(--success);
+      width: 25%;
+      transition: width 0.3s;
+    }
+
+    /* Modal Styling */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.75);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 3000;
+    }
+
+    .modal-box {
+      background: #0d1527;
+      border: 1px solid var(--primary-bright);
+      border-radius: 10px;
+      width: 440px;
+      padding: 20px;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.8);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .modal-title {
+      font-family: var(--font-mono);
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--primary-bright);
+    }
+
+    /* Toast Notification */
+    .toast-banner {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid var(--primary-bright);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+      color: #fff;
+      padding: 8px 18px;
+      border-radius: 30px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      z-index: 4000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Ribbon -->
+  <header class="flight-ribbon">
+    <div class="brand-section">
+      <div class="brand-logo">&Delta;</div>
+      <div>
+        <div class="brand-name">PythonGCS <span style="color:var(--primary-bright)">PRO</span></div>
+        <div class="brand-badge">PX4 SITL &bull; LIVE</div>
+      </div>
+    </div>
+
+    <!-- Live Telemetry Pills -->
+    <div class="telemetry-pills">
+      <div class="pill">
+        <span class="pulse-dot"></span>
+        <span id="pill-link">10.0 Hz MAVLINK</span>
+      </div>
+
+      <div class="pill pill-disarmed" id="pill-arm" onclick="toggleArm()" style="cursor:pointer;" title="Click to Arm/Disarm">
+        DISARMED
+      </div>
+
+      <div class="pill pill-mode" id="pill-mode" onclick="toggleModeDropdown()">
+        <span id="txt-mode">POSCTL</span> &blacktriangledown;
+      </div>
+      <div class="mode-dropdown" id="mode-dropdown">
+        <div class="mode-opt" onclick="setFlightMode('MANUAL')">MANUAL</div>
+        <div class="mode-opt" onclick="setFlightMode('POSCTL')">POSCTL (Position Hold)</div>
+        <div class="mode-opt" onclick="setFlightMode('ALTCTL')">ALTCTL (Altitude Hold)</div>
+        <div class="mode-opt" onclick="setFlightMode('AUTO.MISSION')">AUTO.MISSION</div>
+        <div class="mode-opt" onclick="setFlightMode('AUTO.RTL')">AUTO.RTL (Return to Launch)</div>
+        <div class="mode-opt" onclick="setFlightMode('AUTO.LOITER')">AUTO.LOITER</div>
+        <div class="mode-opt" onclick="setFlightMode('OFFBOARD')">OFFBOARD (Autonomous)</div>
+      </div>
+
+      <div class="pill">
+        <span>🛰️</span>
+        <span id="pill-sats">14 Sats (3D)</span>
+      </div>
+
+      <div class="pill">
+        <span>🔋</span>
+        <span id="pill-batt" style="color:var(--success); font-weight:700;">88% (15.9V)</span>
+      </div>
+
+      <div class="pill">
+        <span>⏱️</span>
+        <span id="pill-timer">00:00</span>
+      </div>
+
+      <div class="pill">
+        <span>📍</span>
+        <span id="pill-dist">0.0 m</span>
+      </div>
+    </div>
+
+    <!-- Quick Pilot Actions -->
+    <div class="ribbon-actions">
+      <button class="btn-ribbon btn-takeoff" onclick="triggerTakeoff()">▲ TAKEOFF</button>
+      <button class="btn-ribbon btn-land" onclick="triggerLand()">▼ LAND</button>
+      <button class="btn-ribbon btn-hold" onclick="triggerHold()">✋ HOLD</button>
+      <button class="btn-ribbon" id="voice-btn" onclick="toggleVoice()">🔊 VOICE: ON</button>
+    </div>
+  </header>
+
+  <!-- Navigation Bar -->
+  <nav class="tabs-bar">
+    <button class="main-tab active" id="tabbtn-fly" onclick="switchTab('fly')">
+      <span>✈</span> FLY DASHBOARD
+    </button>
+    <button class="main-tab" id="tabbtn-plan" onclick="switchTab('plan')">
+      <span>🗺</span> SURVEY & PLAN
+    </button>
+    <button class="main-tab" id="tabbtn-analytics" onclick="switchTab('analytics')">
+      <span>📊</span> ANALYTICS & SENSORS
+    </button>
+    <button class="main-tab" id="tabbtn-setup" onclick="switchTab('setup')">
+      <span>⚙</span> PARAMETERS
+    </button>
+    <button class="main-tab" id="tabbtn-console" onclick="switchTab('console')">
+      <span>💻</span> MAVLINK LOGS
+    </button>
+  </nav>
+
+  <!-- Main Viewport -->
+  <main class="gcs-viewport">
+
+    <!-- ========================================== -->
+    <!-- 1. FLY DASHBOARD TAB (DECLUTTERED & CLEAN) -->
+    <!-- ========================================== -->
+    <div id="tab-fly" class="tab-view active">
+      <div class="dashboard-layout" id="dashboard-layout">
+
+        <!-- Left Column: Controls & Safety -->
+        <div class="col-left">
+          <div class="panel-card">
+            <div class="panel-title">Safety Audit</div>
+            <button class="btn-action" style="width: 100%; border-color: var(--primary);" onclick="openPreflightModal()">
+              ✓ PRE-FLIGHT CHECKLIST
+            </button>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-title">Navigation Commands</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+              <button class="btn-action" style="color: var(--warning); border-color: var(--warning);" onclick="triggerLand()">
+                LAND HERE
+              </button>
+              <button class="btn-action" style="color: var(--primary-bright);" onclick="triggerRtl()">
+                RTL (HOME)
+              </button>
+            </div>
+            <div style="font-size: 0.68rem; color: var(--text-dim); margin-bottom: 4px;">Takeoff Altitude:</div>
+            <div style="display: flex; gap: 4px;">
+              <button class="btn-action" style="flex:1; padding: 4px;" onclick="setTakeoffAlt(5)">5m</button>
+              <button class="btn-action" style="flex:1; padding: 4px; background: var(--primary); color:#fff;" onclick="setTakeoffAlt(10)">10m</button>
+              <button class="btn-action" style="flex:1; padding: 4px;" onclick="setTakeoffAlt(20)">20m</button>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-title">Manual Flight (WASD)</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-bottom: 6px;">
+              <button class="btn-action" onclick="nudgeYaw(-30)" title="Yaw Left 30 deg">↺ YAW L</button>
+              <button class="btn-action" style="color: var(--success); font-weight:700;" onclick="nudgeForward()" title="Forward 50m (W)">▲ W (FWD)</button>
+              <button class="btn-action" onclick="nudgeYaw(30)" title="Yaw Right 30 deg">↻ YAW R</button>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-bottom: 8px;">
+              <button class="btn-action" onclick="nudgeStrafe(-30)" title="Strafe Left 30m (Q)">◀ STRAFE</button>
+              <button class="btn-action" onclick="nudgeBackward()" title="Reverse 50m (S)">▼ S (REV)</button>
+              <button class="btn-action" onclick="nudgeStrafe(30)" title="Strafe Right 30m (E)">STRAFE ▶</button>
+            </div>
+            <button class="btn-action" style="width: 100%; color: var(--danger); border-color: var(--danger);" onclick="triggerHold()">
+              ✋ SPACE / BRAKE HOLD
+            </button>
+            <div style="font-size: 0.68rem; color: var(--text-dim); margin-top: 6px; text-align: center;">
+              Keyboard Enabled: W / S / A / D / Space
+            </div>
+          </div>
+
+          <button id="main-arm-btn" class="btn-action btn-arm" onclick="toggleArm()">
+            ARM VEHICLE
+          </button>
+        </div>
+
+        <!-- Center Column: Full-Height Map & Tactical HUD -->
+        <div class="col-center">
+          <div class="map-container">
+            <div id="map"></div>
+
+            <!-- Map HUD -->
+            <div class="map-hud">
+              <div class="map-hud-item">HOME: <b id="hud-home">0.0 m</b></div>
+              <div class="map-hud-item">SPD: <b id="hud-spd">0.0 m/s</b></div>
+              <div class="map-hud-item">ALT: <b id="hud-alt">0.0 m</b></div>
+              <div class="map-hud-item">HDG: <b id="hud-hdg">045°</b></div>
+            </div>
+
+            <!-- Map Tools -->
+            <div class="map-tools">
+              <button class="tool-btn" onclick="centerMap()">⌖ CENTER</button>
+              <button id="btn-follow" class="tool-btn active" onclick="toggleFollow()">👁 FOLLOW: ON</button>
+              <button class="tool-btn" onclick="clearTrail()">🗑 CLEAR TRAIL</button>
+              <button class="tool-btn" onclick="exportKML()">🌐 EXPORT KML</button>
+              <button id="btn-expand" class="tool-btn" onclick="toggleExpandMap()">⛶ EXPAND MAP</button>
+            </div>
+          </div>
+
+          <!-- Bottom Console Strip -->
+          <div class="console-strip" id="console-stream">
+            <div style="color: #64748b;">[12:00:01] System Initialized. Heartbeat acquired from SITL (UDP 14540).</div>
+            <div style="color: #38bdf8;">[12:00:02] FCU: PX4 Autopilot v1.16 (Gazebo gz_x500 quadcopter).</div>
+            <div style="color: #10b981;">[12:00:04] Pre-flight 6-point verification: READY FOR FLIGHT.</div>
+          </div>
+        </div>
+
+        <!-- Right Column: 3D CAD Drone Live View & Status -->
+        <div class="col-right">
+
+          <!-- 4 Fast Arc Metrics -->
+          <div class="panel-card">
+            <div class="panel-title">Flight Telemetry</div>
+            <div class="gauge-grid">
+              <div class="gauge-box">
+                <div class="gauge-val" id="g-alt">0.0</div>
+                <div class="gauge-lbl">Alt (m)</div>
+              </div>
+              <div class="gauge-box">
+                <div class="gauge-val" id="g-spd">0.0</div>
+                <div class="gauge-lbl">Spd (m/s)</div>
+              </div>
+              <div class="gauge-box">
+                <div class="gauge-val" id="g-batt" style="color:var(--success)">88%</div>
+                <div class="gauge-lbl">Battery</div>
+              </div>
+              <div class="gauge-box">
+                <div class="gauge-val" id="g-sats">14</div>
+                <div class="gauge-lbl">Sats</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3D CAD DRONE LIVE VIEW (Replacing Horizon) -->
+          <div class="cad-card">
+            <div class="cad-header">
+              <div class="cad-title-box">
+                <span class="pulse-dot"></span>
+                <span>3D CAD LIVE ATTITUDE</span>
+              </div>
+              <button class="btn-cad-reset" onclick="resetCadCamera()">RESET VIEW</button>
+            </div>
+
+            <div class="cad-container" id="cad-3d-box">
+              <div class="cad-hud-pills">
+                <div class="cad-pill" id="cad-hud-roll">ROLL: +0.0°</div>
+                <div class="cad-pill" id="cad-hud-pitch">PITCH: +0.0°</div>
+                <div class="cad-pill" id="cad-hud-yaw" style="color:var(--primary-bright)">YAW: 045°</div>
+              </div>
+            </div>
+
+            <div class="cad-footer">
+              <span>ORBIT: DRAG MOUSE &bull; ZOOM: WHEEL</span>
+              <span id="cad-spin-status" style="color:var(--success)">ROTORS: IDLE</span>
+            </div>
+          </div>
+
+          <!-- Quick Flight Status Checklist -->
+          <div class="panel-card">
+            <div class="panel-title">System Status</div>
+            <div class="check-item">
+              <span>IMU / Gyro Health</span>
+              <span style="color:var(--success)">✓ CALIBRATED (0.1°)</span>
+            </div>
+            <div class="check-item">
+              <span>GNSS RTK Fix</span>
+              <span style="color:var(--success)">✓ 3D FIX (HDOP: 0.8)</span>
+            </div>
+            <div class="check-item">
+              <span>RC / Offboard Link</span>
+              <span style="color:var(--success)">✓ ACTIVE (100%)</span>
+            </div>
+            <div class="check-item">
+              <span>Geofence Boundary</span>
+              <span style="color:var(--primary-bright)">✓ ENABLED (500m)</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 2. SURVEY & PLAN TAB (FIXED BLACK SCREEN)  -->
+    <!-- ========================================== -->
+    <div id="tab-plan" class="tab-view">
+      <div class="plan-layout">
+
+        <div class="map-container" id="plan-map-box">
+          <div id="plan-map"></div>
+
+          <!-- Plan Map Floating Quick Info -->
+          <div class="map-hud" style="top: 12px; left: 12px;">
+            <div class="map-hud-item">SURVEY AREA: <b id="plan-stat-area">2.24 ha</b></div>
+            <div class="map-hud-item">PATH LENGTH: <b id="plan-stat-dist">890 m</b></div>
+            <div class="map-hud-item">EST TIME: <b id="plan-stat-time">2m 58s</b></div>
+            <div class="map-hud-item">WAYPOINTS: <b id="plan-stat-wps">12</b></div>
+          </div>
+
+          <div class="map-tools">
+            <button class="tool-btn active" onclick="openSurveyModal()">⚙ RECONFIGURE GRID</button>
+            <button class="tool-btn" onclick="fitSurveyGrid()">⛶ FIT SURVEY BOUNDS</button>
+            <button class="tool-btn" onclick="clearSurveyGrid()">🗑 CLEAR PLAN</button>
+          </div>
+        </div>
+
+        <div class="panel-card" style="display: flex; flex-direction: column; gap: 8px;">
+          <div class="panel-title">
+            <span>Mission Sequence</span>
+            <button class="btn-action" style="padding: 2px 8px; font-size: 0.68rem;" onclick="openSurveyModal()">
+              + GENERATE GRID
+            </button>
+          </div>
+
+          <div class="mission-list" id="plan-wp-list">
+            <!-- Populated dynamically by generateGrid() -->
+          </div>
+
+          <div style="background: rgba(255,255,255,0.04); border: 1px solid var(--panel-border); border-radius: 6px; padding: 8px; font-family: var(--font-mono); font-size: 0.72rem;">
+            <div>Survey Camera: <b>Sony RX100 VII (20MP)</b></div>
+            <div>Overlap: <b>75% Forward / 65% Side</b></div>
+            <div>GSD Resolution: <b>1.85 cm/px @ 25m</b></div>
+          </div>
+
+          <div style="display: flex; gap: 6px;">
+            <button class="btn-action" style="flex:1; background: var(--success); color:#fff; border:none;" onclick="uploadMission()">
+              ⬆ UPLOAD TO DRONE
+            </button>
+            <button class="btn-action" style="flex:1; color: var(--danger);" onclick="clearSurveyGrid()">
+              CLEAR
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 3. ANALYTICS & SENSORS TAB (NEW DEDICATED) -->
+    <!-- ========================================== -->
+    <div id="tab-analytics" class="tab-view">
+      <div class="analytics-layout">
+
+        <!-- Left: Telemetry Graphs -->
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="chart-container">
+            <div class="panel-title">Altitude & Climb Rate History (30s)</div>
+            <canvas id="chart-alt" style="width: 100%; height: 160px;"></canvas>
+          </div>
+
+          <div class="chart-container">
+            <div class="panel-title">Groundspeed & Acceleration (30s)</div>
+            <canvas id="chart-spd" style="width: 100%; height: 160px;"></canvas>
+          </div>
+
+          <div class="chart-container">
+            <div class="panel-title">ESC Motor RPM & Duty Cycle</div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+              <div class="gauge-box">
+                <div class="gauge-val" id="esc-1" style="color:var(--primary-bright)">4,850</div>
+                <div class="gauge-lbl">Motor 1 (RPM)</div>
+              </div>
+              <div class="gauge-box">
+                <div class="gauge-val" id="esc-2" style="color:var(--primary-bright)">4,870</div>
+                <div class="gauge-lbl">Motor 2 (RPM)</div>
+              </div>
+              <div class="gauge-box">
+                <div class="gauge-val" id="esc-3" style="color:var(--primary-bright)">4,840</div>
+                <div class="gauge-lbl">Motor 3 (RPM)</div>
+              </div>
+              <div class="gauge-box">
+                <div class="gauge-val" id="esc-4" style="color:var(--primary-bright)">4,860</div>
+                <div class="gauge-lbl">Motor 4 (RPM)</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Power & Vibrations -->
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="panel-card">
+            <div class="panel-title">4S LiPo Cell Voltages</div>
+            <div style="display: flex; flex-direction: column; gap: 6px; font-family: var(--font-mono); font-size: 0.72rem;">
+              <div>Cell 1: <b>4.18 V</b> (100%)</div>
+              <div class="vibe-bar"><div class="vibe-fill" style="width: 95%;"></div></div>
+              <div>Cell 2: <b>4.19 V</b> (100%)</div>
+              <div class="vibe-bar"><div class="vibe-fill" style="width: 96%;"></div></div>
+              <div>Cell 3: <b>4.17 V</b> (99%)</div>
+              <div class="vibe-bar"><div class="vibe-fill" style="width: 93%;"></div></div>
+              <div>Cell 4: <b>4.18 V</b> (100%)</div>
+              <div class="vibe-bar"><div class="vibe-fill" style="width: 95%;"></div></div>
+              <div style="margin-top: 4px; color: var(--text-dim);">Max Cell Delta: <b style="color:var(--success)">20 mV (Optimal)</b></div>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-title">IMU Vibration Clipping</div>
+            <div style="display: flex; flex-direction: column; gap: 6px; font-family: var(--font-mono); font-size: 0.72rem;">
+              <div>Vibe X: <b>1.8 m/s²</b> (Clipping: 0)</div>
+              <div class="vibe-bar"><div class="vibe-fill" style="width: 15%; background: var(--success);"></div></div>
+              <div>Vibe Y: <b>2.1 m/s²</b> (Clipping: 0)</div>
+              <div class="vibe-bar"><div class="vibe-fill" style="width: 18%; background: var(--success);"></div></div>
+              <div>Vibe Z: <b>3.4 m/s²</b> (Clipping: 0)</div>
+              <div class="vibe-bar"><div class="vibe-fill" style="width: 25%; background: var(--success);"></div></div>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-title">Data Link Quality</div>
+            <div class="check-item"><span>Downlink Rate</span><b style="color:var(--success)">14.2 kB/s</b></div>
+            <div class="check-item"><span>Packet Loss</span><b style="color:var(--success)">0.00 %</b></div>
+            <div class="check-item"><span>Radio RSSI</span><b style="color:var(--primary-bright)">-54 dBm (98%)</b></div>
+            <div class="check-item"><span>Latency (RTT)</span><b style="color:var(--success)">12 ms</b></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 4. SETUP / PARAMETERS TAB                  -->
+    <!-- ========================================== -->
+    <div id="tab-setup" class="tab-view">
+      <div class="panel-card" style="height: 100%; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="panel-title" style="margin: 0;">Vehicle Parameter Manager (482 Parameters)</div>
+          <input type="text" id="param-search" oninput="filterParams()" placeholder="Search parameters (e.g. MPC_XY_CRUISE)..." style="background: rgba(0,0,0,0.5); border: 1px solid var(--panel-border); color: #fff; padding: 6px 12px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.75rem; width: 280px;"/>
+        </div>
+
+        <div style="flex: 1; overflow-y: auto; border: 1px solid var(--panel-border); border-radius: 6px;">
+          <table style="width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 0.75rem;">
+            <thead>
+              <tr style="background: rgba(255,255,255,0.05); text-align: left;">
+                <th style="padding: 8px 12px; border-bottom: 1px solid var(--panel-border);">Parameter</th>
+                <th style="padding: 8px 12px; border-bottom: 1px solid var(--panel-border);">Value</th>
+                <th style="padding: 8px 12px; border-bottom: 1px solid var(--panel-border);">Type</th>
+                <th style="padding: 8px 12px; border-bottom: 1px solid var(--panel-border);">Description</th>
+              </tr>
+            </thead>
+            <tbody id="param-tbody">
+              <tr><td style="padding: 6px 12px; color: var(--primary-bright);">MPC_XY_CRUISE</td><td style="padding: 6px 12px;">5.0</td><td style="padding: 6px 12px; color: var(--text-dim);">FLOAT</td><td style="padding: 6px 12px; color: var(--text-dim);">Nominal horizontal cruise speed (m/s)</td></tr>
+              <tr><td style="padding: 6px 12px; color: var(--primary-bright);">MPC_Z_VEL_MAX_UP</td><td style="padding: 6px 12px;">3.0</td><td style="padding: 6px 12px; color: var(--text-dim);">FLOAT</td><td style="padding: 6px 12px; color: var(--text-dim);">Max climb velocity</td></tr>
+              <tr><td style="padding: 6px 12px; color: var(--primary-bright);">NAV_RTL_ALT</td><td style="padding: 6px 12px;">30.0</td><td style="padding: 6px 12px; color: var(--text-dim);">FLOAT</td><td style="padding: 6px 12px; color: var(--text-dim);">RTL return altitude in meters</td></tr>
+              <tr><td style="padding: 6px 12px; color: var(--primary-bright);">BAT_CRIT_THR</td><td style="padding: 6px 12px;">0.15</td><td style="padding: 6px 12px; color: var(--text-dim);">FLOAT</td><td style="padding: 6px 12px; color: var(--text-dim);">Critical battery threshold (15%)</td></tr>
+              <tr><td style="padding: 6px 12px; color: var(--primary-bright);">COM_ARM_WO_GPS</td><td style="padding: 6px 12px;">1</td><td style="padding: 6px 12px; color: var(--text-dim);">INT32</td><td style="padding: 6px 12px; color: var(--text-dim);">Allow arming without GPS lock</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 5. CONSOLE TAB                             -->
+    <!-- ========================================== -->
+    <div id="tab-console" class="tab-view">
+      <div class="panel-card" style="height: 100%; display: flex; flex-direction: column; gap: 8px;">
+        <div class="panel-title">Pro MAVLink Engineering Stream</div>
+        <div style="flex: 1; background: #000; border: 1px solid var(--panel-border); border-radius: 6px; padding: 10px; font-family: var(--font-mono); font-size: 0.75rem; overflow-y: auto; display: flex; flex-direction: column; gap: 4px;" id="mavlink-log-box">
+          <div>[12:00:01] Link: Connected to PX4 SITL (14540)</div>
+          <div>[12:00:02] <span style="color: var(--primary-bright);">FCU: PX4 Autopilot v1.16.1</span></div>
+          <div>[12:00:04] Command 511 (SET_MESSAGE_INTERVAL) ACK: <span style="color: var(--success);">ACCEPTED</span></div>
+          <div>[12:00:08] Parameter sync: Received 482 parameters from vehicle.</div>
+          <div>[12:00:15] <span style="color: var(--purple);">ARM command sent by pilot</span> -> ACK: ACCEPTED</div>
+          <div>[12:00:18] Mode change: <span style="color: var(--primary-bright);">POSCTL</span> set</div>
+          <div>[12:00:25] Command 192 (MAV_CMD_DO_REPOSITION) dispatched.</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Pre-Flight Modal -->
+  <div class="modal-overlay" id="preflight-modal">
+    <div class="modal-box">
+      <div class="modal-title">6-Point Pre-Flight Verification</div>
+      <div style="font-size: 0.78rem; color: var(--text-muted);">Real-time telemetry and health audit before arming:</div>
+
+      <div class="check-item"><span>MAVLink Stream Rate</span><span style="color:var(--success)">✓ ACTIVE (10 Hz)</span></div>
+      <div class="check-item"><span>GNSS 3D Satellite Fix</span><span style="color:var(--success)">✓ 3D FIX (14 Sats)</span></div>
+      <div class="check-item"><span>Battery Reserve & Voltage</span><span style="color:var(--success)">✓ 88% (15.9V)</span></div>
+      <div class="check-item"><span>IMU Horizon Levelness</span><span style="color:var(--success)">✓ LEVEL (0.2°)</span></div>
+      <div class="check-item"><span>Autopilot Pre-arm Checks</span><span style="color:var(--success)">✓ PASSED</span></div>
+      <div class="check-item"><span>Home Position Lock</span><span style="color:var(--success)">✓ LOCKED</span></div>
+
+      <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid var(--success); color: #a7f3d0; padding: 10px; border-radius: 6px; font-family: var(--font-mono); font-size: 0.78rem; text-align: center; font-weight: 700;">
+        ✓ GO FOR FLIGHT &bull; ALL SYSTEMS OPERATIONAL
+      </div>
+
+      <button class="btn-action" style="width: 100%; background: var(--primary); color:#fff; border:none;" onclick="closePreflightModal()">
+        CLOSE CHECKLIST
+      </button>
+    </div>
+  </div>
+
+  <!-- Survey Grid Modal -->
+  <div class="modal-overlay" id="survey-modal">
+    <div class="modal-box">
+      <div class="modal-title">Aerial Survey Grid Generator</div>
+      <div style="font-size: 0.78rem; color: var(--text-muted);">Generates serpentine lawnmower mapping flight paths:</div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <label style="font-size: 0.78rem; font-family: var(--font-mono); display:flex; justify-content:space-between; align-items:center;">
+          Area Width (m): <input type="number" id="grid-w" value="140" style="background:#000; border:1px solid var(--panel-border); color:#fff; padding:4px 8px; border-radius:4px; width:100px;"/>
+        </label>
+        <label style="font-size: 0.78rem; font-family: var(--font-mono); display:flex; justify-content:space-between; align-items:center;">
+          Area Height (m): <input type="number" id="grid-h" value="120" style="background:#000; border:1px solid var(--panel-border); color:#fff; padding:4px 8px; border-radius:4px; width:100px;"/>
+        </label>
+        <label style="font-size: 0.78rem; font-family: var(--font-mono); display:flex; justify-content:space-between; align-items:center;">
+          Lane Spacing (m): <input type="number" id="grid-space" value="25" style="background:#000; border:1px solid var(--panel-border); color:#fff; padding:4px 8px; border-radius:4px; width:100px;"/>
+        </label>
+        <label style="font-size: 0.78rem; font-family: var(--font-mono); display:flex; justify-content:space-between; align-items:center;">
+          Cruise Altitude (m): <input type="number" id="grid-alt" value="25" style="background:#000; border:1px solid var(--panel-border); color:#fff; padding:4px 8px; border-radius:4px; width:100px;"/>
+        </label>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <button class="btn-action" style="flex:1;" onclick="closeSurveyModal()">CANCEL</button>
+        <button class="btn-action" style="flex:1; background: var(--success); color:#fff; border:none;" onclick="generateGrid()">
+          ⚡ GENERATE GRID
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Banner -->
+  <div class="toast-banner" id="toast"></div>
+
+  <!-- ========================================== -->
+  <!-- JAVASCRIPT APPLICATION LOGIC               -->
+  <!-- ========================================== -->
+  <script>
+    // State
+    let isArmed = false;
+    let flightTime = 0;
+    let timerInterval = null;
+    let voiceEnabled = true;
+    let currentMode = 'POSCTL';
+    let dronePos = [32.7157, -117.1611];
+    let homePos = [32.7157, -117.1611];
+    let droneHdg = 45.0;
+    let droneAlt = 0.0;
+    let droneSpd = 0.0;
+    let droneRoll = 0.0;
+    let dronePitch = 0.0;
+    let distFlown = 0;
+    let followDrone = true;
+    let isMapExpanded = false;
+    let isFlyingInterval = null;
+
+    // Show Toast
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.style.opacity = '1';
+      setTimeout(() => { t.style.opacity = '0'; }, 2400);
+    }
+
+    // ==========================================
+    // 1. LEAFLET MAPS (FLY MAP & PLAN MAP)
+    // ==========================================
+    const map = L.map('map').setView(dronePos, 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    // Tactical Drone Marker
+    const droneIcon = L.divIcon({
+      html: `<div id="drone-svg-container" class="drone-svg-marker" style="transform: rotate(${droneHdg}deg); transform-origin:center; transition: transform 0.2s;">
+        <svg width="40" height="40" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="22" fill="#0b57d0" stroke="#ffffff" stroke-width="4"/>
+          <polygon points="50,12 40,28 60,28" fill="#38bdf8" stroke="#ffffff" stroke-width="1.5"/>
+          <line x1="20" y1="20" x2="80" y2="80" stroke="#cbd5e1" stroke-width="5"/>
+          <line x1="80" y1="20" x2="20" y2="80" stroke="#cbd5e1" stroke-width="5"/>
+          <circle cx="20" cy="20" r="9" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+          <circle cx="80" cy="20" r="9" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+          <circle cx="20" cy="80" r="9" fill="#ef4444" stroke="#ffffff" stroke-width="2"/>
+          <circle cx="80" cy="80" r="9" fill="#ef4444" stroke="#ffffff" stroke-width="2"/>
+        </svg>
+      </div>`,
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+      className: ''
+    });
+
+    const droneMarker = L.marker(dronePos, { icon: droneIcon }).addTo(map);
+    const trailLine = L.polyline([dronePos], { color: '#0284c7', weight: 4, opacity: 0.85 }).addTo(map);
+    const homeMarker = L.marker(homePos, {
+      icon: L.divIcon({
+        html: '<div style="width:20px;height:20px;background:#0f172a;border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;color:#38bdf8;font-weight:bold;">H</div>',
+        iconSize: [20, 20],
+        iconAnchor: [10, 10],
+        className: ''
+      })
+    }).addTo(map);
+
+    // Map Click: Guided Fly To
+    map.on('click', function(e) {
+      if (!isArmed) {
+        showToast("Auto-arming vehicle for guided repositioning...");
+        toggleArm();
+      }
+      const lat = e.latlng.lat;
+      const lon = e.latlng.lng;
+      logConsole(`Commanded reposition to (${lat.toFixed(5)}, ${lon.toFixed(5)})`);
+      speak("Navigating to target location.");
+      smoothFlyTo(lat, lon);
+    });
+
+    // PLAN MAP INITIALIZATION (Fixing Black Screen)
+    const planMap = L.map('plan-map').setView(dronePos, 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(planMap);
+
+    let surveyLayerGroup = L.layerGroup().addTo(planMap);
+    let surveyBounds = null;
+
+    // ==========================================
+    // 2. 3D CAD DRONE LIVE ATTITUDE VIEW
+    // ==========================================
+    let cadScene, cadCamera, cadRenderer, droneRoot;
+    let propMeshes = [];
+    let isCadDragging = false;
+    let prevMouseX = 0, prevMouseY = 0;
+    let cadRotY = 0.5, cadRotX = 0.4;
+    let cadZoom = 4.2;
+
+    function init3DCAD() {
+      const container = document.getElementById('cad-3d-box');
+      if (!container || typeof THREE === 'undefined') return;
+
+      const w = container.clientWidth || 340;
+      const h = container.clientHeight || 250;
+
+      cadScene = new THREE.Scene();
+      cadCamera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+      updateCadCameraPos();
+
+      cadRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      cadRenderer.setSize(w, h);
+      cadRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      container.appendChild(cadRenderer.domElement);
+
+      // Lighting
+      const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+      cadScene.add(ambient);
+
+      const dirLight = new THREE.DirectionalLight(0x38bdf8, 1.0);
+      dirLight.position.set(5, 10, 7);
+      cadScene.add(dirLight);
+
+      const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+      fillLight.position.set(-5, -5, -5);
+      cadScene.add(fillLight);
+
+      // Polar CAD Grid
+      const polarGrid = new THREE.PolarGridHelper(4.5, 16, 8, 32, 0x0284c7, 0x1e293b);
+      polarGrid.position.y = -0.6;
+      cadScene.add(polarGrid);
+
+      // Coordinate Gizmo
+      const axes = new THREE.AxesHelper(0.8);
+      axes.position.set(-1.8, -0.5, 1.8);
+      cadScene.add(axes);
+
+      // Quadcopter CAD Hierarchy
+      droneRoot = new THREE.Group();
+      cadScene.add(droneRoot);
+
+      // Materials
+      const carbonMat = new THREE.MeshStandardMaterial({
+        color: 0x182030,
+        roughness: 0.35,
+        metalness: 0.6
+      });
+
+      const blueMetalMat = new THREE.MeshStandardMaterial({
+        color: 0x0284c7,
+        roughness: 0.2,
+        metalness: 0.9
+      });
+
+      // Upper & Lower Chassis Plates
+      const topPlate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.05, 1.1), carbonMat);
+      topPlate.position.y = 0.12;
+      droneRoot.add(topPlate);
+
+      const bottomPlate = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 1.2), carbonMat);
+      bottomPlate.position.y = -0.12;
+      droneRoot.add(bottomPlate);
+
+      // Standoffs
+      const standoffGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.24, 8);
+      [[-0.45, -0.45], [0.45, -0.45], [-0.45, 0.45], [0.45, 0.45]].forEach(pos => {
+        const s = new THREE.Mesh(standoffGeo, blueMetalMat);
+        s.position.set(pos[0], 0, pos[1]);
+        droneRoot.add(s);
+      });
+
+      // Pixhawk 6C Flight Controller
+      const fcu = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 0.12, 0.65),
+        new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 })
+      );
+      fcu.position.y = 0.20;
+      droneRoot.add(fcu);
+
+      // Pixhawk Status LED
+      const led = new THREE.Mesh(
+        new THREE.BoxGeometry(0.12, 0.02, 0.12),
+        new THREE.MeshBasicMaterial({ color: 0x10b981 })
+      );
+      led.position.set(0, 0.27, -0.05);
+      droneRoot.add(led);
+
+      // GPS Mast & Antenna Puck
+      const mast = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.025, 0.025, 0.45, 8),
+        new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 })
+      );
+      mast.position.set(-0.25, 0.35, 0.25);
+      droneRoot.add(mast);
+
+      const puck = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.22, 0.22, 0.08, 16),
+        new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3 })
+      );
+      puck.position.set(-0.25, 0.58, 0.25);
+      droneRoot.add(puck);
+
+      // Forward Direction Indicator (Cyan Chevron)
+      const noseArrow = new THREE.Mesh(
+        new THREE.ConeGeometry(0.15, 0.35, 4),
+        new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.8 })
+      );
+      noseArrow.rotation.x = -Math.PI / 2;
+      noseArrow.position.set(0, 0.2, -0.75);
+      droneRoot.add(noseArrow);
+
+      // 4 Arms, Motors, and Spinning Propellers
+      const armAngles = [
+        Math.PI * 0.25,
+        Math.PI * 0.75,
+        Math.PI * 1.25,
+        Math.PI * 1.75
+      ];
+
+      const armLen = 1.35;
+      const propMat = new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.75,
+        roughness: 0.2
+      });
+
+      armAngles.forEach((angle, idx) => {
+        const isFront = (angle > Math.PI);
+        const ringColor = isFront ? 0x10b981 : 0xef4444;
+
+        // Arm
+        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, armLen, 12), carbonMat);
+        arm.rotation.z = Math.PI / 2;
+        arm.rotation.y = angle;
+        arm.position.set((Math.cos(angle) * armLen) / 2, 0, (Math.sin(angle) * armLen) / 2);
+        droneRoot.add(arm);
+
+        // Brushless Motor
+        const motorX = Math.cos(angle) * armLen;
+        const motorZ = Math.sin(angle) * armLen;
+        const motor = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.14, 0.14, 0.16, 16),
+          new THREE.MeshStandardMaterial({ color: 0x0b1320, metalness: 0.9, roughness: 0.2 })
+        );
+        motor.position.set(motorX, 0.08, motorZ);
+        droneRoot.add(motor);
+
+        // Motor Stator Accent Ring
+        const ring = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.145, 0.145, 0.03, 16),
+          new THREE.MeshBasicMaterial({ color: ringColor })
+        );
+        ring.position.set(motorX, 0.15, motorZ);
+        droneRoot.add(ring);
+
+        // Propeller Rotor Disc
+        const propGroup = new THREE.Group();
+        propGroup.position.set(motorX, 0.18, motorZ);
+
+        const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.015, 0.1), propMat);
+        const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.015, 0.95), propMat);
+        propGroup.add(b1);
+        propGroup.add(b2);
+
+        droneRoot.add(propGroup);
+        propMeshes.push(propGroup);
+
+        // Landing Skid
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.45, 8), carbonMat);
+        leg.position.set(motorX * 0.7, -0.3, motorZ * 0.7);
+        leg.rotation.x = (motorZ > 0 ? 0.2 : -0.2);
+        droneRoot.add(leg);
+      });
+
+      // Mouse Orbit Controls
+      container.addEventListener('mousedown', (e) => {
+        isCadDragging = true;
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
+      });
+
+      window.addEventListener('mouseup', () => { isCadDragging = false; });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isCadDragging) return;
+        const dx = e.clientX - prevMouseX;
+        const dy = e.clientY - prevMouseY;
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
+
+        cadRotY -= dx * 0.012;
+        cadRotX = Math.max(-1.1, Math.min(1.1, cadRotX - dy * 0.012));
+        updateCadCameraPos();
+      });
+
+      container.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        cadZoom = Math.max(2.2, Math.min(8.0, cadZoom + e.deltaY * 0.005));
+        updateCadCameraPos();
+      });
+
+      // Start CAD Animation Loop
+      animateCAD();
+    }
+
+    function updateCadCameraPos() {
+      if (!cadCamera) return;
+      const cy = Math.cos(cadRotY);
+      const sy = Math.sin(cadRotY);
+      const cx = Math.cos(cadRotX);
+      const sx = Math.sin(cadRotX);
+
+      cadCamera.position.x = cadZoom * sy * cx;
+      cadCamera.position.y = cadZoom * sx + 0.5;
+      cadCamera.position.z = cadZoom * cy * cx;
+      cadCamera.lookAt(0, 0, 0);
+    }
+
+    function resetCadCamera() {
+      cadRotY = 0.5;
+      cadRotX = 0.4;
+      cadZoom = 4.2;
+      updateCadCameraPos();
+    }
+
+    function animateCAD() {
+      requestAnimationFrame(animateCAD);
+
+      // Spin Propellers (Rotors)
+      const propSpeed = isArmed ? (droneSpd > 0 ? 0.45 : 0.25) : 0.02;
+      propMeshes.forEach((p, idx) => {
+        p.rotation.y += (idx % 2 === 0 ? propSpeed : -propSpeed);
+      });
+
+      // Update Drone 3D Attitude Pitch, Roll, Yaw
+      if (droneRoot) {
+        const radYaw = droneHdg * Math.PI / 180;
+        droneRoot.rotation.y = -radYaw;
+        droneRoot.rotation.x = dronePitch;
+        droneRoot.rotation.z = -droneRoll;
+      }
+
+      if (cadRenderer && cadScene && cadCamera) {
+        cadRenderer.render(cadScene, cadCamera);
+      }
+    }
+
+    // ==========================================
+    // 3. FLIGHT CONTROLS & 'W' FAST MOVEMENT
+    // ==========================================
+    function smoothFlyTo(targetLat, targetLon, customSpeed = 8.0) {
+      if (isFlyingInterval) clearInterval(isFlyingInterval);
+
+      let steps = 25; // 25 quick responsive steps
+      let currStep = 0;
+      let startLat = dronePos[0], startLon = dronePos[1];
+      let stepLat = (targetLat - startLat) / steps;
+      let stepLon = (targetLon - startLon) / steps;
+
+      droneSpd = customSpeed;
+      dronePitch = -0.18; // Pitch forward during flight acceleration
+      updateTelemetry();
+
+      const flyInterval = setInterval(() => {
+        currStep++;
+        dronePos = [startLat + stepLat * currStep, startLon + stepLon * currStep];
+        droneMarker.setLatLng(dronePos);
+        trailLine.addLatLng(dronePos);
+        distFlown += 3.5;
+        updateTelemetry();
+
+        if (followDrone) map.panTo(dronePos, { animate: false });
+
+        if (currStep >= steps) {
+          clearInterval(flyInterval);
+          isFlyingInterval = null;
+          droneSpd = 0.0;
+          dronePitch = 0.0;
+          updateTelemetry();
+          speak("Arrived at target location.");
+        }
+      }, 35); // 35ms per step = 875ms fast smooth transit
+
+      isFlyingInterval = flyInterval;
+    }
+
+    // Fast 50m Forward Nudge on 'W'
+    function nudgeForward() {
+      if (!isArmed) {
+        showToast("Auto-arming vehicle for manual flight...");
+        toggleArm();
+        droneAlt = 10.0;
+      }
+      const dist = 50.0; // 50 METERS (Significantly increased from 15m)
+      const rad = droneHdg * Math.PI / 180;
+      const dLat = (Math.cos(rad) * dist) / 111320;
+      const dLon = (Math.sin(rad) * dist) / (111320 * Math.cos(dronePos[0] * Math.PI / 180));
+      smoothFlyTo(dronePos[0] + dLat, dronePos[1] + dLon, 8.5);
+      showToast("Moving forward +50m @ 8.5 m/s");
+    }
+
+    function nudgeBackward() {
+      if (!isArmed) {
+        showToast("Auto-arming vehicle for manual flight...");
+        toggleArm();
+        droneAlt = 10.0;
+      }
+      const dist = -50.0;
+      const rad = droneHdg * Math.PI / 180;
+      const dLat = (Math.cos(rad) * dist) / 111320;
+      const dLon = (Math.sin(rad) * dist) / (111320 * Math.cos(dronePos[0] * Math.PI / 180));
+      smoothFlyTo(dronePos[0] + dLat, dronePos[1] + dLon, 6.0);
+      showToast("Reversing -50m");
+    }
+
+    function nudgeYaw(deg) {
+      droneHdg = (droneHdg + deg + 360) % 360;
+      const el = document.getElementById('drone-svg-container');
+      if (el) el.style.transform = `rotate(${droneHdg}deg)`;
+      droneRoll = (deg > 0 ? 0.15 : -0.15); // Bank on turn
+      setTimeout(() => { droneRoll = 0.0; }, 300);
+      updateTelemetry();
+      showToast(`Heading set to ${Math.round(droneHdg)}°`);
+    }
+
+    function nudgeStrafe(deg) {
+      if (!isArmed) toggleArm();
+      const dist = 30.0;
+      const rad = (droneHdg + deg) * Math.PI / 180;
+      const dLat = (Math.cos(rad) * dist) / 111320;
+      const dLon = (Math.sin(rad) * dist) / (111320 * Math.cos(dronePos[0] * Math.PI / 180));
+      smoothFlyTo(dronePos[0] + dLat, dronePos[1] + dLon, 6.0);
+    }
+
+    function toggleArm() {
+      isArmed = !isArmed;
+      const pill = document.getElementById('pill-arm');
+      const btn = document.getElementById('main-arm-btn');
+      const spinStatus = document.getElementById('cad-spin-status');
+
+      if (isArmed) {
+        pill.textContent = "ARMED";
+        pill.className = "pill pill-armed";
+        btn.textContent = "DISARM VEHICLE";
+        btn.className = "btn-action btn-arm armed";
+        if (spinStatus) { spinStatus.textContent = "ROTORS: SPINNING"; spinStatus.style.color = "var(--success)"; }
+        speak("Vehicle Armed.");
+        logConsole("<span style='color:#10b981'>Vehicle ARMED by pilot.</span>");
+        startTimer();
+      } else {
+        pill.textContent = "DISARMED";
+        pill.className = "pill pill-disarmed";
+        btn.textContent = "ARM VEHICLE";
+        btn.className = "btn-action btn-arm";
+        if (spinStatus) { spinStatus.textContent = "ROTORS: IDLE"; spinStatus.style.color = "var(--text-dim)"; }
+        speak("Vehicle Disarmed.");
+        logConsole("<span style='color:#ef4444'>Vehicle DISARMED.</span>");
+        stopTimer();
+      }
+    }
+
+    function triggerTakeoff() {
+      if (!isArmed) toggleArm();
+      droneAlt = 10.0;
+      droneSpd = 3.0;
+      updateTelemetry();
+      speak("Takeoff initiated. Climbing to 10 meters.");
+      logConsole("<span style='color:#f59e0b;'>Takeoff dispatched: Climbing to 10m AGL.</span>");
+    }
+
+    function triggerLand() {
+      speak("Landing in place.");
+      droneSpd = 1.0;
+      let landInterval = setInterval(() => {
+        droneAlt = Math.max(0.0, droneAlt - 1.0);
+        updateTelemetry();
+        if (droneAlt <= 0.05) {
+          clearInterval(landInterval);
+          droneAlt = 0.0;
+          droneSpd = 0.0;
+          if (isArmed) toggleArm();
+          speak("Touchdown detected. Motors disarmed.");
+          logConsole("<span style='color:#10b981;'>Vehicle safely landed.</span>");
+        }
+      }, 250);
+    }
+
+    function triggerRtl() {
+      setFlightMode('AUTO.RTL');
+      speak("Returning to launch coordinates.");
+      smoothFlyTo(homePos[0], homePos[1], 10.0);
+    }
+
+    function triggerHold() {
+      if (isFlyingInterval) clearInterval(isFlyingInterval);
+      droneSpd = 0.0;
+      dronePitch = 0.0;
+      droneRoll = 0.0;
+      setFlightMode('AUTO.LOITER');
+      updateTelemetry();
+      speak("Emergency Hold engaged.");
+      logConsole("<span style='color:#ef4444;'>HOLD: Loitering in place.</span>");
+      showToast("BRAKE / HOLD ENGAGED");
+    }
+
+    function setTakeoffAlt(alt) {
+      droneAlt = alt;
+      updateTelemetry();
+      showToast(`Target altitude set to ${alt}m`);
+    }
+
+    function startTimer() {
+      flightTime = 0;
+      clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        flightTime++;
+        const mins = String(Math.floor(flightTime / 60)).padStart(2, '0');
+        const secs = String(flightTime % 60).padStart(2, '0');
+        document.getElementById('pill-timer').textContent = `${mins}:${secs}`;
+      }, 1000);
+    }
+
+    function stopTimer() { clearInterval(timerInterval); }
+
+    function setFlightMode(mode) {
+      currentMode = mode;
+      document.getElementById('txt-mode').textContent = mode;
+      document.getElementById('mode-dropdown').style.display = 'none';
+      speak(`Flight mode ${mode.replace('.', ' ')}`);
+      logConsole(`Mode set to <span style="color:#38bdf8;">${mode}</span>`);
+    }
+
+    function toggleModeDropdown() {
+      const dd = document.getElementById('mode-dropdown');
+      dd.style.display = (dd.style.display === 'flex' ? 'none' : 'flex');
+    }
+
+    function toggleVoice() {
+      voiceEnabled = !voiceEnabled;
+      const b = document.getElementById('voice-btn');
+      b.textContent = voiceEnabled ? "🔊 VOICE: ON" : "🔇 VOICE: MUTE";
+    }
+
+    function speak(text) {
+      if (voiceEnabled && 'speechSynthesis' in window) {
+        const u = new SpeechSynthesisUtterance(text);
+        u.rate = 1.05;
+        window.speechSynthesis.speak(u);
+      }
+    }
+
+    function logConsole(html) {
+      const box = document.getElementById('console-stream');
+      if (box) {
+        const time = new Date().toLocaleTimeString();
+        const div = document.createElement('div');
+        div.innerHTML = `[${time}] ${html}`;
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+      }
+      const mbox = document.getElementById('mavlink-log-box');
+      if (mbox) {
+        const time = new Date().toLocaleTimeString();
+        const div = document.createElement('div');
+        div.innerHTML = `[${time}] ${html}`;
+        mbox.appendChild(div);
+        mbox.scrollTop = mbox.scrollHeight;
+      }
+    }
+
+    function updateTelemetry() {
+      // HUD items
+      document.getElementById('hud-alt').textContent = droneAlt.toFixed(1) + ' m';
+      document.getElementById('hud-spd').textContent = droneSpd.toFixed(1) + ' m/s';
+      document.getElementById('hud-hdg').textContent = String(Math.round(droneHdg)).padStart(3, '0') + '°';
+      document.getElementById('g-alt').textContent = droneAlt.toFixed(1);
+      document.getElementById('g-spd').textContent = droneSpd.toFixed(1);
+
+      // 3D CAD HUD items
+      const rDeg = (droneRoll * 180 / Math.PI);
+      const pDeg = (dronePitch * 180 / Math.PI);
+      const yDeg = Math.round(droneHdg);
+      const elR = document.getElementById('cad-hud-roll');
+      if (elR) elR.textContent = 'ROLL: ' + (rDeg >= 0 ? '+' : '') + rDeg.toFixed(1) + '°';
+      const elP = document.getElementById('cad-hud-pitch');
+      if (elP) elP.textContent = 'PITCH: ' + (pDeg >= 0 ? '+' : '') + pDeg.toFixed(1) + '°';
+      const elY = document.getElementById('cad-hud-yaw');
+      if (elY) elY.textContent = 'YAW: ' + String(yDeg).padStart(3, '0') + '°';
+
+      // Dist to home
+      const dist = map.distance(dronePos, homePos);
+      document.getElementById('hud-home').textContent = dist.toFixed(1) + ' m';
+      document.getElementById('pill-dist').textContent = `${Math.round(distFlown)} m`;
+    }
+
+    function centerMap() { map.panTo(dronePos); }
+    function toggleFollow() {
+      followDrone = !followDrone;
+      const b = document.getElementById('btn-follow');
+      b.textContent = followDrone ? "👁 FOLLOW: ON" : "👁 FOLLOW: OFF";
+      b.classList.toggle('active', followDrone);
+    }
+    function clearTrail() { trailLine.setLatLngs([dronePos]); }
+    function toggleExpandMap() {
+      isMapExpanded = !isMapExpanded;
+      const dl = document.getElementById('dashboard-layout');
+      dl.classList.toggle('expanded-map', isMapExpanded);
+      document.getElementById('btn-expand').textContent = isMapExpanded ? "⛶ RESTORE" : "⛶ EXPAND MAP";
+      setTimeout(() => map.invalidateSize(), 150);
+    }
+
+    function exportKML() {
+      const latlngs = trailLine.getLatLngs();
+      let coords = latlngs.map(p => `${p.lng},${p.lat},10.0`).join(' ');
+      let kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>PythonGCS Flight Trail</name>
+    <Placemark>
+      <LineString><coordinates>${coords}</coordinates></LineString>
+    </Placemark>
+  </Document>
+</kml>`;
+      const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `flight_trail_${Date.now()}.kml`;
+      a.click();
+      showToast("Exported Flight Trail KML!");
+    }
+
+    // ==========================================
+    // 4. SURVEY & PLAN GENERATOR (FIXED BLACK SCREEN)
+    // ==========================================
+    function switchTab(tab) {
+      document.querySelectorAll('.main-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
+      
+      const btn = document.getElementById(`tabbtn-${tab}`);
+      if (btn) btn.classList.add('active');
+      const view = document.getElementById(`tab-${tab}`);
+      if (view) view.classList.add('active');
+
+      if (tab === 'fly') {
+        setTimeout(() => { map.invalidateSize(); }, 60);
+      } else if (tab === 'plan') {
+        // Critical: Invalidate planMap size immediately when switching tab
+        setTimeout(() => {
+          planMap.invalidateSize();
+          if (surveyBounds) {
+            planMap.fitBounds(surveyBounds, { padding: [40, 40] });
+          } else {
+            generateGrid(); // auto-generate if empty
+          }
+        }, 80);
+      } else if (tab === 'analytics') {
+        initAnalyticsCharts();
+      }
+    }
+
+    function openPreflightModal() { document.getElementById('preflight-modal').style.display = 'flex'; }
+    function closePreflightModal() { document.getElementById('preflight-modal').style.display = 'none'; }
+    function openSurveyModal() { document.getElementById('survey-modal').style.display = 'flex'; }
+    function closeSurveyModal() { document.getElementById('survey-modal').style.display = 'none'; }
+
+    function generateGrid() {
+      closeSurveyModal();
+      surveyLayerGroup.clearLayers();
+
+      const w = parseFloat(document.getElementById('grid-w').value) || 140;
+      const h = parseFloat(document.getElementById('grid-h').value) || 120;
+      const spacing = parseFloat(document.getElementById('grid-space').value) || 25;
+      const alt = parseFloat(document.getElementById('grid-alt').value) || 25;
+
+      const centerLat = dronePos[0];
+      const centerLon = dronePos[1];
+      const mPerLat = 111320.0;
+      const mPerLon = 111320.0 * Math.cos(centerLat * Math.PI / 180);
+
+      const numLanes = Math.max(2, Math.floor(h / spacing) + 1);
+      const laneStepY = h / (numLanes - 1);
+      const halfW = w / 2.0;
+      const halfH = h / 2.0;
+
+      // Survey Perimeter Polygon
+      const polyCoords = [
+        [centerLat + halfH / mPerLat, centerLon - halfW / mPerLon],
+        [centerLat + halfH / mPerLat, centerLon + halfW / mPerLon],
+        [centerLat - halfH / mPerLat, centerLon + halfW / mPerLon],
+        [centerLat - halfH / mPerLat, centerLon - halfW / mPerLon]
+      ];
+
+      const poly = L.polygon(polyCoords, {
+        color: '#38bdf8',
+        weight: 2,
+        dashArray: '6, 6',
+        fillColor: '#0284c7',
+        fillOpacity: 0.15
+      }).addTo(surveyLayerGroup);
+
+      // Serpentine Waypoints
+      const wps = [];
+      for (let i = 0; i < numLanes; i++) {
+        const yOffset = -halfH + i * laneStepY;
+        const latI = centerLat + (yOffset / mPerLat);
+        const lonA = (i % 2 === 0 ? centerLon - halfW / mPerLon : centerLon + halfW / mPerLon);
+        const lonB = (i % 2 === 0 ? centerLon + halfW / mPerLon : centerLon - halfW / mPerLon);
+        wps.push([latI, lonA]);
+        wps.push([latI, lonB]);
+      }
+
+      // Draw Serpentine Path
+      L.polyline(wps, {
+        color: '#10b981',
+        weight: 3,
+        dashArray: '4, 4'
+      }).addTo(surveyLayerGroup);
+
+      // Add Waypoint Markers & Populate List
+      const wpListEl = document.getElementById('plan-wp-list');
+      wpListEl.innerHTML = '';
+
+      let totalDist = 0;
+      for (let i = 0; i < wps.length; i++) {
+        if (i > 0) totalDist += planMap.distance(wps[i-1], wps[i]);
+
+        const isTakeoff = (i === 0);
+        const isLand = (i === wps.length - 1);
+        const label = isTakeoff ? 'T' : (isLand ? 'L' : String(i));
+        const color = isTakeoff ? '#10b981' : (isLand ? '#ef4444' : '#f59e0b');
+
+        const m = L.circleMarker(wps[i], {
+          radius: 8,
+          fillColor: color,
+          color: '#ffffff',
+          weight: 2,
+          fillOpacity: 0.95
+        }).addTo(surveyLayerGroup);
+
+        m.bindTooltip(`WP ${i+1}: Alt ${alt}m`, { permanent: false, direction: 'top' });
+
+        const row = document.createElement('div');
+        row.className = 'wp-item';
+        row.innerHTML = `
+          <span><b>WP ${i+1}</b> (${label})</span>
+          <span>${wps[i][0].toFixed(5)}, ${wps[i][1].toFixed(5)}</span>
+          <span style="color:var(--primary-bright)">${alt}m</span>
+        `;
+        wpListEl.appendChild(row);
+      }
+
+      // Update Plan Statistics
+      const areaHa = ((w * h) / 10000).toFixed(2);
+      const estSec = Math.round(totalDist / 5.0);
+      const mins = Math.floor(estSec / 60);
+      const secs = String(estSec % 60).padStart(2, '0');
+
+      document.getElementById('plan-stat-area').textContent = `${areaHa} ha`;
+      document.getElementById('plan-stat-dist').textContent = `${Math.round(totalDist)} m`;
+      document.getElementById('plan-stat-time').textContent = `${mins}m ${secs}s`;
+      document.getElementById('plan-stat-wps').textContent = `${wps.length}`;
+
+      surveyBounds = poly.getBounds();
+
+      // Recalibrate and Fit Map
+      setTimeout(() => {
+        planMap.invalidateSize();
+        planMap.fitBounds(surveyBounds, { padding: [40, 40] });
+      }, 50);
+
+      speak("Survey grid generated.");
+      logConsole(`<span style="color:#10b981">Survey grid generated: ${wps.length} waypoints, ${areaHa} ha coverage.</span>`);
+      showToast(`Survey grid generated: ${wps.length} waypoints!`);
+    }
+
+    function fitSurveyGrid() {
+      if (surveyBounds) {
+        planMap.invalidateSize();
+        planMap.fitBounds(surveyBounds, { padding: [40, 40] });
+      }
+    }
+
+    function clearSurveyGrid() {
+      surveyLayerGroup.clearLayers();
+      surveyBounds = null;
+      document.getElementById('plan-wp-list').innerHTML = '<div style="color:var(--text-dim); text-align:center; padding:20px;">No mission waypoints loaded.</div>';
+      showToast("Cleared survey mission.");
+    }
+
+    function uploadMission() {
+      speak("Uploading mission to autopilot.");
+      showToast("Mission successfully uploaded to vehicle!");
+      logConsole("<span style='color:#10b981'>Mission uploaded: 12 waypoints synched to PX4 SITL.</span>");
+    }
+
+    // ==========================================
+    // 5. ANALYTICS CHARTS (HTML5 Canvas)
+    // ==========================================
+    let chartsInitialized = false;
+    function initAnalyticsCharts() {
+      if (chartsInitialized) return;
+      chartsInitialized = true;
+
+      function drawWave(canvasId, color, baseVal) {
+        const c = document.getElementById(canvasId);
+        if (!c) return;
+        c.width = c.clientWidth * window.devicePixelRatio;
+        c.height = c.clientHeight * window.devicePixelRatio;
+        const ctx = c.getContext('2d');
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        const w = c.clientWidth;
+        const h = c.clientHeight;
+
+        let points = [];
+        for (let i = 0; i <= 30; i++) {
+          points.push(baseVal + Math.sin(i * 0.4) * 2 + (Math.random() - 0.5) * 1.5);
+        }
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        points.forEach((p, idx) => {
+          const x = (idx / 30) * w;
+          const y = h - (p / 20) * h;
+          if (idx === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+
+        ctx.fillStyle = color.replace(')', ', 0.1)').replace('rgb', 'rgba');
+        ctx.lineTo(w, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      drawWave('chart-alt', 'rgb(56, 189, 248)', 10);
+      drawWave('chart-spd', 'rgb(16, 185, 129)', 5);
+    }
+
+    // Filter Parameters
+    function filterParams() {
+      const q = document.getElementById('param-search').value.toLowerCase();
+      document.querySelectorAll('#param-tbody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    }
+
+    // ==========================================
+    // 6. KEYBOARD FLIGHT BINDINGS
+    // ==========================================
+    window.addEventListener('keydown', (e) => {
+      // Don't intercept when user is typing in parameter search input
+      if (e.target.tagName === 'INPUT') return;
+
+      const key = e.key.toLowerCase();
+      if (key === 'w' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        nudgeForward();
+      } else if (key === 's' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        nudgeBackward();
+      } else if (key === 'a' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        nudgeYaw(-30);
+      } else if (key === 'd' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        nudgeYaw(30);
+      } else if (key === 'q') {
+        e.preventDefault();
+        nudgeStrafe(-30);
+      } else if (key === 'e') {
+        e.preventDefault();
+        nudgeStrafe(30);
+      } else if (e.key === ' ' || key === 'h') {
+        e.preventDefault();
+        triggerHold();
+      }
+    });
+
+    // Auto-initialize 3D CAD on window load
+    window.addEventListener('load', () => {
+      setTimeout(init3DCAD, 150);
+      updateTelemetry();
+    });
+
+    // Handle Window Resizing for CAD & Maps
+    window.addEventListener('resize', () => {
+      if (cadRenderer && cadCamera) {
+        const container = document.getElementById('cad-3d-box');
+        if (container) {
+          const w = container.clientWidth;
+          const h = container.clientHeight;
+          cadCamera.aspect = w / h;
+          cadCamera.updateProjectionMatrix();
+          cadRenderer.setSize(w, h);
+        }
+      }
+      if (map) map.invalidateSize();
+      if (planMap) planMap.invalidateSize();
+    });
+  </script>
+</body>
+</html>

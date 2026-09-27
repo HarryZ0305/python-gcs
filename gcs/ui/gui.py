@@ -532,6 +532,7 @@ class GCSWindow(QMainWindow):
         
         # Create Tab Widget
         self.tabs = QTabWidget()
+        self.tabs.currentChanged.connect(self._on_tab_changed)
         self.tabs.setStyleSheet(f"""
             QTabWidget::pane {{
                 border: 1px solid {THEME['panel_border']};
@@ -917,12 +918,12 @@ class GCSWindow(QMainWindow):
         left_col.addWidget(self.arm_btn, stretch=0)
         left_col.addStretch(1)
 
-        # CENTER column: Map, Download button, and Plot panel below it
+        # CENTER column: Full-Height Map and quick action bar
         center_col = QVBoxLayout()
         center_col.setSpacing(6)
         
         self.map_container_widget = PremiumViewContainer(self.map_view, "MapContainer")
-        center_col.addWidget(self.map_container_widget, stretch=5)
+        center_col.addWidget(self.map_container_widget, stretch=1)
         
         map_bar = QHBoxLayout()
         map_bar.setSpacing(6)
@@ -946,8 +947,6 @@ class GCSWindow(QMainWindow):
         map_bar.addWidget(self.expand_map_btn)
 
         center_col.addLayout(map_bar)
-        
-        center_col.addWidget(self.plot_panel, stretch=2)
 
         # RIGHT column: Telemetry Gauges, Aircraft Status, and 3D Attitude
         right_col = QVBoxLayout()
@@ -989,11 +988,10 @@ class GCSWindow(QMainWindow):
         grid_layout.addWidget(self.gps_gauge, 1, 1)
         tc_layout.addWidget(grid_widget)
 
-        right_col.addWidget(self.telemetry_card, stretch=4)
-        right_col.addWidget(self.aircraft_status_panel, stretch=0)
+        right_col.addWidget(self.telemetry_card, stretch=0)
         
         self.attitude_container_widget = PremiumViewContainer(self.attitude_view, "AttitudeContainer")
-        right_col.addWidget(self.attitude_container_widget, stretch=3)
+        right_col.addWidget(self.attitude_container_widget, stretch=1)
 
         # Wrap columns in QWidget for PiP / Expand Map toggling
         self.left_col_widget = QWidget()
@@ -1027,6 +1025,26 @@ class GCSWindow(QMainWindow):
         plan_layout.addWidget(self.plan_map_container, stretch=3)
         plan_layout.addWidget(self.mission_panel, stretch=1)
         self.tabs.addTab(plan_widget, "PLAN")
+
+        # ===== ANALYTICS & SENSORS Tab Layout =====
+        analytics_widget = QWidget()
+        analytics_widget.setObjectName("AnalyticsTab")
+        analytics_widget.setStyleSheet(f"#AnalyticsTab {{ background-color: {THEME['bg']}; }}")
+        analytics_layout = QHBoxLayout(analytics_widget)
+        analytics_layout.setContentsMargins(8, 8, 8, 8)
+        analytics_layout.setSpacing(10)
+
+        analytics_layout.addWidget(self.plot_panel, stretch=3)
+        
+        analytics_side = QVBoxLayout()
+        analytics_side.setSpacing(8)
+        analytics_side.addWidget(self.aircraft_status_panel, stretch=0)
+        analytics_side.addWidget(self.power_panel, stretch=0)
+        analytics_side.addWidget(self.gnss_panel, stretch=0)
+        analytics_side.addStretch(1)
+        analytics_layout.addLayout(analytics_side, stretch=1)
+
+        self.tabs.addTab(analytics_widget, "ANALYTICS")
 
         # ===== CAMERAS Tab Layout =====
         cameras_widget = QWidget()
@@ -1176,6 +1194,14 @@ class GCSWindow(QMainWindow):
             self.set_status(f"Guided target dispatched to ({lat:.5f}, {lon:.5f}) @ {target_alt:.1f}m")
             if self.tts and getattr(self, 'voice_enabled', True):
                 self.tts.say("Flying to guided waypoint.")
+
+    
+    def _on_tab_changed(self, index):
+        # Invalidate Leaflet maps when switching tabs to prevent black screens
+        if index == 0:
+            self.map_view.page().runJavaScript("if (typeof map !== 'undefined') setTimeout(function(){ map.invalidateSize(); }, 60);")
+        elif index == 1:
+            self.plan_map_view.page().runJavaScript("if (typeof map !== 'undefined') setTimeout(function(){ map.invalidateSize(); }, 60);")
 
     def on_connect_toggle(self):
         if self.vehicle is not None:
@@ -1336,7 +1362,7 @@ class GCSWindow(QMainWindow):
     def on_forward(self):
         self.ensure_offboard()
         set_offboard_targets(vx=2.0, yaw_rate=0.0)
-        self.set_status("Offboard target: Forward (2.0 m/s)")
+        self.set_status("Offboard target: Forward (5.0 m/s)")
 
     def on_yaw_left(self):
         self.ensure_offboard()
@@ -1741,21 +1767,21 @@ class GCSWindow(QMainWindow):
         vz = 0.0
         yaw_rate = 0.0
         if Qt.Key.Key_W in self.held_keys:
-            vx += 2.0
+            vx += 5.0
         if Qt.Key.Key_S in self.held_keys:
-            vx -= 2.0
+            vx -= 5.0
         if Qt.Key.Key_A in self.held_keys:
-            vy -= 2.0
+            vy -= 4.0
         if Qt.Key.Key_D in self.held_keys:
-            vy += 2.0
+            vy += 4.0
         if Qt.Key.Key_Q in self.held_keys:
-            yaw_rate -= 0.5
+            yaw_rate -= 0.8
         if Qt.Key.Key_E in self.held_keys:
-            yaw_rate += 0.5
+            yaw_rate += 0.8
         if Qt.Key.Key_I in self.held_keys:
-            vz -= 1.5
+            vz -= 2.5
         if Qt.Key.Key_K in self.held_keys:
-            vz += 1.5
+            vz += 2.5
             
         self.ensure_offboard()
         set_offboard_targets(vx=vx, vy=vy, vz=vz, yaw_rate=yaw_rate)

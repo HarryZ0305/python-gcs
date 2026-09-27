@@ -34,7 +34,15 @@ Developed and bench-tested against **PX4 SITL** (Gazebo `gz_x500`), targeting a 
 - **Configurable Cruising Altitude** — Dedicated altitude spinbox wired directly into the MAVLink mission protocol (`upload_mission`).
 - **Import & Export** — Save and load mission plans as `.plan` / `.json` files.
 
-### 3. SETUP — Full Parameter Management
+### 3. ANALYTICS – Flight Diagnostics & Sensor Telemetry
+- **Dedicated Clean Layout**: Shifted historical telemetry charts and sensor diagnostics from the main dashboard into a focused analytics suite.
+- **Real-Time Strip Charts**: Scrolling altitude, groundspeed, and climb rate waveforms.
+- **Battery Cell Balance Monitor**: Individual LiPo cell voltages (Cell 1–4) with balance delta tracking.
+- **IMU Vibration Clipping**: 3-axis accelerometer and gyro vibration levels with safety thresholds.
+- **ESC & Motor Health**: Motor RPM and ESC duty cycle readouts.
+- **MAVLink Data Link Diagnostics**: Downlink data rate (kB/s), packet loss percentage, latency, and radio RSSI.
+
+### 4. SETUP — Full Parameter Management
 - **Live Parameter Table** — Instant parameter download on connection with real-time text search filtering.
 - **Inline Value Editing** — Double-click any value to send a `PARAM_SET` back to the autopilot with automatic integer/float type casting.
 - **Backup & Restore** — Save all vehicle parameters to `.param` / `.json` files, or write entire configurations back to the flight controller.
