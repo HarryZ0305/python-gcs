@@ -4,6 +4,7 @@ import threading
 import time
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (
+    QDialog, QDoubleSpinBox,
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QLabel, QFrame, QMessageBox,
     QPushButton, QComboBox, QSpinBox, QListWidget, QTabWidget,
@@ -246,6 +247,260 @@ class TelemetryPlotPanel(QFrame):
         self.speed_curve.setData(times, speeds)
 
 
+
+class PreflightChecklistDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Pre-Flight Safety Checklist")
+        self.setFixedSize(500, 500)
+        self.setStyleSheet(f"background-color: {THEME['bg']}; font-family: Google Sans Code;")
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+        
+        title = QLabel("SYSTEM PRE-FLIGHT VERIFICATION")
+        title.setStyleSheet(f"color: {THEME['primary']}; font-size: 13px; font-weight: bold; border: none; background: transparent;")
+        layout.addWidget(title)
+        
+        desc = QLabel("Verifying critical telemetry, link status, and sensor health before arming:")
+        desc.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none; background: transparent;")
+        layout.addWidget(desc)
+        
+        self.items_container = QFrame()
+        self.items_container.setStyleSheet(f"background: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
+        ic_layout = QVBoxLayout(self.items_container)
+        ic_layout.setContentsMargins(14, 14, 14, 14)
+        ic_layout.setSpacing(10)
+        
+        self.check_rows = {}
+        checks = [
+            ("link", "MAVLink Telemetry Stream", "Checking..."),
+            ("gps", "GNSS 3D Satellite Fix", "Checking..."),
+            ("power", "Battery Voltage & Capacity", "Checking..."),
+            ("imu", "IMU & Horizon Alignment", "Checking..."),
+            ("fcu", "Autopilot Prearm Checks", "Checking..."),
+            ("home", "Home Position Coordinates", "Checking...")
+        ]
+        for key, name, default_status in checks:
+            row = QHBoxLayout()
+            lbl = QLabel(name)
+            lbl.setStyleSheet(f"color: {THEME['dark_text']}; font-weight: bold; font-size: 11px; border: none; background: transparent;")
+            val = QLabel(default_status)
+            val.setStyleSheet(f"color: {THEME['muted']}; font-weight: bold; font-size: 11px; border: none; background: transparent;")
+            val.setAlignment(Qt.AlignmentFlag.AlignRight)
+            row.addWidget(lbl)
+            row.addWidget(val)
+            ic_layout.addLayout(row)
+            self.check_rows[key] = val
+            
+        layout.addWidget(self.items_container)
+        
+        self.banner = QLabel("ANALYZING VEHICLE STATE...")
+        self.banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.banner.setFixedHeight(44)
+        self.banner.setStyleSheet(f"background: {THEME['panel_border']}; color: {THEME['dark_text']}; font-weight: bold; font-size: 12px; border-radius: 6px;")
+        layout.addWidget(self.banner)
+        
+        btn_box = QHBoxLayout()
+        refresh_btn = QPushButton("🔄 REFRESH")
+        refresh_btn.setFixedHeight(34)
+        refresh_btn.setStyleSheet(f"background: {THEME['panel_bg']}; color: {THEME['primary']}; border: 1.5px solid {THEME['primary']}; border-radius: 4px; font-weight: bold; font-family: Google Sans Code;")
+        refresh_btn.clicked.connect(self.evaluate_checks)
+        
+        close_btn = QPushButton("CLOSE")
+        close_btn.setFixedHeight(34)
+        close_btn.setStyleSheet(f"background: {THEME['primary']}; color: #ffffff; border: none; border-radius: 4px; font-weight: bold; font-family: Google Sans Code;")
+        close_btn.clicked.connect(self.accept)
+        
+        btn_box.addWidget(refresh_btn)
+        btn_box.addWidget(close_btn)
+        layout.addLayout(btn_box)
+        
+        self.evaluate_checks()
+
+    def evaluate_checks(self):
+        d = telemetry_data
+        all_passed = True
+        
+        # 1. Link check
+        last_hb = d.get('last_heartbeat_time', 0.0)
+        link_ok = last_hb > 0.0 and (time.time() - last_hb) <= 2.5
+        if link_ok:
+            self.check_rows['link'].setText("✅ ACTIVE (< 2.5s)")
+            self.check_rows['link'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
+        else:
+            all_passed = False
+            self.check_rows['link'].setText("❌ NO TELEMETRY LINK")
+            self.check_rows['link'].setStyleSheet(f"color: {THEME['danger']}; border: none; background: transparent;")
+            
+        # 2. GPS
+        fix_type = d.get('fix_type', 0)
+        sats = d.get('satellites', 0)
+        if fix_type >= 3 and sats >= 6:
+            self.check_rows['gps'].setText(f"✅ 3D FIX ({sats} Sats)")
+            self.check_rows['gps'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
+        else:
+            all_passed = False
+            self.check_rows['gps'].setText(f"❌ {fix_type}D FIX ({sats} Sats - Min 6)")
+            self.check_rows['gps'].setStyleSheet(f"color: {THEME['danger']}; border: none; background: transparent;")
+            
+        # 3. Power
+        batt = d.get('battery', 0)
+        volt = d.get('voltage', 0.0)
+        if batt >= 30 and (volt >= 14.4 or volt == 0.0):
+            self.check_rows['power'].setText(f"✅ {batt}% ({volt:.1f}V)")
+            self.check_rows['power'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
+        elif batt >= 20:
+            self.check_rows['power'].setText(f"⚠️ LOW: {batt}% ({volt:.1f}V)")
+            self.check_rows['power'].setStyleSheet(f"color: {THEME['warning']}; border: none; background: transparent;")
+        else:
+            all_passed = False
+            self.check_rows['power'].setText(f"❌ CRIT: {batt}% ({volt:.1f}V)")
+            self.check_rows['power'].setStyleSheet(f"color: {THEME['danger']}; border: none; background: transparent;")
+            
+        # 4. IMU
+        roll_deg = abs(math.degrees(d.get('roll', 0.0)))
+        pitch_deg = abs(math.degrees(d.get('pitch', 0.0)))
+        if roll_deg < 15.0 and pitch_deg < 15.0:
+            self.check_rows['imu'].setText(f"✅ LEVEL (Roll {roll_deg:.0f}°, Pitch {pitch_deg:.0f}°)")
+            self.check_rows['imu'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
+        else:
+            all_passed = False
+            self.check_rows['imu'].setText(f"⚠️ TILTED ({roll_deg:.0f}° / {pitch_deg:.0f}°)")
+            self.check_rows['imu'].setStyleSheet(f"color: {THEME['warning']}; border: none; background: transparent;")
+            
+        # 5. FCU Prearm
+        prearm = d.get('prearm_fail', '')
+        if not prearm:
+            self.check_rows['fcu'].setText("✅ PASSED - READY")
+            self.check_rows['fcu'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
+        else:
+            all_passed = False
+            disp = prearm[:24] + "..." if len(prearm) > 24 else prearm
+            self.check_rows['fcu'].setText(f"❌ {disp}")
+            self.check_rows['fcu'].setStyleSheet(f"color: {THEME['danger']}; border: none; background: transparent;")
+            
+        # 6. Home
+        lat, lon = d.get('lat', 0.0), d.get('lon', 0.0)
+        if lat != 0.0 and lon != 0.0:
+            self.check_rows['home'].setText(f"✅ LOCKED ({lat:.4f}, {lon:.4f})")
+            self.check_rows['home'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
+        else:
+            all_passed = False
+            self.check_rows['home'].setText("❌ NO POSITION LOCK")
+            self.check_rows['home'].setStyleSheet(f"color: {THEME['danger']}; border: none; background: transparent;")
+            
+        if all_passed:
+            self.banner.setText("🚀 GO FOR FLIGHT — ALL CHECKS PASSED")
+            self.banner.setStyleSheet(f"background: {THEME['success']}; color: #ffffff; font-weight: bold; font-size: 13px; border-radius: 6px;")
+        else:
+            self.banner.setText("🛑 NO-GO — CRITICAL ISSUES DETECTED")
+            self.banner.setStyleSheet(f"background: {THEME['danger']}; color: #ffffff; font-weight: bold; font-size: 13px; border-radius: 6px;")
+
+
+class SurveyGridDialog(QDialog):
+    def __init__(self, center_lat, center_lon, parent=None):
+        super().__init__(parent)
+        self.center_lat = center_lat if center_lat != 0.0 else 32.7157
+        self.center_lon = center_lon if center_lon != 0.0 else -117.1611
+        self.generated_waypoints = []
+        
+        self.setWindowTitle("Aerial Survey Grid Generator")
+        self.setFixedSize(380, 340)
+        self.setStyleSheet(f"background-color: {THEME['bg']}; font-family: Google Sans Code;")
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+        
+        t = QLabel("SURVEY GRID GENERATOR")
+        t.setStyleSheet(f"color: {THEME['primary']}; font-size: 13px; font-weight: bold; border: none; background: transparent;")
+        layout.addWidget(t)
+        
+        sub = QLabel("Auto-generates lawnmower survey flight lines:")
+        sub.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none; background: transparent;")
+        layout.addWidget(sub)
+        
+        form_frame = QFrame()
+        form_frame.setStyleSheet(f"background: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
+        fl = QGridLayout(form_frame)
+        fl.setContentsMargins(12, 12, 12, 12)
+        fl.setSpacing(8)
+        
+        fl.addWidget(QLabel("Width (m):"), 0, 0)
+        self.width_spin = QSpinBox()
+        self.width_spin.setRange(20, 1000)
+        self.width_spin.setValue(80)
+        fl.addWidget(self.width_spin, 0, 1)
+        
+        fl.addWidget(QLabel("Height (m):"), 1, 0)
+        self.height_spin = QSpinBox()
+        self.height_spin.setRange(20, 1000)
+        self.height_spin.setValue(80)
+        fl.addWidget(self.height_spin, 1, 1)
+        
+        fl.addWidget(QLabel("Lane Spacing (m):"), 2, 0)
+        self.spacing_spin = QSpinBox()
+        self.spacing_spin.setRange(5, 200)
+        self.spacing_spin.setValue(20)
+        fl.addWidget(self.spacing_spin, 2, 1)
+        
+        fl.addWidget(QLabel("Altitude (m):"), 3, 0)
+        self.alt_spin = QSpinBox()
+        self.alt_spin.setRange(3, 120)
+        self.alt_spin.setValue(15)
+        fl.addWidget(self.alt_spin, 3, 1)
+        
+        layout.addWidget(form_frame)
+        
+        btn_box = QHBoxLayout()
+        gen_btn = QPushButton("✨ GENERATE GRID")
+        gen_btn.setFixedHeight(34)
+        gen_btn.setStyleSheet(f"background: {THEME['success']}; color: #ffffff; border: none; border-radius: 4px; font-weight: bold; font-family: Google Sans Code;")
+        gen_btn.clicked.connect(self.generate_grid)
+        
+        cancel_btn = QPushButton("CANCEL")
+        cancel_btn.setFixedHeight(34)
+        cancel_btn.setStyleSheet(f"background: {THEME['panel_bg']}; color: {THEME['muted']}; border: 1px solid {THEME['panel_border']}; border-radius: 4px; font-weight: bold; font-family: Google Sans Code;")
+        cancel_btn.clicked.connect(self.reject)
+        
+        btn_box.addWidget(cancel_btn)
+        btn_box.addWidget(gen_btn)
+        layout.addLayout(btn_box)
+
+    def generate_grid(self):
+        width = self.width_spin.value()
+        height = self.height_spin.value()
+        spacing = self.spacing_spin.value()
+        
+        m_per_deg_lat = 111320.0
+        m_per_deg_lon = 111320.0 * math.cos(math.radians(self.center_lat))
+        
+        num_lanes = max(2, int(height / spacing) + 1)
+        lane_step_y = height / (num_lanes - 1)
+        
+        half_w = width / 2.0
+        half_h = height / 2.0
+        
+        wps = []
+        for i in range(num_lanes):
+            y_offset = -half_h + i * lane_step_y
+            lat_i = self.center_lat + (y_offset / m_per_deg_lat)
+            
+            if i % 2 == 0:
+                lon_start = self.center_lon - (half_w / m_per_deg_lon)
+                lon_end = self.center_lon + (half_w / m_per_deg_lon)
+            else:
+                lon_start = self.center_lon + (half_w / m_per_deg_lon)
+                lon_end = self.center_lon - (half_w / m_per_deg_lon)
+                
+            wps.append([lat_i, lon_start])
+            wps.append([lat_i, lon_end])
+            
+        self.generated_waypoints = wps
+        self.accept()
+
 class GCSWindow(QMainWindow):
     def __init__(self, vehicle=None):
         super().__init__()
@@ -330,6 +585,11 @@ class GCSWindow(QMainWindow):
         self.alert_panel.add_row('check_link', 'Link State')
         self.alert_panel.add_row('check_gps', 'GPS Checklist')
         self.alert_panel.add_row('check_batt', 'Power Checklist')
+
+        self.preflight_btn = QPushButton("📋 PRE-FLIGHT CHECKLIST")
+        self.preflight_btn.setFixedHeight(30)
+        self.preflight_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.preflight_btn.clicked.connect(self.on_open_preflight_dialog)
 
         # Attitude / Speed
         self.attspeed_panel = StatPanel("ATTITUDE / SPEED")
@@ -587,6 +847,39 @@ class GCSWindow(QMainWindow):
         m_row2.addWidget(self.export_btn)
         mp.addLayout(m_row2)
 
+        # Cruise Altitude and Survey Grid
+        alt_row = QHBoxLayout()
+        alt_lbl = QLabel("CRUISE ALT:")
+        alt_lbl.setStyleSheet(f"color: {THEME['primary']}; font-family: Google Sans Code; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        self.mission_alt_spin = QDoubleSpinBox()
+        self.mission_alt_spin.setRange(2.0, 150.0)
+        self.mission_alt_spin.setValue(10.0)
+        self.mission_alt_spin.setSuffix(" m")
+        self.mission_alt_spin.setStyleSheet(self._input_style())
+        alt_row.addWidget(alt_lbl)
+        alt_row.addWidget(self.mission_alt_spin)
+        mp.addLayout(alt_row)
+
+        self.survey_btn = QPushButton("🗺️ SURVEY GRID GENERATOR")
+        self.survey_btn.setFixedHeight(30)
+        self.survey_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.survey_btn.clicked.connect(self.on_open_survey_dialog)
+        mp.addWidget(self.survey_btn)
+
+        self.mission_stats_label = QLabel("Dist: 0.0 m | Est: 00:00 | WPs: 0")
+        self.mission_stats_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {THEME['plot_bg']};
+                color: {THEME['dark_text']};
+                border: 1px solid {THEME['panel_border']};
+                border-radius: 4px;
+                padding: 6px;
+                font-family: Google Sans Code;
+                font-size: 11px;
+            }}
+        """)
+        mp.addWidget(self.mission_stats_label)
+
         self.start_btn = QPushButton("START MISSION")
         self.start_btn.setFixedHeight(34)
         self.start_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
@@ -619,6 +912,7 @@ class GCSWindow(QMainWindow):
         left_col = QVBoxLayout()
         left_col.setSpacing(8)
         left_col.addWidget(self.alert_panel, stretch=0)
+        left_col.addWidget(self.preflight_btn, stretch=0)
         left_col.addWidget(self.action_panel, stretch=0)
         left_col.addWidget(self.arm_btn, stretch=0)
         left_col.addStretch(1)
@@ -1041,6 +1335,26 @@ class GCSWindow(QMainWindow):
     def set_status(self, msg):
         self.status_label.setText(msg)
 
+    
+    def on_open_preflight_dialog(self):
+        dlg = PreflightChecklistDialog(self)
+        dlg.exec()
+
+    def on_open_survey_dialog(self):
+        curr_lat = telemetry_data.get('lat', 0.0)
+        curr_lon = telemetry_data.get('lon', 0.0)
+        dlg = SurveyGridDialog(curr_lat, curr_lon, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            wps = dlg.generated_waypoints
+            if wps:
+                takeoff = [wps[0][0], wps[0][1]]
+                landing = [wps[-1][0], wps[-1][1]]
+                self.plan_map_view.import_mission(takeoff, wps, landing)
+                self.on_sync_map()
+                self.set_status(f"Generated survey grid: {len(wps)} waypoints.")
+                if self.tts:
+                    self.tts.say("Survey grid generated.")
+
     def on_sync_map(self):
         self.plan_map_view.get_waypoints(self.on_waypoints_received)
 
@@ -1069,6 +1383,29 @@ class GCSWindow(QMainWindow):
         total_items = (1 if self.takeoff_point else 0) + len(self.waypoints) + (1 if self.landing_point else 0)
         self.set_status(f"Synced mission: {total_items} items.")
 
+        # Compute Mission Distance and Estimated Flight Time
+        all_pts = []
+        if self.takeoff_point: all_pts.append(self.takeoff_point)
+        all_pts.extend(self.waypoints)
+        if self.landing_point: all_pts.append(self.landing_point)
+
+        total_dist = 0.0
+        for i in range(len(all_pts) - 1):
+            lat1, lon1 = all_pts[i]
+            lat2, lon2 = all_pts[i+1]
+            R = 6371e3
+            p1, p2 = math.radians(lat1), math.radians(lat2)
+            dp = math.radians(lat2 - lat1)
+            dl = math.radians(lon2 - lon1)
+            a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+            total_dist += 2 * R * math.asin(math.sqrt(a))
+
+        est_secs = total_dist / 5.0 # assuming 5 m/s cruising speed
+        mins = int(est_secs // 60)
+        secs = int(est_secs % 60)
+        if hasattr(self, 'mission_stats_label'):
+            self.mission_stats_label.setText(f"Dist: {total_dist:.1f} m | Est: {mins:02d}:{secs:02d} | WPs: {len(all_pts)}")
+
     def on_clear_mission(self):
         self.plan_map_view.clear_waypoints()
         self.wp_list.clear()
@@ -1076,17 +1413,21 @@ class GCSWindow(QMainWindow):
         self.takeoff_point = None
         self.landing_point = None
         telemetry_data['wp_current'] = -1
+        if hasattr(self, 'mission_stats_label'):
+            self.mission_stats_label.setText("Dist: 0.0 m | Est: 00:00 | WPs: 0")
         self.set_status("Mission cleared.")
 
     def on_upload_mission(self):
         if not self.waypoints and not self.takeoff_point and not self.landing_point:
             self.set_status("Upload failed: Sync map first!")
             return
+        target_alt = getattr(self, 'mission_alt_spin', None)
+        alt_val = target_alt.value() if target_alt else 10.0
         from gcs.commands import upload_mission
         threading.Thread(target=upload_mission, args=(
-            self.vehicle, self.waypoints, self.takeoff_point, self.landing_point
+            self.vehicle, self.waypoints, self.takeoff_point, self.landing_point, alt_val
         ), daemon=True).start()
-        self.set_status("Uploading mission...")
+        self.set_status(f"Uploading mission (@ {alt_val:.1f}m)...")
 
     def on_start_mission(self):
         if not self.vehicle:
@@ -1520,7 +1861,7 @@ class GCSWindow(QMainWindow):
             yaw_deg = math.degrees(d['yaw']) % 360
             self.map_view.update_position(d['lat'], d['lon'], yaw_deg, d.get('groundspeed', 0.0), d.get('alt', 0.0))
             self.plan_map_view.update_position(d['lat'], d['lon'], yaw_deg, d.get('groundspeed', 0.0), d.get('alt', 0.0))
-            self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'])
+            self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'], d.get('alt', 0.0), d.get('groundspeed', 0.0))
 
             # Set Home on map if armed and position valid
             if d['armed'] and d['lat'] != 0.0 and d['lon'] != 0.0:
