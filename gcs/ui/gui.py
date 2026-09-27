@@ -925,11 +925,26 @@ class GCSWindow(QMainWindow):
         center_col.addWidget(self.map_container_widget, stretch=5)
         
         map_bar = QHBoxLayout()
-        self.download_map_btn = QPushButton("DOWNLOAD OFFLINE MAP")
+        map_bar.setSpacing(6)
+        
+        self.download_map_btn = QPushButton("💾 CACHE OFFLINE MAP")
         self.download_map_btn.setFixedHeight(28)
         self.download_map_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.download_map_btn.clicked.connect(self.on_download_offline_area)
         map_bar.addWidget(self.download_map_btn)
+
+        self.export_kml_btn = QPushButton("🌐 EXPORT FLIGHT TRAIL (KML)")
+        self.export_kml_btn.setFixedHeight(28)
+        self.export_kml_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.export_kml_btn.clicked.connect(self.on_export_flight_trail)
+        map_bar.addWidget(self.export_kml_btn)
+
+        self.expand_map_btn = QPushButton("⛶ EXPAND MAP")
+        self.expand_map_btn.setFixedHeight(28)
+        self.expand_map_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.expand_map_btn.clicked.connect(self.on_toggle_expand_map)
+        map_bar.addWidget(self.expand_map_btn)
+
         center_col.addLayout(map_bar)
         
         center_col.addWidget(self.plot_panel, stretch=2)
@@ -980,10 +995,16 @@ class GCSWindow(QMainWindow):
         self.attitude_container_widget = PremiumViewContainer(self.attitude_view, "AttitudeContainer")
         right_col.addWidget(self.attitude_container_widget, stretch=3)
 
-        # Assemble columns into dashboard
-        dashboard_layout.addLayout(left_col, stretch=2)
+        # Wrap columns in QWidget for PiP / Expand Map toggling
+        self.left_col_widget = QWidget()
+        self.left_col_widget.setLayout(left_col)
+
+        self.right_col_widget = QWidget()
+        self.right_col_widget.setLayout(right_col)
+
+        dashboard_layout.addWidget(self.left_col_widget, stretch=2)
         dashboard_layout.addLayout(center_col, stretch=5)
-        dashboard_layout.addLayout(right_col, stretch=3)
+        dashboard_layout.addWidget(self.right_col_widget, stretch=3)
 
         fly_layout.addLayout(dashboard_layout, stretch=8)
         
@@ -1134,7 +1155,7 @@ class GCSWindow(QMainWindow):
         from gcs.commands import emergency_hold
         threading.Thread(target=emergency_hold, args=(self.vehicle,), daemon=True).start()
         self.set_status("EMERGENCY HOLD: Loitering in place, velocity zeroed!")
-        if self.tts:
+        if self.tts and getattr(self, 'voice_enabled', True):
             self.tts.say("Emergency hold engaged.")
 
     def on_map_goto_requested(self, lat, lon):
@@ -1153,7 +1174,7 @@ class GCSWindow(QMainWindow):
             from gcs.commands import goto
             threading.Thread(target=goto, args=(self.vehicle, lat, lon, target_alt), daemon=True).start()
             self.set_status(f"Guided target dispatched to ({lat:.5f}, {lon:.5f}) @ {target_alt:.1f}m")
-            if self.tts:
+            if self.tts and getattr(self, 'voice_enabled', True):
                 self.tts.say("Flying to guided waypoint.")
 
     def on_connect_toggle(self):
@@ -1340,6 +1361,112 @@ class GCSWindow(QMainWindow):
         dlg = PreflightChecklistDialog(self)
         dlg.exec()
 
+    
+    def on_toggle_voice(self):
+        self.voice_enabled = not getattr(self, 'voice_enabled', True)
+        if self.voice_enabled:
+            self.voice_btn.setText("🔊 VOICE: ON")
+            self.voice_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+            if self.tts and getattr(self, 'voice_enabled', True):
+                self.tts.say("Voice alerts enabled.")
+        else:
+            self.voice_btn.setText("🔇 VOICE: MUTE")
+            self.voice_btn.setStyleSheet(self._btn_style(THEME['muted'], THEME['panel_bg']))
+
+    def on_toggle_expand_map(self):
+        self.is_map_expanded = not getattr(self, 'is_map_expanded', False)
+        if self.is_map_expanded:
+            self.left_col_widget.hide()
+            self.right_col_widget.hide()
+            self.plot_panel.hide()
+            self.expand_map_btn.setText("🗗 RESTORE DASHBOARD")
+            self.set_status("Map view maximized.")
+        else:
+            self.left_col_widget.show()
+            self.right_col_widget.show()
+            self.plot_panel.show()
+            self.expand_map_btn.setText("⛶ EXPAND MAP")
+            self.set_status("Dashboard layout restored.")
+
+    def on_export_flight_trail(self):
+        from PyQt6.QtWidgets import QFileDialog
+        import json
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Flight Trail", "", "Google Earth KML (*.kml);;GeoJSON (*.geojson)"
+        )
+        if not filename:
+            return
+            
+        coords = []
+        import gcs.telemetry_logger as tlog
+        if hasattr(tlog.logger_instance, 'records') and tlog.logger_instance.records:
+            for r in tlog.logger_instance.records:
+                if r.get('lat') and r.get('lon'):
+                    coords.append((r['lon'], r['lat'], r.get('alt', 0.0)))
+        elif telemetry_data['lat'] != 0.0:
+            coords.append((telemetry_data['lon'], telemetry_data['lat'], telemetry_data['alt']))
+            
+        if not coords:
+            self.set_status("Export failed: No GPS flight coordinates recorded yet.")
+            return
+            
+        if filename.endswith(".geojson"):
+            geojson_data = {
+                "type": "FeatureCollection",
+                "features": [{
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[lon, lat, alt] for lon, lat, alt in coords]
+                    },
+                    "properties": {
+                        "name": "PythonGCS Flight Trail",
+                        "points": len(coords)
+                    }
+                }]
+            }
+            try:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(geojson_data, f, indent=2)
+                self.set_status(f"Exported {len(coords)} flight coordinates to {filename}")
+            except Exception as e:
+                self.set_status(f"Export failed: {e}")
+        else:
+            kml_coord_str = "\n".join([f"{lon:.7f},{lat:.7f},{alt:.2f}" for lon, lat, alt in coords])
+            kml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>PythonGCS Flight Trail</name>
+    <Style id="flightPath">
+      <LineStyle>
+        <color>ff0055ff</color>
+        <width>4</width>
+      </LineStyle>
+      <PolyStyle>
+        <color>7f0055ff</color>
+      </PolyStyle>
+    </Style>
+    <Placemark>
+      <name>UAV Trajectory</name>
+      <styleUrl>#flightPath</styleUrl>
+      <LineString>
+        <extrude>1</extrude>
+        <tessellate>1</tessellate>
+        <altitudeMode>relativeToGround</altitudeMode>
+        <coordinates>
+{kml_coord_str}
+        </coordinates>
+      </LineString>
+    </Placemark>
+  </Document>
+</kml>"""
+            try:
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write(kml_content)
+                self.set_status(f"Exported {len(coords)} flight coordinates to {filename}")
+            except Exception as e:
+                self.set_status(f"Export failed: {e}")
+
     def on_open_survey_dialog(self):
         curr_lat = telemetry_data.get('lat', 0.0)
         curr_lon = telemetry_data.get('lon', 0.0)
@@ -1352,7 +1479,7 @@ class GCSWindow(QMainWindow):
                 self.plan_map_view.import_mission(takeoff, wps, landing)
                 self.on_sync_map()
                 self.set_status(f"Generated survey grid: {len(wps)} waypoints.")
-                if self.tts:
+                if self.tts and getattr(self, 'voice_enabled', True):
                     self.tts.say("Survey grid generated.")
 
     def on_sync_map(self):
@@ -1933,7 +2060,7 @@ class GCSWindow(QMainWindow):
             self.wp_list.clearSelection()
 
         # TTS Alerts
-        if self.tts:
+        if self.tts and getattr(self, 'voice_enabled', True):
             if is_link_lost and not self.was_link_lost:
                 self.tts.say("Warning, telemetry link lost.")
             elif not is_link_lost and self.was_link_lost:
