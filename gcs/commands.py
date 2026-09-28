@@ -1,46 +1,120 @@
-from pymavlink import mavutil
 import time
+import math
 import threading
+from typing import Tuple, Optional, List, Dict, Any
+from pymavlink import mavutil
 from gcs.logs import log
+from gcs.params import encode_param_value, decode_param_value, PARAM_TYPE_REAL32, PARAM_TYPE_INT32
+from gcs.command_manager import command_manager
 
-# Lock for all vehicle.mav calls to prevent packet corruption from concurrent writes
 mav_lock = threading.Lock()
+upload_lock = threading.Lock()
 
-# Target values for the offboard streamer
-target_vx = 0.0
-target_vy = 0.0
-target_vz = 0.0
-target_yaw_rate = 0.0  # rad/s
+class OffboardController:
+    """
+    Thread-safe, rate-controlled offboard streamer for PX4.
+    Adheres strictly to PX4 offboard requirements:
+    1. Stream setpoints at >=2Hz (using 10Hz) before switching to OFFBOARD.
+    2. Maintain continuous stream while OFFBOARD is active.
+    3. Dead-man timeout: if user inputs stop for >500ms, auto-zero velocities to hover.
+    4. Synchronized resets on mode change, key release, focus loss, or emergency hold.
+    """
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.vehicle = None
+        self.target_vx = 0.0
+        self.target_vy = 0.0
+        self.target_vz = 0.0
+        self.target_yaw_rate = 0.0
+        self.last_command_time = 0.0
+        self.dead_man_timeout = 0.5 # seconds
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
 
-# Background thread management
-_streamer_thread = None
-_streamer_vehicle = None
+    def start(self, vehicle):
+        with self._lock:
+            self.vehicle = vehicle
+            self._stop_event.clear()
+            self.target_vx = 0.0
+            self.target_vy = 0.0
+            self.target_vz = 0.0
+            self.target_yaw_rate = 0.0
+            self.last_command_time = time.monotonic()
+            
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(target=self._stream_loop, daemon=True)
+                self._thread.start()
+        log("OffboardController: Streamer thread started.")
 
-def _ensure_streamer(vehicle):
-    global _streamer_thread, _streamer_vehicle
-    _streamer_vehicle = vehicle
-    if _streamer_thread is None:
-        _streamer_thread = threading.Thread(target=_offboard_streamer_loop, daemon=True)
-        _streamer_thread.start()
+    def stop(self):
+        with self._lock:
+            self._stop_event.set()
+            self.vehicle = None
+            self.target_vx = 0.0
+            self.target_vy = 0.0
+            self.target_vz = 0.0
+            self.target_yaw_rate = 0.0
+        log("OffboardController: Streamer stopped.")
 
-def _offboard_streamer_loop():
-    global _streamer_vehicle, target_vx, target_vy, target_vz, target_yaw_rate
-    log("Offboard streamer thread active.")
-    count = 0
-    while True:
-        if _streamer_vehicle is not None:
-            try:
-                # Send setpoint at 10 Hz (every 0.1 seconds)
-                send_offboard_setpoint(_streamer_vehicle, target_vx, target_vy, target_vz, target_yaw_rate)
-                
-                # Send GCS Heartbeat at 1 Hz (every 10 ticks)
-                if count % 10 == 0:
-                    send_gcs_heartbeat(_streamer_vehicle)
-                count += 1
-            except Exception as e:
-                log(f"Offboard streamer exception: {e}. Resetting vehicle stream.")
-                _streamer_vehicle = None
-        time.sleep(0.1)
+    def set_velocity(self, vx: float = 0.0, vy: float = 0.0, vz: float = 0.0, yaw_rate: float = 0.0):
+        with self._lock:
+            self.target_vx = float(vx)
+            self.target_vy = float(vy)
+            self.target_vz = float(vz)
+            self.target_yaw_rate = float(yaw_rate)
+            self.last_command_time = time.monotonic()
+
+    def reset_to_hover(self):
+        with self._lock:
+            self.target_vx = 0.0
+            self.target_vy = 0.0
+            self.target_vz = 0.0
+            self.target_yaw_rate = 0.0
+            self.last_command_time = time.monotonic()
+        log("OffboardController: Velocity targets reset to hover (0 m/s).")
+
+    def warmup(self, duration_sec: float = 0.8) -> bool:
+        """Stream zero-velocity setpoints for duration_sec so PX4 will accept OFFBOARD mode."""
+        self.reset_to_hover()
+        start = time.monotonic()
+        while time.monotonic() - start < duration_sec:
+            if self._stop_event.is_set() or self.vehicle is None:
+                return False
+            time.sleep(0.1)
+        return True
+
+    def _stream_loop(self):
+        count = 0
+        while not self._stop_event.is_set():
+            v = self.vehicle
+            if v is not None:
+                # Check dead-man timeout
+                with self._lock:
+                    now = time.monotonic()
+                    is_active = (self.target_vx != 0.0 or self.target_vy != 0.0 or 
+                                 self.target_vz != 0.0 or self.target_yaw_rate != 0.0)
+                    if is_active and (now - self.last_command_time > self.dead_man_timeout):
+                        self.target_vx = 0.0
+                        self.target_vy = 0.0
+                        self.target_vz = 0.0
+                        self.target_yaw_rate = 0.0
+                        log("OffboardController: Dead-man timeout fired. Zeroed velocity setpoints.")
+
+                    vx, vy, vz, yaw_r = self.target_vx, self.target_vy, self.target_vz, self.target_yaw_rate
+
+                try:
+                    # Send 10 Hz setpoint
+                    send_offboard_setpoint(v, vx, vy, vz, yaw_r)
+                    
+                    # Send 1 Hz GCS Heartbeat (every 10 ticks)
+                    if count % 10 == 0:
+                        send_gcs_heartbeat(v)
+                    count += 1
+                except Exception as e:
+                    log(f"OffboardController stream error: {e}")
+            time.sleep(0.1)
+
+offboard_controller = OffboardController()
 
 def send_gcs_heartbeat(vehicle):
     with mav_lock:
@@ -50,107 +124,161 @@ def send_gcs_heartbeat(vehicle):
             0, 0, 0
         )
 
-def send_offboard_setpoint(vehicle, vx, vy, vz, yaw_rate):
+def send_offboard_setpoint(vehicle, vx: float, vy: float, vz: float, yaw_rate: float):
+    """
+    Sends SET_POSITION_TARGET_LOCAL_NED in BODY_NED frame.
+    vx: Forward (+) / Backward (-) m/s
+    vy: Right (+) / Left (-) m/s
+    vz: Down (+) / Climb (-) m/s
+    yaw_rate: Clockwise (+) / Counter-clockwise (-) rad/s
+    type_mask: 0b010111000111 (0x0DC7: ignore pos, acc, force, yaw; use vel and yaw_rate)
+    """
     with mav_lock:
         vehicle.mav.send(
             mavutil.mavlink.MAVLink_set_position_target_local_ned_message(
                 0, # time_boot_ms
                 vehicle.target_system,
                 vehicle.target_component,
-                mavutil.mavlink.MAV_FRAME_BODY_NED, # body frame (forward, right, down)
-                0b010111000111, # Bit 10 is 1 (ignore yaw), Bit 11 is 0 (use yaw rate), Bit 9 is 0 (disable FORCE)
-                0, 0, 0, # x, y, z position (ignored)
-                vx, vy, vz, # velocity m/s
-                0, 0, 0, # acceleration (ignored)
+                mavutil.mavlink.MAV_FRAME_BODY_NED,
+                0b010111000111,
+                0, 0, 0, # pos (ignored)
+                float(vx), float(vy), float(vz), # vel m/s
+                0, 0, 0, # acc (ignored)
                 0, # yaw (ignored)
-                yaw_rate # yaw_rate (rad/s)
+                float(yaw_rate) # yaw_rate rad/s
             )
         )
 
-def set_offboard_targets(vx=0.0, vy=0.0, vz=0.0, yaw_rate=0.0):
-    global target_vx, target_vy, target_vz, target_yaw_rate
-    target_vx = vx
-    target_vy = vy
-    target_vz = vz
-    target_yaw_rate = yaw_rate
-    log(f"Offboard target updated: vx={vx:.1f}, vy={vy:.1f}, vz={vz:.1f}, yaw_rate={yaw_rate:.2f}")
+def set_offboard_targets(vx: float = 0.0, vy: float = 0.0, vz: float = 0.0, yaw_rate: float = 0.0):
+    offboard_controller.set_velocity(vx, vy, vz, yaw_rate)
 
 def reset_offboard_targets():
-    global target_vx, target_vy, target_vz, target_yaw_rate
-    target_vx = 0.0
-    target_vy = 0.0
-    target_vz = 0.0
-    target_yaw_rate = 0.0
-    log("Offboard targets reset to hover.")
-
-
-def emergency_hold(vehicle):
-    """Halts all motion and enters AUTO.LOITER mode immediately."""
-    reset_offboard_targets()
-    log("EMERGENCY HOLD triggered: Zeroing velocity setpoints and switching to AUTO.LOITER...")
-    set_mode(vehicle, 'AUTO.LOITER')
+    offboard_controller.reset_to_hover()
 
 def stop_streamer():
-    global _streamer_vehicle
-    _streamer_vehicle = None
-    log("Offboard streamer stopped.")
+    offboard_controller.stop()
 
-def arm(vehicle):
+def _ensure_streamer(vehicle):
+    if offboard_controller.vehicle is not vehicle:
+        offboard_controller.start(vehicle)
+
+def arm(vehicle) -> Tuple[bool, str]:
     _ensure_streamer(vehicle)
-    log("Arming...")
+    from gcs.telemetry import telemetry_data, wait_for_arm
+    
+    if telemetry_data.get('armed', False):
+        return True, "Vehicle is already armed"
+
+    log("Arming vehicle...")
+    pending = command_manager.register(
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        vehicle.target_system,
+        vehicle.target_component,
+        timeout=3.0
+    )
     with mav_lock:
-        vehicle.mav.command_long_send( # sends MAVLink command to drone  
-            vehicle.target_system,  
-            vehicle.target_component,  
+        vehicle.mav.command_long_send(
+            vehicle.target_system,
+            vehicle.target_component,
             mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
             0,
             1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         )
-    log("Arm command sent!")
 
-def disarm(vehicle):
+    ack_ok, ack_str, code = pending.wait()
+    if not ack_ok:
+        err = f"Arm rejected by flight controller: {ack_str}"
+        log(err)
+        return False, err
+
+    # Wait for heartbeat armed state confirmation
+    if wait_for_arm(timeout=5):
+        log("Arm confirmed via telemetry HEARTBEAT.")
+        return True, "Vehicle successfully armed"
+    else:
+        err = "Arm ACK received, but telemetry armed state did not confirm within timeout"
+        log(err)
+        return False, err
+
+def disarm(vehicle, force: bool = False) -> Tuple[bool, str]:
     _ensure_streamer(vehicle)
-    log("Disarming...")
+    from gcs.telemetry import telemetry_data, is_vehicle_airborne
+
+    if not telemetry_data.get('armed', False):
+        return True, "Vehicle is already disarmed"
+
+    # In-flight safety guard
+    if is_vehicle_airborne() and not force:
+        err = "DISARM BLOCKED: Vehicle is currently airborne. Use LAND or RTL, or confirm emergency stop."
+        log(err)
+        return False, err
+
+    log("Disarming vehicle...")
+    pending = command_manager.register(
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        vehicle.target_system,
+        vehicle.target_component,
+        timeout=3.0
+    )
+    param2 = 21196.0 if force else 0.0 # PX4 force disarm magic number only if explicit force
     with mav_lock:
-        vehicle.mav.command_long_send(  
-            vehicle.target_system,  
-            vehicle.target_component,  
+        vehicle.mav.command_long_send(
+            vehicle.target_system,
+            vehicle.target_component,
             mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
             0,
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+            0.0, param2, 0.0, 0.0, 0.0, 0.0, 0.0
         )
-    log("Disarm command sent!")
 
-def set_mode(vehicle, mode_name):
+    ack_ok, ack_str, code = pending.wait()
+    if not ack_ok:
+        err = f"Disarm rejected by flight controller: {ack_str}"
+        log(err)
+        return False, err
+
+    # Wait for telemetry disarmed confirmation
+    start_t = time.monotonic()
+    while time.monotonic() - start_t < 4.0:
+        if not telemetry_data.get('armed', False):
+            log("Disarm confirmed via telemetry HEARTBEAT.")
+            return True, "Vehicle successfully disarmed"
+        time.sleep(0.2)
+
+    return True, "Disarm command accepted"
+
+def set_mode(vehicle, mode_name: str) -> Tuple[bool, str]:
     _ensure_streamer(vehicle)
+    from gcs.telemetry import telemetry_data
     log(f"Setting mode to {mode_name}...")
-    
-    timeout = time.time() + 2
-    while not vehicle.mode_mapping() and time.time() < timeout:
+
+    # For OFFBOARD mode: warm up stream with zero setpoints first
+    if mode_name.upper() == 'OFFBOARD':
+        log("OFFBOARD mode requested: Warming up setpoint stream at 10Hz...")
+        offboard_controller.warmup(duration_sec=0.8)
+
+    timeout = time.monotonic() + 2.0
+    while not vehicle.mode_mapping() and time.monotonic() < timeout:
         time.sleep(0.1)
 
     if not vehicle.mode_mapping():
-        log("Error: Flight controller has not transmitted mode mapping yet.")
-        return
+        err = "Flight controller mode mapping not available yet"
+        log(f"Error: {err}")
+        return False, err
 
-    # Normalize mode name for PX4 mapping
     lookup_name = mode_name.upper()
     if lookup_name == "STABILIZE":
         lookup_name = "STABILIZED"
 
-    # Hybrid lookup strategy: try exact match first, then strip "AUTO." prefix if not found
     mapped_name = lookup_name
     if mapped_name not in vehicle.mode_mapping() and mapped_name.startswith("AUTO."):
         mapped_name = mapped_name.replace("AUTO.", "")
 
-    if mapped_name not in vehicle.mode_mapping(): # returns a dictionary of all available modes  
-        log(f"Unknown mode: {mode_name} (resolved to: {lookup_name})")
-        log(f"Available modes: {list(vehicle.mode_mapping().keys())}")  
-        return
+    if mapped_name not in vehicle.mode_mapping():
+        err = f"Unknown mode: {mode_name} (resolved: {lookup_name})"
+        log(err)
+        return False, err
 
-    mode_id = vehicle.mode_mapping()[mapped_name] # MAVLink number or tuple for the mode
-    
-    # PX4 custom mode consists of base_mode, main_mode, and sub_mode in px4_map 3-tuple
+    mode_id = vehicle.mode_mapping()[mapped_name]
     if isinstance(mode_id, tuple):
         if len(mode_id) == 3:
             base_mode = mode_id[0]
@@ -166,43 +294,65 @@ def set_mode(vehicle, mode_name):
         sub_mode = 0
 
     base_mode |= mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED
-    
-    # Send using MAV_CMD_DO_SET_MODE command.
+
+    pending = command_manager.register(
+        mavutil.mavlink.MAV_CMD_DO_SET_MODE,
+        vehicle.target_system,
+        vehicle.target_component,
+        timeout=3.0
+    )
     with mav_lock:
         vehicle.mav.command_long_send(
             vehicle.target_system,
             vehicle.target_component,
             mavutil.mavlink.MAV_CMD_DO_SET_MODE,
-            0, # confirmation
-            float(base_mode), # param 1: base_mode
-            float(main_mode), # param 2: custom main mode
-            float(sub_mode),  # param 3: custom sub mode
-            0.0, 0.0, 0.0, 0.0 # param 4-7
+            0,
+            float(base_mode),
+            float(main_mode),
+            float(sub_mode),
+            0.0, 0.0, 0.0, 0.0
         )
-    log(f"Mode {mode_name} set!")
 
-def takeoff(vehicle, altitude_m):
+    ack_ok, ack_str, code = pending.wait()
+    if not ack_ok:
+        err = f"Mode switch to {mode_name} rejected: {ack_str}"
+        log(err)
+        return False, err
+
+    # Confirm mode change via telemetry
+    start_t = time.monotonic()
+    target_clean = mode_name.upper().replace("AUTO.", "")
+    while time.monotonic() - start_t < 3.0:
+        curr_mode = telemetry_data.get('mode', '').upper().replace("AUTO.", "")
+        if curr_mode == target_clean:
+            log(f"Mode change to {mode_name} confirmed via HEARTBEAT.")
+            return True, f"Mode set to {mode_name}"
+        time.sleep(0.2)
+
+    return True, f"Mode switch accepted ({ack_str})"
+
+def takeoff(vehicle, altitude_m: float) -> Tuple[bool, str]:
     _ensure_streamer(vehicle)
     from gcs.telemetry import telemetry_data, wait_for_arm
-    
-    # PX4 takeoff flow: Arm the vehicle first if not already armed
-    if not telemetry_data['armed']:
-        log("Takeoff initiated: Arming vehicle...")
-        with mav_lock:
-            vehicle.mav.command_long_send(
-                vehicle.target_system,
-                vehicle.target_component,
-                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-                0,
-                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-            )
-        log("Arm command sent, waiting for confirmation...")
-        # Note: PX4 preflight checks (EKF/GPS) may block arming until the sim has a position fix
-        if not wait_for_arm(timeout=10):
-            log("Takeoff aborted: Drone failed to arm. EKF/GPS preflight checks may be blocking arming.")
-            return False
-            
-    log(f"Taking off to {altitude_m}m...")
+
+    if altitude_m < 1.0 or altitude_m > 120.0:
+        err = f"Invalid takeoff altitude: {altitude_m}m (allowed: 1-120m)"
+        log(err)
+        return False, err
+
+    if not telemetry_data.get('armed', False):
+        log("Takeoff initiated: Vehicle not armed, requesting arm first...")
+        arm_ok, arm_msg = arm(vehicle)
+        if not arm_ok:
+            return False, f"Takeoff aborted: Arm failed ({arm_msg})"
+
+    log(f"Dispatching takeoff command to {altitude_m:.1f}m...")
+    pending = command_manager.register(
+        mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+        vehicle.target_system,
+        vehicle.target_component,
+        timeout=4.0
+    )
     nan = float('nan')
     with mav_lock:
         vehicle.mav.command_long_send(
@@ -210,236 +360,99 @@ def takeoff(vehicle, altitude_m):
             vehicle.target_component,
             mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
             0,
-            0.0,       # param 1: pitch
-            0.0,       # param 2: empty
-            0.0,       # param 3: empty
-            nan,       # param 4: yaw (NaN uses current heading)
-            nan,       # param 5: latitude (NaN uses current position)
-            nan,       # param 6: longitude (NaN uses current position)
-            float(altitude_m) # param 7: altitude
+            0.0, 0.0, 0.0, nan, nan, nan,
+            float(altitude_m)
         )
-    log("Takeoff command sent!")
-    return True
 
-def goto(vehicle, lat, lon, alt):
+    ack_ok, ack_str, code = pending.wait()
+    if not ack_ok:
+        err = f"Takeoff command rejected by flight controller: {ack_str}"
+        log(err)
+        return False, err
+
+    log(f"Takeoff command ACCEPTED by vehicle! Climbing to {altitude_m:.1f}m...")
+    return True, f"Takeoff accepted (target: {altitude_m:.1f}m)"
+
+def goto(vehicle, lat: float, lon: float, alt: float) -> Tuple[bool, str]:
     _ensure_streamer(vehicle)
-    log(f"Guided Fly-To: Navigating to {lat:.6f}, {lon:.6f} @ {alt:.1f}m AGL...")
-    from math import nan
+    from gcs.telemetry import telemetry_data, is_vehicle_airborne
+
+    if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
+        err = f"Invalid coordinates for goto: {lat}, {lon}"
+        log(err)
+        return False, err
+
+    if alt < 1.0 or alt > 150.0:
+        err = f"Invalid goto altitude: {alt}m (allowed: 1-150m)"
+        log(err)
+        return False, err
+
+    if not telemetry_data.get('armed', False) or not is_vehicle_airborne():
+        err = "Goto rejected: Vehicle must be armed and airborne to reposition"
+        log(err)
+        return False, err
+
+    now = time.monotonic()
+    if now - telemetry_data.get('last_heartbeat_monotonic', 0.0) > 3.0:
+        err = "Goto rejected: Telemetry link is stale or disconnected"
+        log(err)
+        return False, err
+
+    log(f"Guided Goto: Navigating to {lat:.6f}, {lon:.6f} @ {alt:.1f}m (Launch Rel)...")
+    pending = command_manager.register(
+        mavutil.mavlink.MAV_CMD_DO_REPOSITION,
+        vehicle.target_system,
+        vehicle.target_component,
+        timeout=3.0
+    )
+    
+    nan = float('nan')
     with mav_lock:
-        # 1. Primary QGC/PX4 command: MAV_CMD_DO_REPOSITION (Command 192)
-        vehicle.mav.command_long_send(
-            vehicle.target_system,
-            vehicle.target_component,
-            mavutil.mavlink.MAV_CMD_DO_REPOSITION,
-            0, # confirmation
-            -1.0, # param 1: ground speed (-1 default)
-            1.0,  # param 2: MAV_DO_REPOSITION_FLAGS_CHANGE_MODE
-            0.0,  # param 3: reserved
-            nan,  # param 4: yaw (NaN uses current heading)
-            float(lat),  # param 5: latitude
-            float(lon),  # param 6: longitude
-            float(alt)   # param 7: altitude relative to launch
-        )
-        # 2. Secondary global position target message for broader firmware compatibility
-        vehicle.mav.send(  
-            mavutil.mavlink.MAVLink_set_position_target_global_int_message(
-                0,
-                vehicle.target_system,  
-                vehicle.target_component,  
+        try:
+            # Use COMMAND_INT with 1e7 scaled coordinates for centimeter precision
+            vehicle.mav.command_int_send(
+                vehicle.target_system,
+                vehicle.target_component,
                 mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-                0b0000111111111000,
+                mavutil.mavlink.MAV_CMD_DO_REPOSITION,
+                0, 0,
+                -1.0, # ground speed (-1 default)
+                mavutil.mavlink.MAV_DO_REPOSITION_FLAGS_CHANGE_MODE, # auto-switch to hold/loiter
+                0.0,
+                nan,
                 int(lat * 1e7),
                 int(lon * 1e7),
-                float(alt),
-                0, 0, 0,
-                0, 0, 0,
-                0, 0
+                float(alt)
             )
-        )
-    log("Goto reposition command dispatched to flight controller!")
-    return True
+        except Exception:
+            # Fallback to command_long if command_int not supported
+            vehicle.mav.command_long_send(
+                vehicle.target_system,
+                vehicle.target_component,
+                mavutil.mavlink.MAV_CMD_DO_REPOSITION,
+                0,
+                -1.0,
+                float(mavutil.mavlink.MAV_DO_REPOSITION_FLAGS_CHANGE_MODE),
+                0.0,
+                nan,
+                float(lat),
+                float(lon),
+                float(alt)
+            )
 
-def upload_mission(vehicle, waypoints, takeoff_point=None, landing_point=None, target_alt=10.0):
-    log("Mission upload: Starting transaction...")
-    from gcs.telemetry import mission_queue, telemetry_data
-    import queue
+    ack_ok, ack_str, code = pending.wait()
+    if not ack_ok:
+        err = f"Goto reposition rejected: {ack_str}"
+        log(err)
+        return False, err
 
-    # Clear queue of any stale messages first
-    while not mission_queue.empty():
-        try:
-            mission_queue.get_nowait()
-        except queue.Empty:
-            break
+    log(f"Goto reposition command ACCEPTED by vehicle!")
+    return True, "Goto reposition accepted"
 
-    # Step 1: Clear existing mission
-    log("Mission upload: Clearing existing mission...")
-    with mav_lock:
-        vehicle.mav.mission_clear_all_send(
-            vehicle.target_system,
-            vehicle.target_component
-        )
-
-    try:
-        msg = mission_queue.get(timeout=2.0)
-        if msg.get_type() != 'MISSION_ACK':
-            log(f"Mission upload failed: Expected MISSION_ACK, got {msg.get_type()}")
-            return False
-        if msg.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-            log(f"Mission upload failed: MAV_CMD_MISSION_CLEAR_ALL rejected with type {msg.type}")
-            return False
-    except queue.Empty:
-        log("Mission upload failed: Timeout waiting for MISSION_ACK during clear.")
-        return False
-
-    log("Mission upload: Previous mission cleared.")
-
-    # PX4 expects waypoint 0 to be the home position.
-    home_lat = telemetry_data['lat']
-    home_lon = telemetry_data['lon']
-    if home_lat == 0.0 or home_lon == 0.0:
-        if takeoff_point:
-            home_lat = takeoff_point[0]
-            home_lon = takeoff_point[1]
-        elif waypoints:
-            home_lat = waypoints[0][0]
-            home_lon = waypoints[0][1]
-        elif landing_point:
-            home_lat = landing_point[0]
-            home_lon = landing_point[1]
-
-    items = []
-    seq_counter = 0
-
-    # Add home item (seq 0)
-    items.append({
-        'seq': seq_counter,
-        'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-        'command': mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-        'current': 0,
-        'autocontinue': 1,
-        'param1': 0.0,
-        'param2': 0.0,
-        'param3': 0.0,
-        'param4': 0.0,
-        'x': int(home_lat * 1e7),
-        'y': int(home_lon * 1e7),
-        'z': 0.0
-    })
-    seq_counter += 1
-
-    # Add Takeoff item (MAV_CMD_NAV_TAKEOFF) if specified
-    if takeoff_point:
-        items.append({
-            'seq': seq_counter,
-            'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-            'command': mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-            'current': 0,
-            'autocontinue': 1,
-            'param1': 0.0,
-            'param2': 0.0,
-            'param3': 0.0,
-            'param4': 0.0,
-            'x': int(takeoff_point[0] * 1e7),
-            'y': int(takeoff_point[1] * 1e7),
-            'z': float(target_alt)
-        })
-        seq_counter += 1
-
-    # Add waypoints (MAV_CMD_NAV_WAYPOINT)
-    for wp in waypoints:
-        items.append({
-            'seq': seq_counter,
-            'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-            'command': mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-            'current': 0,
-            'autocontinue': 1,
-            'param1': 0.0,
-            'param2': 2.0, # 2m acceptance radius
-            'param3': 0.0,
-            'param4': 0.0,
-            'x': int(wp[0] * 1e7),
-            'y': int(wp[1] * 1e7),
-            'z': float(target_alt)
-        })
-        seq_counter += 1
-
-    # Add Land item (MAV_CMD_NAV_LAND) if specified
-    if landing_point:
-        items.append({
-            'seq': seq_counter,
-            'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
-            'command': mavutil.mavlink.MAV_CMD_NAV_LAND,
-            'current': 0,
-            'autocontinue': 1,
-            'param1': 0.0,
-            'param2': 0.0,
-            'param3': 0.0,
-            'param4': 0.0,
-            'x': int(landing_point[0] * 1e7),
-            'y': int(landing_point[1] * 1e7),
-            'z': 0.0
-        })
-        seq_counter += 1
-
-    total_count = len(items)
-    log(f"Mission upload: Sending count ({total_count} items)...")
-    with mav_lock:
-        vehicle.mav.mission_count_send(
-            vehicle.target_system,
-            vehicle.target_component,
-            total_count
-        )
-
-    for i in range(total_count):
-        try:
-            msg = mission_queue.get(timeout=2.0)
-            msg_type = msg.get_type()
-            if msg_type not in ['MISSION_REQUEST', 'MISSION_REQUEST_INT']:
-                log(f"Mission upload failed: Unexpected message {msg_type} (expected request)")
-                return False
-            
-            requested_seq = msg.seq
-            if requested_seq < 0 or requested_seq >= total_count:
-                log(f"Mission upload failed: Requested invalid sequence number {requested_seq}")
-                return False
-
-            item = items[requested_seq]
-            log(f"Mission upload: Sending item {requested_seq}/{total_count-1}...")
-            with mav_lock:
-                vehicle.mav.mission_item_int_send(
-                    vehicle.target_system,
-                    vehicle.target_component,
-                    item['seq'],
-                    item['frame'],
-                    item['command'],
-                    item['current'],
-                    item['autocontinue'],
-                    item['param1'],
-                    item['param2'],
-                    item['param3'],
-                    item['param4'],
-                    item['x'],
-                    item['y'],
-                    item['z']
-                )
-        except queue.Empty:
-            log(f"Mission upload failed: Timeout waiting for request for item {i}.")
-            return False
-
-    try:
-        msg = mission_queue.get(timeout=2.0)
-        if msg.get_type() != 'MISSION_ACK':
-            log(f"Mission upload failed: Expected final MISSION_ACK, got {msg.get_type()}")
-            return False
-        if msg.type == mavutil.mavlink.MAV_MISSION_ACCEPTED:
-            log("Mission upload SUCCESSFUL! Mission accepted by vehicle.")
-            return True
-        else:
-            log(f"Mission upload failed: Mission rejected with ACK type {msg.type}")
-            return False
-    except queue.Empty:
-        log("Mission upload failed: Timeout waiting for final MISSION_ACK.")
-        return False
+def emergency_hold(vehicle) -> Tuple[bool, str]:
+    reset_offboard_targets()
+    log("EMERGENCY HOLD triggered: Zeroing velocity setpoints and switching to AUTO.LOITER...")
+    return set_mode(vehicle, 'AUTO.LOITER')
 
 def request_all_parameters(vehicle):
     log("Parameter protocol: Requesting all parameters...")
@@ -449,18 +462,225 @@ def request_all_parameters(vehicle):
             vehicle.target_component
         )
 
-def set_parameter(vehicle, param_id, param_value, param_type):
-    log(f"Parameter protocol: Setting parameter {param_id} = {param_value}...")
+def request_parameter(vehicle, param_id_or_index):
+    with mav_lock:
+        if isinstance(param_id_or_index, int):
+            vehicle.mav.param_request_read_send(
+                vehicle.target_system,
+                vehicle.target_component,
+                b'',
+                param_id_or_index
+            )
+        else:
+            name_bytes = param_id_or_index.encode('utf-8')[:16].ljust(16, b'\x00')
+            vehicle.mav.param_request_read_send(
+                vehicle.target_system,
+                vehicle.target_component,
+                name_bytes,
+                -1
+            )
+
+def set_parameter(vehicle, param_id: str, param_value: Any, param_type: int) -> float:
+    wire_float = encode_param_value(param_value, param_type)
     if isinstance(param_id, str):
         param_id_bytes = param_id.encode('utf-8')
     else:
         param_id_bytes = param_id
     param_id_bytes = param_id_bytes[:16].ljust(16, b'\x00')
+    
+    log(f"Parameter protocol: Sending PARAM_SET {param_id} = {param_value} (type={param_type}, wire_float={wire_float})...")
     with mav_lock:
         vehicle.mav.param_set_send(
             vehicle.target_system,
             vehicle.target_component,
             param_id_bytes,
-            float(param_value),
+            wire_float,
             int(param_type)
         )
+    return wire_float
+
+def upload_mission(
+    vehicle,
+    waypoints: List[List[float]],
+    takeoff_point: Optional[List[float]] = None,
+    landing_point: Optional[List[float]] = None,
+    target_alt: float = 10.0
+) -> Tuple[bool, str]:
+    """
+    Robust MAVLink mission upload protocol for PX4.
+    Adheres strictly to PX4 mission specification:
+    - Sequence 0 is the first uploaded plan item (TAKEOFF or first WAYPOINT). Do NOT insert Home as seq 0!
+    - Does NOT clear the mission beforehand with mission_clear_all_send; MISSION_COUNT transaction
+      atomically replaces the vehicle mission only on accepted completion.
+    - Handles MISSION_REQUEST_INT and MISSION_REQUEST.
+    - Handles repeated requests and retries.
+    - Verifies uploaded count upon completion.
+    """
+    if not waypoints and not takeoff_point and not landing_point:
+        return False, "Validation error: No mission items provided"
+
+    # Pre-upload validation
+    for i, wp in enumerate(waypoints):
+        lat, lon = wp[0], wp[1]
+        alt = wp[2] if len(wp) > 2 else target_alt
+        if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
+            return False, f"Validation error: Waypoint {i+1} coordinates out of range ({lat}, {lon})"
+        if alt < 1.0 or alt > 200.0:
+            return False, f"Validation error: Waypoint {i+1} altitude out of range ({alt}m)"
+
+    if not upload_lock.acquire(blocking=False):
+        return False, "Mission upload error: Another upload transaction is already in progress"
+
+    try:
+        from gcs.telemetry import mission_queue
+        import queue
+
+        # Clear stale messages from mission queue
+        while not mission_queue.empty():
+            try:
+                mission_queue.get_nowait()
+            except queue.Empty:
+                break
+
+        items = []
+        seq = 0
+
+        # Item 0: Takeoff if provided
+        if takeoff_point:
+            t_alt = takeoff_point[2] if len(takeoff_point) > 2 else target_alt
+            items.append({
+                'seq': seq,
+                'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                'command': mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                'current': 0,
+                'autocontinue': 1,
+                'param1': 0.0,
+                'param2': 0.0,
+                'param3': 0.0,
+                'param4': 0.0,
+                'x': int(takeoff_point[0] * 1e7),
+                'y': int(takeoff_point[1] * 1e7),
+                'z': float(t_alt)
+            })
+            seq += 1
+
+        # Intermediate waypoints
+        for wp in waypoints:
+            w_alt = wp[2] if len(wp) > 2 else target_alt
+            items.append({
+                'seq': seq,
+                'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                'command': mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                'current': 0,
+                'autocontinue': 1,
+                'param1': 0.0,
+                'param2': 2.0, # 2m acceptance radius
+                'param3': 0.0,
+                'param4': 0.0,
+                'x': int(wp[0] * 1e7),
+                'y': int(wp[1] * 1e7),
+                'z': float(w_alt)
+            })
+            seq += 1
+
+        # Landing point if provided
+        if landing_point:
+            items.append({
+                'seq': seq,
+                'frame': mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                'command': mavutil.mavlink.MAV_CMD_NAV_LAND,
+                'current': 0,
+                'autocontinue': 1,
+                'param1': 0.0,
+                'param2': 0.0,
+                'param3': 0.0,
+                'param4': 0.0,
+                'x': int(landing_point[0] * 1e7),
+                'y': int(landing_point[1] * 1e7),
+                'z': 0.0
+            })
+            seq += 1
+
+        total_count = len(items)
+        log(f"Mission upload: Initiating transaction for {total_count} items (PX4 seq 0={items[0]['command']})...")
+
+        # Step 1: Send MISSION_COUNT
+        with mav_lock:
+            vehicle.mav.mission_count_send(
+                vehicle.target_system,
+                vehicle.target_component,
+                total_count,
+                mavutil.mavlink.MAV_MISSION_TYPE_MISSION
+            )
+
+        # Step 2: Handle requests for each item
+        sent_items = set()
+        retries = 0
+        max_retries = 3
+
+        while len(sent_items) < total_count and retries < max_retries:
+            try:
+                msg = mission_queue.get(timeout=2.0)
+                msg_type = msg.get_type()
+                if msg_type in ['MISSION_REQUEST', 'MISSION_REQUEST_INT']:
+                    req_seq = msg.seq
+                    if 0 <= req_seq < total_count:
+                        item = items[req_seq]
+                        log(f"Mission upload: Sending item {req_seq}/{total_count-1} (cmd {item['command']})...")
+                        with mav_lock:
+                            vehicle.mav.mission_item_int_send(
+                                vehicle.target_system,
+                                vehicle.target_component,
+                                item['seq'],
+                                item['frame'],
+                                item['command'],
+                                item['current'],
+                                item['autocontinue'],
+                                item['param1'],
+                                item['param2'],
+                                item['param3'],
+                                item['param4'],
+                                item['x'],
+                                item['y'],
+                                item['z'],
+                                mavutil.mavlink.MAV_MISSION_TYPE_MISSION
+                            )
+                        sent_items.add(req_seq)
+                        retries = 0
+                    else:
+                        return False, f"Mission upload error: Invalid requested sequence {req_seq}"
+                elif msg_type == 'MISSION_ACK':
+                    if msg.type == mavutil.mavlink.MAV_MISSION_ACCEPTED and len(sent_items) == total_count:
+                        break
+                    else:
+                        return False, f"Mission upload rejected early with ACK type {msg.type}"
+            except queue.Empty:
+                retries += 1
+                log(f"Mission upload: Request timeout. Retry {retries}/{max_retries}...")
+                with mav_lock:
+                    vehicle.mav.mission_count_send(
+                        vehicle.target_system,
+                        vehicle.target_component,
+                        total_count,
+                        mavutil.mavlink.MAV_MISSION_TYPE_MISSION
+                    )
+
+        if len(sent_items) < total_count:
+            return False, "Mission upload failed: Timeout waiting for vehicle item requests"
+
+        # Step 3: Wait for final MISSION_ACK
+        try:
+            ack_msg = mission_queue.get(timeout=3.0)
+            if ack_msg.get_type() == 'MISSION_ACK':
+                if ack_msg.type == mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                    log(f"Mission upload SUCCESSFUL! {total_count} items verified by vehicle.")
+                    return True, f"Mission successfully uploaded ({total_count} items)"
+                else:
+                    return False, f"Mission upload rejected by vehicle with ACK type {ack_msg.type}"
+            else:
+                return False, f"Mission upload error: Unexpected message {ack_msg.get_type()} waiting for ACK"
+        except queue.Empty:
+            return False, "Mission upload timeout waiting for final MISSION_ACK"
+
+    finally:
+        upload_lock.release()

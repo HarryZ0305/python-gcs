@@ -1,25 +1,43 @@
 import os
+import time
 from pymavlink import mavutil
+from gcs.logs import log
 
 # Easy to override connection string via environment variable or default parameter
 DEFAULT_CONNECTION = os.environ.get('MAVLINK_CONNECTION', 'udpin:0.0.0.0:14540')
 
-def connect(connection_string = None, timeout = None):
+def connect(connection_string=None, timeout=None):
     if connection_string is None:
         connection_string = DEFAULT_CONNECTION
-    print(f"Connecting to vehicle at {connection_string}...")
-    vehicle = mavutil.mavlink_connection(connection_string) # opens the connection to the simulator
+    log(f"Connecting to vehicle at {connection_string}...")
+    vehicle = mavutil.mavlink_connection(connection_string)
+    
+    start_t = time.monotonic()
+    msg = None
     if timeout is not None:
-        msg = vehicle.wait_heartbeat(timeout=timeout) # type: ignore
+        while time.monotonic() - start_t < timeout:
+            msg = vehicle.wait_heartbeat(timeout=min(1.0, max(0.1, timeout - (time.monotonic() - start_t))))
+            if msg is not None:
+                # Check that this is an autopilot system, not a ground station or peripheral
+                if msg.type != mavutil.mavlink.MAV_TYPE_GCS:
+                    break
+                msg = None
         if msg is None:
-            print("Connection timeout: No heartbeat received.")
+            log("Connection timeout: No autopilot heartbeat received.")
             return None
     else:
-        vehicle.wait_heartbeat() # pauses until drone confirmed alive # type: ignore
-    print(f"Connected! System ID: {vehicle.target_system}") # drone ID # type: ignore
+        while True:
+            msg = vehicle.wait_heartbeat()
+            if msg is not None and msg.type != mavutil.mavlink.MAV_TYPE_GCS:
+                break
+
+    vehicle.target_system = msg.get_srcSystem()
+    vehicle.target_component = msg.get_srcComponent()
+    log(f"Connected! Autopilot System ID: {vehicle.target_system}, Component ID: {vehicle.target_component}")
     return vehicle
 
-def request_telemetry(vehicle, rate_hz = 4):
+def request_telemetry(vehicle, rate_hz=4):
+    from gcs.commands import mav_lock
     interval_us = int(1e6 / rate_hz)
     
     # Request message intervals for PX4 using MAV_CMD_SET_MESSAGE_INTERVAL
@@ -29,17 +47,26 @@ def request_telemetry(vehicle, rate_hz = 4):
         mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,
         mavutil.mavlink.MAVLINK_MSG_ID_SYS_STATUS,
         mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT,
-        mavutil.mavlink.MAVLINK_MSG_ID_VFR_HUD
+        mavutil.mavlink.MAVLINK_MSG_ID_VFR_HUD,
+        mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE,
+        mavutil.mavlink.MAVLINK_MSG_ID_HOME_POSITION,
+        mavutil.mavlink.MAVLINK_MSG_ID_BATTERY_STATUS,
+        mavutil.mavlink.MAVLINK_MSG_ID_VIBRATION
     ]
     
-    for msg_id in message_ids:
-        vehicle.mav.command_long_send(
-            vehicle.target_system,
-            vehicle.target_component,
-            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-            0, # confirmation
-            msg_id, # param 1: Message ID
-            interval_us, # param 2: Interval in microseconds
-            0, 0, 0, 0, 0 # param 3-7: Unused
-        )
-    print(f"PX4 telemetry message intervals requested at {rate_hz}Hz ({interval_us}us)")
+    with mav_lock:
+        for msg_id in message_ids:
+            try:
+                vehicle.mav.command_long_send(
+                    vehicle.target_system,
+                    vehicle.target_component,
+                    mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+                    0, # confirmation
+                    msg_id, # param 1: Message ID
+                    interval_us, # param 2: Interval in microseconds
+                    0, 0, 0, 0, 0 # param 3-7: Unused
+                )
+            except Exception as e:
+                log(f"Error requesting message {msg_id}: {e}")
+                
+    log(f"PX4 telemetry message intervals requested at {rate_hz}Hz ({interval_us}us)")

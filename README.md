@@ -1,57 +1,48 @@
-# Python MAVLink Ground Control Station (PythonGCS)
+# Python GCS — Professional Autonomous Ground Control Station for PX4
 
-A modern, high-performance desktop **Ground Control Station (GCS)** built in Python with **PyQt6** and native **pymavlink**. Engineered for flight controllers running **PX4 Autopilot**, PythonGCS provides situational awareness on par with industry leaders like QGroundControl and Mission Planner: dual-mode aviation Primary Flight Display (PFD), tactical guided flight, aerial survey grid generation, 6-point pre-flight diagnostics, and offline terrain mapping.
+A modern, high-performance desktop Ground Control Station (GCS) engineered natively for **PX4 Autopilot** and MAVLink multirotors. Built with **Python 3**, **PyQt6**, and raw **pymavlink**, PythonGCS provides a responsive, flight-safety-first pilot interface targeting PX4 SITL (`gz_x500`) and Holybro S500 / Pixhawk 6C platforms.
 
-Developed and bench-tested against **PX4 SITL** (Gazebo `gz_x500`), targeting a **Holybro S500 / X500** airframe paired with a **Pixhawk 6C** autopilot.
+![PythonGCS Screenshot](design/GCS%20Prototype%201.png)
 
 ---
 
-## Key Features
+## Key Capabilities
 
-### 1. FLY — Situational Awareness & Telemetry
-- **Global Mission Flight Ribbon** — QGC-style real-time header displaying vehicle Armed state, Flight Mode, GNSS fix (with satellite count), Battery status & voltage, airborne Flight Timer (`⏱️ MM:SS`), total distance flown (`🚩 m`), emergency `🛑 HOLD`, and master `🔊 VOICE: ON/MUTE`.
-- **Aviation Primary Flight Display (PFD) & 3D Attitude** — Switch seamlessly between:
-  - **PFD HUD**: Real-time artificial horizon with a pitch ladder (-40° to +40°), bank roll arc with angle pointer, dynamic compass heading tape (with cardinal markers N/E/S/W), airspeed tape, and altitude tape.
-  - **3D Model**: Procedural Three.js quadcopter mirroring physical vehicle orientation in radians.
-- **Tactical Leaflet Map with Offline Caching** — Embedded vector map featuring:
-  - **Directional Drone SVG**: Rotates smoothly with vehicle compass heading.
-  - **Live Map Telemetry HUD**: Floating card showing Distance to Home, AGL Altitude, Groundspeed, and Heading.
-  - **Home Tracking**: Automatic Home `[H]` marker drop with dynamic bearing line.
-  - **Map Tools**: Quick Center on Drone, Auto-Follow toggle (for unrestricted terrain inspection), and Clear Flight Breadcrumbs.
-  - **Guided "Fly to Here" Repositioning**: Click anywhere on the map to command a safe reposition setpoint (`MAV_CMD_DO_REPOSITION`) with target pulse marker and altitude confirmation.
-  - **⛶ Maximize Map Toggle**: One-click toggle between standard 3-column dashboard and full-width tactical map.
-- **Custom Half-Circle Arc Gauges** — High-contrast radial gauges for Altitude (0–120 m), Speed (0–30 m/s), Battery (0–100 %), and GPS Strength (0–20 sats) with adaptive warning colors.
-- **Real-Time Historical Trend Plots** — Live strip charts plotting Altitude and Groundspeed over elapsed mission time.
-- **6-Point Pre-Flight Safety Verification Modal** — Interactive checklist auditing MAVLink stream health, GNSS 3D fix (min 6 sats), battery power reserve, IMU levelness (±15°), autopilot prearm status, and Home coordinates with a definitive **`GO FOR FLIGHT`** / **`NO-GO`** banner.
-- **Emergency Abort / Hold** — Dedicated instant-action hold button that immediately zeroes velocity setpoints and engages `AUTO.LOITER`.
-- **Keyboard Flight Controls** — Smooth offboard flying via WASD / QE / IK keys with auto-hover release.
-- **3D Google Earth KML & GeoJSON Export** — One-click export of recorded GPS trajectories into 3D extruded ribbons (`.kml`) or GeoJSON for GIS spatial analysis.
+### 1. FLY — Tactical Operations & Manual/Offboard Flight
+- **Connection Profiles**: Instant switching between PX4 SITL UDP (`udpin:0.0.0.0:14540`), QGroundControl UDP (`udpin:0.0.0.0:14550`), TCP (`tcp:127.0.0.1:5760`), and Serial Radio (`com3:57600`).
+- **Interactive Leaflet Tactical Map**: Real-time GPS positioning, heading orientation, home position marker, deduplicated trajectory trail, and follow-drone mode.
+- **Guided Fly-To (Reposition)**: Click anywhere on the map to dispatch verified `MAV_CMD_DO_REPOSITION` commands with launch-relative altitude hold.
+- **Offboard & Keyboard Flying**: Rate-controlled 10 Hz setpoint streaming in `BODY_NED` with zero-velocity warmup, dead-man freshness timeout (0.5s auto-hover), and instant zeroing on focus loss or key release.
+- **Airborne Disarm Guard**: Ordinary disarm is blocked while the vehicle is in flight (`landed_state` check); deliberate two-step confirmation required for in-flight emergency cutoff.
+- **Emergency Abort / Hold**: One-click instant loiter (`AUTO.LOITER`) that immediately halts all velocity targets.
+- **3D Attitude Visualizer**: Real-time 3D quadcopter view powered by Three.js with roll, pitch, and yaw readouts.
+- **Evidence-Based Pre-Flight Checklist**: Strict verification of GNSS 3D fix, telemetry age/rate, `SYS_STATUS` sensor health bits (Gyro, Accel, Mag, Baro), power voltage thresholds, and confirmed home lock. Distinguishes PASS, FAIL, and UNKNOWN (UNKNOWN never yields "GO FOR FLIGHT").
+- **Flight Trail Export**: One-click export of recorded trajectories to standard Google Earth 3D `.kml` or GeoJSON `.geojson` with truthful launch-relative altitude references.
 
-### 2. PLAN — Waypoint & Aerial Survey Missions
-- **Interactive Waypoint Planning** — Click-to-add waypoints directly on the map connected by dashed flight trajectories.
-- **Aerial Survey Grid Generator** — Automatically plans serpentine (lawnmower) flight patterns for photogrammetry, mapping, or search & rescue missions based on custom Width, Height, Lane Spacing, and Altitude.
-- **Mission Statistics & Duration Estimator** — Live computation of total planned trajectory distance and estimated flight duration at nominal cruise speed.
-- **Configurable Cruising Altitude** — Dedicated altitude spinbox wired directly into the MAVLink mission protocol (`upload_mission`).
-- **Import & Export** — Save and load mission plans as `.plan` / `.json` files.
+### 2. PLAN — Autonomous Missions & Survey Grids
+- **Standard QGroundControl `.plan` Support**: Full bidirectional import and export compatibility with QGC `.plan` (v1.0 schema) and legacy JSON plans.
+- **Interactive Waypoint Editor**: Add, reorder (Move Up / Down), edit altitude per waypoint, or delete waypoints.
+- **Aerial Survey Grid Generator**: Auto-generates serpentine lawnmower photogrammetry flight lines from Width, Height, Lane Spacing, and Altitude parameters without duplicating takeoff/landing points.
+- **PX4 Mission Protocol Compliance**: Sequence index 0 represents the first actual mission item (no fake Home waypoint). Uses `MISSION_COUNT` transactions without premature clear, handling retransmissions and readback verification.
+- **Mission Statistics & Duration Estimator**: Real-time calculation of total flight trajectory length and estimated mission duration at nominal cruise speed.
 
-### 3. ANALYTICS – Flight Diagnostics & Sensor Telemetry
-- **Dedicated Clean Layout**: Shifted historical telemetry charts and sensor diagnostics from the main dashboard into a focused analytics suite.
-- **Real-Time Strip Charts**: Scrolling altitude, groundspeed, and climb rate waveforms.
-- **Battery Cell Balance Monitor**: Individual LiPo cell voltages (Cell 1–4) with balance delta tracking.
-- **IMU Vibration Clipping**: 3-axis accelerometer and gyro vibration levels with safety thresholds.
-- **ESC & Motor Health**: Motor RPM and ESC duty cycle readouts.
-- **MAVLink Data Link Diagnostics**: Downlink data rate (kB/s), packet loss percentage, latency, and radio RSSI.
+### 3. ANALYTICS — Flight Telemetry & Diagnostics
+- **Real-Time Scrolling Strip Charts**: Live altitude and groundspeed waveforms plotted at high frequency.
+- **MAVLink Link Quality Diagnostics**: Downlink telemetry rate (Hz), measured packet loss percentage (tracked from MAVLink sequence counters), and total packets received/lost.
+- **Power Telemetry**: Total battery voltage, remaining percentage, throttle percentage, and individual cell balance readouts (when `BATTERY_STATUS` telemetry is broadcast by the vehicle).
+- **Sensor Health Readouts**: `SYS_STATUS` subsystem health and 3-axis vibration/clipping monitors (when `VIBRATION` telemetry is broadcast).
 
-### 4. SETUP — Full Parameter Management
-- **Live Parameter Table** — Instant parameter download on connection with real-time text search filtering.
-- **Inline Value Editing** — Double-click any value to send a `PARAM_SET` back to the autopilot with automatic integer/float type casting.
-- **Backup & Restore** — Save all vehicle parameters to `.param` / `.json` files, or write entire configurations back to the flight controller.
+### 4. SETUP — Live PX4 Parameter Management
+- **Type-Safe Wire Encoding**: Encodes and decodes PX4 `INT32` parameters using bit-wise packing in the 32-bit float wire field (`struct.unpack('<i', struct.pack('<f', wire_val))[0]`), preserving integer bits without float loss.
+- **Live Search & Filter**: Real-time parameter search across all onboard flight controller parameters.
+- **Readback Confirmation**: Edits are marked `PENDING` until confirmed by a matching `PARAM_VALUE` readback from the flight controller. Reverts on timeout or rejection.
+- **Backup & Restore with Difference Preview**: Save complete vehicle configurations to JSON or `.param` files. Restoring displays a visual difference preview (Current FCU vs File Target) before writing.
+- **Missing Parameter Recovery**: Identifies unreceived parameter indices and requests missing entries.
 
-### 4. CONSOLE — Pro MAVLink Engineering Log
-- **Decoded Acknowledgment Stream** — Decodes `COMMAND_ACK` and `STATUSTEXT` into plain-English notifications (`ACCEPTED`, `DENIED`, `FAILED`).
-- **Search & Categorization** — Filter logs by keyword or category buttons (**`ALL`**, **`ERRORS`**, **`ACKS`**).
-- **Color-Coded Feedback** — Red for critical errors, Green for command acks, Sky Blue for autopilot text, and Purple for pilot commands.
-- **Auto-Scroll & Clear** — Built-in controls for live mission monitoring.
+### 5. CONSOLE — Decoded MAVLink Stream
+- **Decoded Command Acknowledgments**: Translates `COMMAND_ACK` into plain-English notifications (`ACCEPTED`, `TEMPORARILY_REJECTED`, `DENIED`, `FAILED`, `IN_PROGRESS`).
+- **Autopilot Notifications**: Captures and categorizes `STATUSTEXT` messages from the autopilot.
+- **Search & Categorization**: Filter logs by keyword or category buttons (**ALL**, **ERRORS**, **ACKS**).
 
 ---
 
@@ -59,11 +50,11 @@ Developed and bench-tested against **PX4 SITL** (Gazebo `gz_x500`), targeting a 
 
 | Layer | Technology |
 |---|---|
-| **Language** | Python 3.10+ |
+| **Language** | Python 3.9+ |
 | **GUI Framework** | PyQt6 (+ PyQt6-WebEngine) |
-| **Telemetry & Commands** | Raw `pymavlink` (thread-safe serialization) |
-| **Tactical Map** | Leaflet / OpenStreetMap + Offline Tile HTTP Server |
-| **Flight Instruments** | HTML5 Canvas (PFD HUD) + Three.js (3D Quad) |
+| **Telemetry & Commands** | Raw `pymavlink` (thread-safe serialization with `mav_lock`) |
+| **Tactical Map** | Leaflet / OpenStreetMap + Local Offline HTTP Tile Server / MBTiles |
+| **Attitude View** | Three.js (3D Quad) |
 | **Packaging** | PyInstaller (Standalone Windows `.exe`) |
 | **Target Firmware** | PX4 Autopilot (v1.14+) |
 | **Simulation Airframe** | PX4 SITL Gazebo Harmonic (`gz_x500`) |
@@ -71,39 +62,10 @@ Developed and bench-tested against **PX4 SITL** (Gazebo `gz_x500`), targeting a 
 
 ---
 
-## Project Structure
-
-```
-python-gcs/
-├── main.py                     # Entry point: initializes tile server, Qt app, and GUI
-├── requirements.txt            # Runtime dependencies
-├── requirements-dev.txt        # Development dependencies (PyInstaller)
-├── PythonGCS.spec              # PyInstaller Windows packaging specification
-├── index.html                  # Product landing and distribution website
-└── gcs/
-    ├── connection.py           # Non-blocking MAVLink connect worker & telemetry setup
-    ├── telemetry.py            # Centralized telemetry store & packet receive loop
-    ├── telemetry_logger.py     # Background CSV telemetry logging & trajectory recorder
-    ├── commands.py             # Flight commands, guided reposition, offboard streamer, mission protocol
-    ├── logs.py                 # Timestamped log buffer
-    ├── paths.py                # Asset and font resolution helper
-    └── ui/
-        ├── gui.py              # Main window, flight ribbon, dialogs, keyboard flight handlers
-        ├── gauge.py            # Custom vector half-circle ArcGauge widgets
-        ├── map_view.py         # Leaflet tactical map widget (HUD, guided go-to, follow mode)
-        ├── tile_server.py      # Local offline tile HTTP server and downloader
-        ├── attitude_view.py    # Dual-mode widget: Three.js 3D Quad & Aviation PFD HUD
-        ├── console_view.py     # Searchable, categorized MAVLink engineering console
-        ├── camera_view.py      # Dual camera feed panels (Front and Bottom view)
-        └── setup_view.py       # Live parameter viewer and editor
-```
-
----
-
 ## Getting Started
 
 ### 1. Prerequisites
-- Python 3.10+
+- Python 3.9+
 - PX4 Autopilot simulator (**PX4 SITL**) or a physical PX4 flight controller (**Pixhawk 6C**).
 
 ### 2. Installation
@@ -116,7 +78,7 @@ pip install -r requirements.txt
 ### 3. Launch the Simulator
 From a built [PX4-Autopilot](https://github.com/PX4/PX4-Autopilot) source tree:
 ```bash
-make px4_sitl gz_x500          # Add HEADLESS=1 to run without the Gazebo window
+make px4_sitl gz_x500
 ```
 Or run headless via Docker:
 ```bash
@@ -128,7 +90,7 @@ docker run --rm -it -p 14540:14540/udp jonasvautherin/px4-gazebo-headless:1.16.1
 ```bash
 python main.py
 ```
-Leave the connection string at default (`udpin:0.0.0.0:14540`) and click **CONNECT**. The ribbon, gauges, and map will populate within seconds.
+Leave the connection profile at default (`PX4 SITL (UDP 14540)`) and click **CONNECT**. The ribbon pills, gauges, and tactical map will populate within seconds.
 
 ---
 
@@ -136,25 +98,23 @@ Leave the connection string at default (`udpin:0.0.0.0:14540`) and click **CONNE
 
 When **Enable Keyboard Flight** is checked on the FLY tab:
 
-| Key | Action |
-|---|---|
-| `W` / `S` | Move Forward / Backward (vx ±2.0 m/s) |
-| `A` / `D` | Move Left / Right (vy ∓2.0 m/s) |
-| `Q` / `E` | Yaw Rotate Left / Right (yaw_rate ∓0.5 rad/s) |
-| `I` / `K` | Climb Up / Descend Down (vz ∓1.5 m/s) |
-| `Space` or `H` | Zero velocities and **HOVER** in place |
+| Key | Action | Velocity Target |
+|---|---|---|
+| `W` / `S` | Move Forward / Backward | $v_x = \pm 2.0\text{ m/s}$ |
+| `A` / `D` | Move Left / Right | $v_y = \mp 2.0\text{ m/s}$ |
+| `Q` / `E` | Yaw Rotate Left / Right | $r = \mp 0.5\text{ rad/s}$ |
+| `I` / `K` | Climb Up / Descend Down | $v_z = \mp 1.5\text{ m/s}$ (NED: $-1.5$ is climb) |
+| `Space` or `H` | Zero velocities and **HOVER** | $v_x = 0, v_y = 0, v_z = 0, r = 0$ |
+
+*Safety Dead-Man Timer: If key updates cease for >0.5 seconds, or if the window loses focus, velocities automatically reset to zero (hover).*
 
 ---
 
-## Pre-Flight & Guided Flight Workflow
+## Offline Map Tile System & MBTiles
 
-1. **Connect**: Click **CONNECT** to establish MAVLink heartbeat.
-2. **Pre-Flight Verification**: Click **📋 PRE-FLIGHT CHECKLIST** in the left panel to verify telemetry rate, GPS 3D fix, battery power, and attitude horizon.
-3. **Arm & Takeoff**: Click **ARM**, choose your altitude preset (e.g., `5m` or `10m`), and click **TAKEOFF**.
-4. **Guided Go-To**: On the map, click **FLY TO HERE**, click anywhere on the satellite view, and confirm the dialog to have the vehicle navigate and hold at that target coordinate.
-5. **Aviation PFD**: In the attitude card, toggle between **3D MODEL** and **PFD HUD** to monitor bank angle, pitch ladder, and compass ribbon.
-6. **Return Home**: Click **RTL** to bring the drone back to launch coordinates, or **HOLD** for immediate loiter.
-7. **Export Log**: In the map toolbar, click **🌐 EXPORT FLIGHT TRAIL** to save your flight trajectory as a Google Earth 3D `.kml` or `.geojson` file.
+- **On-Demand Caching**: As you pan and zoom while connected to the internet, map tiles are automatically cached on disk at `~/.python-gcs/tile_cache/`.
+- **Policy Compliance**: In adherence with the [OpenStreetMap Foundation Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/), automated bulk scraping/prefetching of OSM tile servers is disabled.
+- **MBTiles Support**: For 100% offline field deployments without internet access, click **LOAD OFFLINE MBTILES** to load pre-generated `.mbtiles` raster map packages (e.g. from OpenMapTiles, TileMill, or QGIS).
 
 ---
 
@@ -166,6 +126,15 @@ pip install -r requirements-dev.txt
 pyinstaller PythonGCS.spec
 ```
 The compiled executable will be located in `dist/PythonGCS/PythonGCS.exe`.
+
+---
+
+## Automated Test Suite
+
+Run the full automated test suite using `pytest`:
+```bash
+pytest tests/ -v
+```
 
 ---
 

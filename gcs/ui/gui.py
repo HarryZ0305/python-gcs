@@ -2,29 +2,48 @@ import sys
 import math
 import threading
 import time
+import os
 import pyqtgraph as pg
+from typing import List, Optional, Tuple, Dict, Any
+
 from PyQt6.QtWidgets import (
-    QDialog, QDoubleSpinBox,
-    QApplication, QMainWindow, QWidget,
+    QDialog, QDoubleSpinBox, QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QLabel, QFrame, QMessageBox,
     QPushButton, QComboBox, QSpinBox, QListWidget, QTabWidget,
-    QLineEdit, QCheckBox, QProgressDialog, QGridLayout, QGraphicsDropShadowEffect
+    QLineEdit, QCheckBox, QProgressDialog, QGridLayout,
+    QGraphicsDropShadowEffect, QInputDialog, QFileDialog
 )
 try:
     from PyQt6.QtTextToSpeech import QTextToSpeech
     TTS_AVAILABLE = True
 except ImportError:
     TTS_AVAILABLE = False
-from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal
+
+from PyQt6.QtCore import QTimer, Qt, QThread, pyqtSignal, QEvent
 from PyQt6.QtGui import QFont, QColor
-from gcs.telemetry import telemetry_data
-from gcs.commands import arm, disarm, set_mode, takeoff, set_offboard_targets, reset_offboard_targets, stop_streamer, emergency_hold, goto
+
+import gcs.telemetry as telemetry
+from gcs.telemetry import (
+    telemetry_data, is_vehicle_airborne, create_new_session,
+    cancel_current_session, reset_telemetry_data, read_telemetry
+)
+from gcs.commands import (
+    arm, disarm, set_mode, takeoff, goto, emergency_hold,
+    set_offboard_targets, reset_offboard_targets, stop_streamer,
+    _ensure_streamer, request_all_parameters, offboard_controller
+)
+from gcs.connection import connect, request_telemetry
+from gcs.telemetry_logger import logger_instance
+from gcs.plan_format import export_qgc_plan, import_plan_file
+from gcs.ui.preflight_dialog import PreflightChecklistDialog
+from gcs.ui.survey_dialog import SurveyGridDialog
 from gcs.ui.map_view import MapView
 from gcs.ui.attitude_view import AttitudeView
 from gcs.ui.console_view import ConsoleView
 from gcs.ui.camera_view import CameraView
 from gcs.ui.setup_view import SetupView
 from gcs.ui.gauge import ArcGauge
+from gcs.ui.tile_server import set_mbtiles_file
 
 THEME = {
     'bg':           '#f5f7fa',
@@ -39,6 +58,14 @@ THEME = {
     'plot_bg':      '#f8fafc',
 }
 
+CONNECTION_PROFILES = [
+    ("PX4 SITL (UDP 14540)", "udpin:0.0.0.0:14540"),
+    ("QGC Port (UDP 14550)", "udpin:0.0.0.0:14550"),
+    ("TCP Local (5760)", "tcp:127.0.0.1:5760"),
+    ("Serial Radio (COM3 57600)", "com3:57600"),
+    ("Custom Connection", "")
+]
+
 
 class ConnectionWorker(QThread):
     connected = pyqtSignal(object)
@@ -50,7 +77,6 @@ class ConnectionWorker(QThread):
         self.running = True
 
     def run(self):
-        from gcs.connection import connect
         try:
             while self.running:
                 vehicle = connect(self.connection_string, timeout=1.0)
@@ -58,7 +84,7 @@ class ConnectionWorker(QThread):
                     if self.running:
                         self.connected.emit(vehicle)
                     return
-                self.msleep(500)
+                self.msleep(400)
         except Exception as e:
             if self.running:
                 self.failed.emit(str(e))
@@ -67,166 +93,113 @@ class ConnectionWorker(QThread):
         self.running = False
 
 
-class MapDownloadWorker(QThread):
-    progress_signal = pyqtSignal(int, int) # current, total
-    finished_signal = pyqtSignal(int, int, bool) # downloaded, skipped, success
-    
-    def __init__(self, bounds):
-        super().__init__()
-        self.bounds = bounds
-        self._cancelled = False
-        
-    def run(self):
-        from gcs.ui.tile_server import download_area_task
-        
-        def on_progress(curr, total):
-            self.progress_signal.emit(curr, total)
-            
-        def on_finished(dl, skip, ok):
-            self.finished_signal.emit(dl, skip, ok)
-            
-        def is_cancelled():
-            return self._cancelled
-            
-        download_area_task(self.bounds, on_progress, on_finished, is_cancelled)
-        
-    def cancel(self):
-        self._cancelled = True
-
-
 class StatPanel(QFrame):
-    """A titled panel holding labels and values in a clean 2-column grid layout with drop shadows."""
-    def __init__(self, title):
-        super().__init__()
-        self.setObjectName("StatPanel")
-        
-        # Soft shadow to feel extremely premium
+    def __init__(self, title, items, parent=None):
+        super().__init__(parent)
+        self.setObjectName("StatPanelContainer")
+        self.setStyleSheet(f"""
+            #StatPanelContainer {{
+                background-color: {THEME['panel_bg']};
+                border: 1px solid {THEME['panel_border']};
+                border-radius: 10px;
+            }}
+        """)
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(0, 0, 0, 15))
         shadow.setOffset(0, 4)
         self.setGraphicsEffect(shadow)
 
-        self.setStyleSheet(f"""
-            #StatPanel {{
-                background-color: {THEME['panel_bg']};
-                border: 1px solid {THEME['panel_border']};
-                border-radius: 10px;
-            }}
-        """)
-        
-        self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(12, 10, 12, 10)
-        self._layout.setSpacing(6)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
 
         t = QLabel(title)
-        t.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
-        self._layout.addWidget(t)
+        t.setStyleSheet(f"color: {THEME['primary']}; font-family: Google Sans Code; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        layout.addWidget(t)
 
-        self.grid_widget = QWidget()
-        self.grid_widget.setStyleSheet("background: transparent;")
-        self.grid_layout = QGridLayout(self.grid_widget)
-        self.grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.grid_layout.setSpacing(6)
-        self._layout.addWidget(self.grid_widget)
+        self.labels = {}
+        for key, name, unit in items:
+            row = QHBoxLayout()
+            row.setSpacing(4)
+            name_lbl = QLabel(name)
+            name_lbl.setStyleSheet(f"color: {THEME['dark_text']}; font-family: Google Sans Code; font-size: 11px; font-weight: 500; border: none; background: transparent;")
+            val_lbl = QLabel(f"-- {unit}")
+            val_lbl.setStyleSheet(f"color: {THEME['muted']}; font-family: Google Sans Code; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+            row.addWidget(name_lbl)
+            row.addStretch(1)
+            row.addWidget(val_lbl)
+            layout.addLayout(row)
+            self.labels[key] = (val_lbl, unit)
 
-        self.rows = {}
-        self.current_row = 0
-        self.current_col = 0
-
-    def add_row(self, key, label):
-        lbl = QLabel(label)
-        lbl.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none; background: transparent;")
-        
-        val = QLabel("---")
-        val.setFont(QFont("Google Sans Code", 12, QFont.Weight.Bold))
-        val.setStyleSheet(f"color: {THEME['dark_text']}; border: none; background: transparent;")
-        
-        # Make the active alert message full-width spanning multiple columns
-        if key == 'alert_msg':
-            if self.current_col != 0:
-                self.current_row += 1
-                self.current_col = 0
-                
-            val.setAlignment(Qt.AlignmentFlag.AlignLeft)
-            self.grid_layout.addWidget(lbl, self.current_row, 0)
-            self.grid_layout.addWidget(val, self.current_row, 1, 1, 4)
-            self.current_row += 1
-            self.current_col = 0
+    def set(self, key, value, color=None):
+        if key not in self.labels:
+            return
+        lbl, unit = self.labels[key]
+        if isinstance(value, float):
+            lbl.setText(f"{value:.1f} {unit}".strip())
+        elif isinstance(value, int):
+            lbl.setText(f"{value} {unit}".strip())
         else:
-            if self.current_col == 0:
-                val.setAlignment(Qt.AlignmentFlag.AlignRight)
-                self.grid_layout.addWidget(lbl, self.current_row, 0)
-                self.grid_layout.addWidget(val, self.current_row, 1)
-                self.grid_layout.setColumnStretch(1, 2)
-                self.current_col = 1
-            else:
-                if self.current_row == 0:
-                    spacer = QWidget()
-                    spacer.setFixedWidth(16)
-                    self.grid_layout.addWidget(spacer, 0, 2)
-                val.setAlignment(Qt.AlignmentFlag.AlignRight)
-                self.grid_layout.addWidget(lbl, self.current_row, 3)
-                self.grid_layout.addWidget(val, self.current_row, 4)
-                self.grid_layout.setColumnStretch(4, 2)
-                self.current_row += 1
-                self.current_col = 0
-
-        self.rows[key] = val
-
-    def set(self, key, text, color=None):
-        if color is None:
-            color = THEME['primary']
-        if key in self.rows:
-            self.rows[key].setText(text)
-            self.rows[key].setStyleSheet(f"color: {color}; border: none; background: transparent;")
+            lbl.setText(f"{value} {unit}".strip())
+        if color:
+            lbl.setStyleSheet(f"color: {color}; font-family: Google Sans Code; font-size: 11px; font-weight: bold; border: none; background: transparent;")
 
 
 class PremiumViewContainer(QFrame):
-    """A styled container to hold widgets like map view and attitude view with round borders and shadow."""
-    def __init__(self, child_widget, name):
-        super().__init__()
-        self.setObjectName(name)
+    def __init__(self, inner_widget, object_name, parent=None):
+        super().__init__(parent)
+        self.setObjectName(object_name)
         self.setStyleSheet(f"""
-            #{name} {{
+            #{object_name} {{
                 background-color: {THEME['panel_bg']};
                 border: 1px solid {THEME['panel_border']};
                 border-radius: 10px;
             }}
         """)
-        
-        # Shadow effect
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(0, 0, 0, 15))
         shadow.setOffset(0, 4)
         self.setGraphicsEffect(shadow)
-        
+
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(1, 1, 1, 1)
-        layout.addWidget(child_widget)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.addWidget(inner_widget)
 
 
 class TelemetryPlotPanel(QFrame):
-    """A live-updating plot panel showing historical telemetry trends."""
-    def __init__(self):
-        super().__init__()
-        self.setObjectName("TelemetryPlotPanel")
-        self.setStyleSheet(f"#TelemetryPlotPanel {{ background-color: {THEME['panel_bg']}; border-radius: 10px; border: 1px solid {THEME['panel_border']}; }}")
-        
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("PlotPanelContainer")
+        self.setStyleSheet(f"""
+            #PlotPanelContainer {{
+                background-color: {THEME['panel_bg']};
+                border: 1px solid {THEME['panel_border']};
+                border-radius: 10px;
+            }}
+        """)
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(0, 0, 0, 15))
         shadow.setOffset(0, 4)
         self.setGraphicsEffect(shadow)
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(4)
 
-        t = QLabel("TELEMETRY HISTORICAL TRENDS")
-        t.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
-        layout.addWidget(t)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        header = QHBoxLayout()
+        t = QLabel("REAL-TIME FLIGHT TELEMETRY (ALTITUDE & SPEED)")
+        t.setStyleSheet(f"color: {THEME['primary']}; font-family: Google Sans Code; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        header.addWidget(t)
+        header.addStretch(1)
+
+        legend = QLabel("— Altitude (m Rel)  — Speed (m/s)")
+        legend.setStyleSheet(f"color: {THEME['muted']}; font-family: Google Sans Code; font-size: 10px; border: none; background: transparent;")
+        header.addWidget(legend)
+        layout.addLayout(header)
 
         self.plot_widget = pg.PlotWidget()
         self.plot_widget.setBackground(THEME['plot_bg'])
@@ -247,553 +220,444 @@ class TelemetryPlotPanel(QFrame):
         self.speed_curve.setData(times, speeds)
 
 
-
-class PreflightChecklistDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Pre-Flight Safety Checklist")
-        self.setFixedSize(500, 500)
-        self.setStyleSheet(f"background-color: {THEME['bg']}; font-family: Google Sans Code;")
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 18, 18, 18)
-        layout.setSpacing(12)
-        
-        title = QLabel("SYSTEM PRE-FLIGHT VERIFICATION")
-        title.setStyleSheet(f"color: {THEME['primary']}; font-size: 13px; font-weight: bold; border: none; background: transparent;")
-        layout.addWidget(title)
-        
-        desc = QLabel("Verifying critical telemetry, link status, and sensor health before arming:")
-        desc.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none; background: transparent;")
-        layout.addWidget(desc)
-        
-        self.items_container = QFrame()
-        self.items_container.setStyleSheet(f"background: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
-        ic_layout = QVBoxLayout(self.items_container)
-        ic_layout.setContentsMargins(14, 14, 14, 14)
-        ic_layout.setSpacing(10)
-        
-        self.check_rows = {}
-        checks = [
-            ("link", "MAVLink Telemetry Stream", "Checking..."),
-            ("gps", "GNSS 3D Satellite Fix", "Checking..."),
-            ("power", "Battery Voltage & Capacity", "Checking..."),
-            ("imu", "IMU & Horizon Alignment", "Checking..."),
-            ("fcu", "Autopilot Prearm Checks", "Checking..."),
-            ("home", "Home Position Coordinates", "Checking...")
-        ]
-        for key, name, default_status in checks:
-            row = QHBoxLayout()
-            lbl = QLabel(name)
-            lbl.setStyleSheet(f"color: {THEME['dark_text']}; font-weight: bold; font-size: 11px; border: none; background: transparent;")
-            val = QLabel(default_status)
-            val.setStyleSheet(f"color: {THEME['muted']}; font-weight: bold; font-size: 11px; border: none; background: transparent;")
-            val.setAlignment(Qt.AlignmentFlag.AlignRight)
-            row.addWidget(lbl)
-            row.addWidget(val)
-            ic_layout.addLayout(row)
-            self.check_rows[key] = val
-            
-        layout.addWidget(self.items_container)
-        
-        self.banner = QLabel("ANALYZING VEHICLE STATE...")
-        self.banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.banner.setFixedHeight(44)
-        self.banner.setStyleSheet(f"background: {THEME['panel_border']}; color: {THEME['dark_text']}; font-weight: bold; font-size: 12px; border-radius: 6px;")
-        layout.addWidget(self.banner)
-        
-        btn_box = QHBoxLayout()
-        refresh_btn = QPushButton("🔄 REFRESH")
-        refresh_btn.setFixedHeight(34)
-        refresh_btn.setStyleSheet(f"background: {THEME['panel_bg']}; color: {THEME['primary']}; border: 1.5px solid {THEME['primary']}; border-radius: 4px; font-weight: bold; font-family: Google Sans Code;")
-        refresh_btn.clicked.connect(self.evaluate_checks)
-        
-        close_btn = QPushButton("CLOSE")
-        close_btn.setFixedHeight(34)
-        close_btn.setStyleSheet(f"background: {THEME['primary']}; color: #ffffff; border: none; border-radius: 4px; font-weight: bold; font-family: Google Sans Code;")
-        close_btn.clicked.connect(self.accept)
-        
-        btn_box.addWidget(refresh_btn)
-        btn_box.addWidget(close_btn)
-        layout.addLayout(btn_box)
-        
-        self.evaluate_checks()
-
-    def evaluate_checks(self):
-        d = telemetry_data
-        all_passed = True
-        
-        # 1. Link check
-        last_hb = d.get('last_heartbeat_time', 0.0)
-        link_ok = last_hb > 0.0 and (time.time() - last_hb) <= 2.5
-        if link_ok:
-            self.check_rows['link'].setText("✅ ACTIVE (< 2.5s)")
-            self.check_rows['link'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
-        else:
-            all_passed = False
-            self.check_rows['link'].setText("❌ NO TELEMETRY LINK")
-            self.check_rows['link'].setStyleSheet(f"color: {THEME['danger']}; border: none; background: transparent;")
-            
-        # 2. GPS
-        fix_type = d.get('fix_type', 0)
-        sats = d.get('satellites', 0)
-        if fix_type >= 3 and sats >= 6:
-            self.check_rows['gps'].setText(f"✅ 3D FIX ({sats} Sats)")
-            self.check_rows['gps'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
-        else:
-            all_passed = False
-            self.check_rows['gps'].setText(f"❌ {fix_type}D FIX ({sats} Sats - Min 6)")
-            self.check_rows['gps'].setStyleSheet(f"color: {THEME['danger']}; border: none; background: transparent;")
-            
-        # 3. Power
-        batt = d.get('battery', 0)
-        volt = d.get('voltage', 0.0)
-        if batt >= 30 and (volt >= 14.4 or volt == 0.0):
-            self.check_rows['power'].setText(f"✅ {batt}% ({volt:.1f}V)")
-            self.check_rows['power'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
-        elif batt >= 20:
-            self.check_rows['power'].setText(f"⚠️ LOW: {batt}% ({volt:.1f}V)")
-            self.check_rows['power'].setStyleSheet(f"color: {THEME['warning']}; border: none; background: transparent;")
-        else:
-            all_passed = False
-            self.check_rows['power'].setText(f"❌ CRIT: {batt}% ({volt:.1f}V)")
-            self.check_rows['power'].setStyleSheet(f"color: {THEME['danger']}; border: none; background: transparent;")
-            
-        # 4. IMU
-        roll_deg = abs(math.degrees(d.get('roll', 0.0)))
-        pitch_deg = abs(math.degrees(d.get('pitch', 0.0)))
-        if roll_deg < 15.0 and pitch_deg < 15.0:
-            self.check_rows['imu'].setText(f"✅ LEVEL (Roll {roll_deg:.0f}°, Pitch {pitch_deg:.0f}°)")
-            self.check_rows['imu'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
-        else:
-            all_passed = False
-            self.check_rows['imu'].setText(f"⚠️ TILTED ({roll_deg:.0f}° / {pitch_deg:.0f}°)")
-            self.check_rows['imu'].setStyleSheet(f"color: {THEME['warning']}; border: none; background: transparent;")
-            
-        # 5. FCU Prearm
-        prearm = d.get('prearm_fail', '')
-        if not prearm:
-            self.check_rows['fcu'].setText("✅ PASSED - READY")
-            self.check_rows['fcu'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
-        else:
-            all_passed = False
-            disp = prearm[:24] + "..." if len(prearm) > 24 else prearm
-            self.check_rows['fcu'].setText(f"❌ {disp}")
-            self.check_rows['fcu'].setStyleSheet(f"color: {THEME['danger']}; border: none; background: transparent;")
-            
-        # 6. Home
-        lat, lon = d.get('lat', 0.0), d.get('lon', 0.0)
-        if lat != 0.0 and lon != 0.0:
-            self.check_rows['home'].setText(f"✅ LOCKED ({lat:.4f}, {lon:.4f})")
-            self.check_rows['home'].setStyleSheet(f"color: {THEME['success']}; border: none; background: transparent;")
-        else:
-            all_passed = False
-            self.check_rows['home'].setText("❌ NO POSITION LOCK")
-            self.check_rows['home'].setStyleSheet(f"color: {THEME['danger']}; border: none; background: transparent;")
-            
-        if all_passed:
-            self.banner.setText("🚀 GO FOR FLIGHT — ALL CHECKS PASSED")
-            self.banner.setStyleSheet(f"background: {THEME['success']}; color: #ffffff; font-weight: bold; font-size: 13px; border-radius: 6px;")
-        else:
-            self.banner.setText("🛑 NO-GO — CRITICAL ISSUES DETECTED")
-            self.banner.setStyleSheet(f"background: {THEME['danger']}; color: #ffffff; font-weight: bold; font-size: 13px; border-radius: 6px;")
-
-
-class SurveyGridDialog(QDialog):
-    def __init__(self, center_lat, center_lon, parent=None):
-        super().__init__(parent)
-        self.center_lat = center_lat if center_lat != 0.0 else 32.7157
-        self.center_lon = center_lon if center_lon != 0.0 else -117.1611
-        self.generated_waypoints = []
-        
-        self.setWindowTitle("Aerial Survey Grid Generator")
-        self.setFixedSize(380, 340)
-        self.setStyleSheet(f"background-color: {THEME['bg']}; font-family: Google Sans Code;")
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
-        
-        t = QLabel("SURVEY GRID GENERATOR")
-        t.setStyleSheet(f"color: {THEME['primary']}; font-size: 13px; font-weight: bold; border: none; background: transparent;")
-        layout.addWidget(t)
-        
-        sub = QLabel("Auto-generates lawnmower survey flight lines:")
-        sub.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none; background: transparent;")
-        layout.addWidget(sub)
-        
-        form_frame = QFrame()
-        form_frame.setStyleSheet(f"background: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
-        fl = QGridLayout(form_frame)
-        fl.setContentsMargins(12, 12, 12, 12)
-        fl.setSpacing(8)
-        
-        fl.addWidget(QLabel("Width (m):"), 0, 0)
-        self.width_spin = QSpinBox()
-        self.width_spin.setRange(20, 1000)
-        self.width_spin.setValue(80)
-        fl.addWidget(self.width_spin, 0, 1)
-        
-        fl.addWidget(QLabel("Height (m):"), 1, 0)
-        self.height_spin = QSpinBox()
-        self.height_spin.setRange(20, 1000)
-        self.height_spin.setValue(80)
-        fl.addWidget(self.height_spin, 1, 1)
-        
-        fl.addWidget(QLabel("Lane Spacing (m):"), 2, 0)
-        self.spacing_spin = QSpinBox()
-        self.spacing_spin.setRange(5, 200)
-        self.spacing_spin.setValue(20)
-        fl.addWidget(self.spacing_spin, 2, 1)
-        
-        fl.addWidget(QLabel("Altitude (m):"), 3, 0)
-        self.alt_spin = QSpinBox()
-        self.alt_spin.setRange(3, 120)
-        self.alt_spin.setValue(15)
-        fl.addWidget(self.alt_spin, 3, 1)
-        
-        layout.addWidget(form_frame)
-        
-        btn_box = QHBoxLayout()
-        gen_btn = QPushButton("✨ GENERATE GRID")
-        gen_btn.setFixedHeight(34)
-        gen_btn.setStyleSheet(f"background: {THEME['success']}; color: #ffffff; border: none; border-radius: 4px; font-weight: bold; font-family: Google Sans Code;")
-        gen_btn.clicked.connect(self.generate_grid)
-        
-        cancel_btn = QPushButton("CANCEL")
-        cancel_btn.setFixedHeight(34)
-        cancel_btn.setStyleSheet(f"background: {THEME['panel_bg']}; color: {THEME['muted']}; border: 1px solid {THEME['panel_border']}; border-radius: 4px; font-weight: bold; font-family: Google Sans Code;")
-        cancel_btn.clicked.connect(self.reject)
-        
-        btn_box.addWidget(cancel_btn)
-        btn_box.addWidget(gen_btn)
-        layout.addLayout(btn_box)
-
-    def generate_grid(self):
-        width = self.width_spin.value()
-        height = self.height_spin.value()
-        spacing = self.spacing_spin.value()
-        
-        m_per_deg_lat = 111320.0
-        m_per_deg_lon = 111320.0 * math.cos(math.radians(self.center_lat))
-        
-        num_lanes = max(2, int(height / spacing) + 1)
-        lane_step_y = height / (num_lanes - 1)
-        
-        half_w = width / 2.0
-        half_h = height / 2.0
-        
-        wps = []
-        for i in range(num_lanes):
-            y_offset = -half_h + i * lane_step_y
-            lat_i = self.center_lat + (y_offset / m_per_deg_lat)
-            
-            if i % 2 == 0:
-                lon_start = self.center_lon - (half_w / m_per_deg_lon)
-                lon_end = self.center_lon + (half_w / m_per_deg_lon)
-            else:
-                lon_start = self.center_lon + (half_w / m_per_deg_lon)
-                lon_end = self.center_lon - (half_w / m_per_deg_lon)
-                
-            wps.append([lat_i, lon_start])
-            wps.append([lat_i, lon_end])
-            
-        self.generated_waypoints = wps
-        self.accept()
-
 class GCSWindow(QMainWindow):
     def __init__(self, vehicle=None):
         super().__init__()
         self.vehicle = vehicle
-        self.waypoints = []
-        self.takeoff_point = None
-        self.landing_point = None
-        self.conn_worker = None
-        self.telemetry_thread = None
-        
-        if TTS_AVAILABLE:
-            self.tts = QTextToSpeech(self)
-        else:
-            self.tts = None
-        self.last_spoken_alert = ""
-        self.last_spoken_mode = "UNKNOWN"
-        self.was_armed = False
+        self.waypoints: List[List[float]] = []
+        self.takeoff_point: Optional[List[float]] = None
+        self.landing_point: Optional[List[float]] = None
+        self.held_keys = set()
+        self.is_map_expanded = False
+        self._home_set_on_map = False
+        self._telemetry_session_id = None
         self.was_link_lost = False
+        self.was_armed = False
+        self.last_spoken_mode = ""
+        self.last_spoken_alert = ""
         self.armed_start_time = None
         self.total_flight_dist = 0.0
         self.last_flight_coord = None
-        
-        if self.vehicle is not None:
-            from gcs.commands import _ensure_streamer
-            _ensure_streamer(self.vehicle)
 
-        self.setWindowTitle("Python GCS")
-        self.resize(1280, 800)
-        
-        # Create Tab Widget
-        self.tabs = QTabWidget()
-        self.tabs.currentChanged.connect(self._on_tab_changed)
-        self.tabs.setStyleSheet(f"""
-            QTabWidget::pane {{
-                border: 1px solid {THEME['panel_border']};
-                background-color: {THEME['bg']};
-                border-radius: 8px;
+        self.setWindowTitle("PythonGCS — Autonomous Ground Control Station for PX4")
+        self.resize(1400, 900)
+        self.setMinimumSize(1100, 720)
+        self.setStyleSheet(f"background-color: {THEME['bg']}; font-family: Google Sans Code;")
+
+        self.tts = None
+        self.voice_enabled = True
+        if TTS_AVAILABLE:
+            try:
+                self.tts = QTextToSpeech()
+            except Exception:
+                self.tts = None
+
+        self.history_time = []
+        self.history_alt = []
+        self.history_speed = []
+        self.start_time = time.monotonic()
+
+        self._build_ui()
+
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.refresh)
+        self.timer.start(500)
+
+        if self.vehicle:
+            self.on_connected(self.vehicle)
+
+    def _btn_style(self, text_color, bg_color):
+        return f"""
+            QPushButton {{
+                background-color: {bg_color}; color: {text_color};
+                border: 1px solid {text_color}; border-radius: 4px;
+                font-family: Google Sans Code; font-size: 11px; font-weight: bold;
+                padding: 4px 8px;
             }}
+            QPushButton:hover {{ background-color: {text_color}; color: #ffffff; }}
+            QPushButton:disabled {{ border-color: {THEME['panel_border']}; color: {THEME['muted']}; background-color: {THEME['bg']}; }}
+        """
+
+    def _input_style(self):
+        return f"""
+            QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit {{
+                background-color: {THEME['panel_bg']}; color: {THEME['dark_text']};
+                border: 1px solid {THEME['panel_border']}; border-radius: 4px;
+                padding: 3px 6px; font-family: Google Sans Code; font-size: 11px;
+            }}
+        """
+
+    def _pill_style(self, border_color, text_color, bg_color=None):
+        bg = f"background-color: {bg_color};" if bg_color else "background-color: transparent;"
+        return f"""
+            QLabel {{
+                border: 1.5px solid {border_color}; border-radius: 12px;
+                color: {text_color}; {bg}
+                font-family: Google Sans Code; font-size: 10px; font-weight: bold;
+                padding: 2px 10px;
+            }}
+        """
+
+    def _build_ui(self):
+        root = QWidget()
+        root.setStyleSheet(f"background-color: {THEME['bg']};")
+        self.setCentralWidget(root)
+        main_layout = QVBoxLayout(root)
+        main_layout.setContentsMargins(10, 8, 10, 8)
+        main_layout.setSpacing(8)
+
+        # 1. Top Ribbon Strip (Connection profiles, status, pills)
+        ribbon_frame = QFrame()
+        ribbon_frame.setObjectName("RibbonFrame")
+        ribbon_frame.setStyleSheet(f"#RibbonFrame {{ background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; }}")
+        rf_layout = QHBoxLayout(ribbon_frame)
+        rf_layout.setContentsMargins(12, 6, 12, 6)
+        rf_layout.setSpacing(10)
+
+        # Brand
+        brand_lbl = QLabel("PYTHON GCS")
+        brand_lbl.setStyleSheet(f"color: {THEME['primary']}; font-family: Google Sans Code; font-size: 13px; font-weight: 800; border: none; background: transparent;")
+        rf_layout.addWidget(brand_lbl)
+
+        # Connection Profile selector
+        self.profile_combo = QComboBox()
+        for name, uri in CONNECTION_PROFILES:
+            self.profile_combo.addItem(name, uri)
+        self.profile_combo.setStyleSheet(self._input_style())
+        self.profile_combo.currentIndexChanged.connect(self._on_profile_changed)
+        rf_layout.addWidget(self.profile_combo)
+
+        # Connection input
+        self.conn_input = QLineEdit("udpin:0.0.0.0:14540")
+        self.conn_input.setFixedWidth(200)
+        self.conn_input.setStyleSheet(self._input_style())
+        rf_layout.addWidget(self.conn_input)
+
+        self.conn_btn = QPushButton("CONNECT")
+        self.conn_btn.setFixedHeight(28)
+        self.conn_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.conn_btn.clicked.connect(self.on_connect_toggle)
+        rf_layout.addWidget(self.conn_btn)
+
+        self.conn_status = QLabel("DISCONNECTED")
+        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Google Sans Code; font-size: 11px; border: none;")
+        rf_layout.addWidget(self.conn_status)
+
+        rf_layout.addStretch(1)
+
+        # Status Pills
+        self.ribbon_fw_pill = QLabel("PX4 AUTOPILOT")
+        self.ribbon_fw_pill.setStyleSheet(self._pill_style(THEME['panel_border'], THEME['muted']))
+        rf_layout.addWidget(self.ribbon_fw_pill)
+
+        self.ribbon_arm_pill = QLabel("DISARMED")
+        self.ribbon_arm_pill.setStyleSheet(self._pill_style(THEME['danger'], THEME['danger']))
+        rf_layout.addWidget(self.ribbon_arm_pill)
+
+        self.ribbon_mode_pill = QLabel("MODE: UNKNOWN")
+        self.ribbon_mode_pill.setStyleSheet(self._pill_style(THEME['primary'], THEME['primary']))
+        rf_layout.addWidget(self.ribbon_mode_pill)
+
+        self.ribbon_gps_pill = QLabel("GPS: 0D (0s)")
+        self.ribbon_gps_pill.setStyleSheet(self._pill_style(THEME['muted'], THEME['dark_text']))
+        rf_layout.addWidget(self.ribbon_gps_pill)
+
+        self.ribbon_batt_pill = QLabel("BATT: ---% | 0.0V")
+        self.ribbon_batt_pill.setStyleSheet(self._pill_style(THEME['muted'], THEME['dark_text']))
+        rf_layout.addWidget(self.ribbon_batt_pill)
+
+        self.ribbon_timer_pill = QLabel("⏱ 00:00")
+        self.ribbon_timer_pill.setStyleSheet(self._pill_style(THEME['muted'], THEME['muted']))
+        rf_layout.addWidget(self.ribbon_timer_pill)
+
+        self.ribbon_dist_pill = QLabel("🚩 0 m")
+        self.ribbon_dist_pill.setStyleSheet(self._pill_style(THEME['muted'], THEME['muted']))
+        rf_layout.addWidget(self.ribbon_dist_pill)
+
+        main_layout.addWidget(ribbon_frame)
+
+        # 2. Main Tabs (FLY, PLAN, ANALYTICS, CAMERAS, SETUP)
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet(f"""
+            QTabWidget::pane {{ border: none; }}
             QTabBar::tab {{
-                background-color: {THEME['panel_border']};
-                color: {THEME['muted']};
-                font-family: Google Sans Code;
-                font-weight: bold;
-                font-size: 13px;
-                padding: 8px 20px;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
-                border: 1px solid {THEME['panel_border']};
-                border-bottom: none;
+                background-color: {THEME['panel_bg']}; color: {THEME['muted']};
+                border: 1px solid {THEME['panel_border']}; border-bottom: none;
+                border-top-left-radius: 6px; border-top-right-radius: 6px;
+                padding: 6px 16px; font-family: Google Sans Code; font-weight: bold; font-size: 11px;
                 margin-right: 4px;
             }}
             QTabBar::tab:selected {{
-                background-color: {THEME['panel_bg']};
-                color: {THEME['primary']};
-                border: 2px solid {THEME['primary']};
-                border-bottom: none;
-            }}
-            QTabBar::tab:hover {{
-                background-color: #e2e8f0;
-                color: {THEME['dark_text']};
-            }}
-        """)
-
-        # ===== Build all widgets =====
-
-        # Power Metrics
-        self.power_panel = StatPanel("POWER METRICS")
-        self.power_panel.add_row('battery', 'Battery')
-        self.power_panel.add_row('voltage', 'Voltage')
-
-        # GNSS & Spatial
-        self.gnss_panel = StatPanel("GNSS & SPATIAL")
-        self.gnss_panel.add_row('fix', 'GPS Fix')
-        self.gnss_panel.add_row('sats', 'Satellites')
-        self.gnss_panel.add_row('lat', 'Latitude')
-        self.gnss_panel.add_row('lon', 'Longitude')
-        self.gnss_panel.add_row('alt', 'Altitude')
-
-        # Safety & Alerts
-        self.alert_panel = StatPanel("SAFETY & ALERTS")
-        self.alert_panel.add_row('status', 'Safety Status')
-        self.alert_panel.add_row('alert_msg', 'Active Alerts')
-        self.alert_panel.add_row('check_link', 'Link State')
-        self.alert_panel.add_row('check_gps', 'GPS Checklist')
-        self.alert_panel.add_row('check_batt', 'Power Checklist')
-
-        self.preflight_btn = QPushButton("📋 PRE-FLIGHT CHECKLIST")
-        self.preflight_btn.setFixedHeight(30)
-        self.preflight_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
-        self.preflight_btn.clicked.connect(self.on_open_preflight_dialog)
-
-        # Attitude / Speed
-        self.attspeed_panel = StatPanel("ATTITUDE / SPEED")
-        self.attspeed_panel.add_row('roll', 'Roll')
-        self.attspeed_panel.add_row('pitch', 'Pitch')
-        self.attspeed_panel.add_row('yaw', 'Heading')
-        self.attspeed_panel.add_row('speed', 'Speed')
-
-        # Custom Arc Gauges
-        self.alt_gauge = ArcGauge("ALTITUDE", "m", 0, 120, THEME['primary'])
-        self.speed_gauge = ArcGauge("SPEED", "m/s", 0, 30, THEME['primary'])
-        self.batt_gauge = ArcGauge("BATTERY", "%", 0, 100, THEME['success'])
-        self.gps_gauge = ArcGauge("GPS SATS", "sats", 0, 20, THEME['primary'])
-
-        # New Aircraft Status Panel
-        self.aircraft_status_panel = StatPanel("AIRCRAFT STATUS")
-        self.aircraft_status_panel.add_row('pitch', 'Pitch')
-        self.aircraft_status_panel.add_row('roll', 'Roll')
-        self.aircraft_status_panel.add_row('yaw', 'Yaw')
-        self.aircraft_status_panel.add_row('mode', 'Mode')
-        self.aircraft_status_panel.add_row('throttle', 'Throttle')
-
-        # Arm button
-        self.arm_btn = QPushButton("ARM")
-        self.arm_btn.setFixedHeight(44)
-        self.arm_btn.setFont(QFont("Google Sans Code", 12, QFont.Weight.Bold))
-        self.arm_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
-        self.arm_btn.clicked.connect(self.on_arm_disarm)
-
-        # Cameras
-        self.front_cam = CameraView("FRONT VIEW CAMERA")
-        self.bottom_cam = CameraView("BOTTOM VIEW CAMERA")
-
-        # Map + 3D
-        self.map_view = MapView()
-        self.map_view.goto_requested.connect(self.on_map_goto_requested)
-        self.attitude_view = AttitudeView()
-
-        # Console
-        self.console_view = ConsoleView()
-
-        # Action buttons
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems([
-            'MANUAL', 'STABILIZED', 'ALTCTL', 'POSCTL', 'OFFBOARD',
-            'AUTO.LOITER', 'AUTO.RTL', 'AUTO.LAND', 'AUTO.TAKEOFF', 'AUTO.MISSION'
-        ])
-        self.mode_combo.setFixedHeight(34)
-        self.mode_combo.setStyleSheet(self._input_style())
-
-        self.mode_btn = QPushButton("SET MODE")
-        self.mode_btn.setFixedHeight(34)
-        self.mode_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
-        self.mode_btn.clicked.connect(self.on_set_mode)
-
-        self.alt_spin = QSpinBox()
-        self.alt_spin.setRange(1, 100)
-        self.alt_spin.setValue(10)
-        self.alt_spin.setFixedHeight(34)
-        self.alt_spin.setStyleSheet(self._input_style())
-
-        self.takeoff_btn = QPushButton("TAKEOFF")
-        self.takeoff_btn.setFixedHeight(34)
-        self.takeoff_btn.setStyleSheet(self._btn_style(THEME['warning'], THEME['panel_bg']))
-        self.takeoff_btn.clicked.connect(self.on_takeoff)
-
-        self.rtl_btn = QPushButton("RTL")
-        self.rtl_btn.setFixedHeight(34)
-        self.rtl_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
-        self.rtl_btn.clicked.connect(self.on_rtl)
-
-        self.land_btn = QPushButton("LAND")
-        self.land_btn.setFixedHeight(34)
-        self.land_btn.setStyleSheet(self._btn_style(THEME['warning'], THEME['panel_bg']))
-        self.land_btn.clicked.connect(self.on_land)
-
-        # Manual movement (sim testing: tilt the drone, watch the 3D model)
-        self.yawl_btn = QPushButton("YAW L")
-        self.yawl_btn.setFixedHeight(34)
-        self.yawl_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
-        self.yawl_btn.clicked.connect(self.on_yaw_left)
-
-        self.fwd_btn = QPushButton("FORWARD")
-        self.fwd_btn.setFixedHeight(34)
-        self.fwd_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
-        self.fwd_btn.clicked.connect(self.on_forward)
-
-        self.yawr_btn = QPushButton("YAW R")
-        self.yawr_btn.setFixedHeight(34)
-        self.yawr_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
-        self.yawr_btn.clicked.connect(self.on_yaw_right)
-
-        self.hover_btn = QPushButton("HOVER")
-        self.hover_btn.setFixedHeight(34)
-        self.hover_btn.setStyleSheet(self._btn_style(THEME['warning'], THEME['panel_bg']))
-        self.hover_btn.clicked.connect(self.on_hover)
-
-        self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; border: none; background: transparent;")
-
-        # Action panel container
-        self.action_panel = QFrame()
-        self.action_panel.setObjectName("ActionPanel")
-        self.action_panel.setStyleSheet(f"#ActionPanel {{ background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; }}")
-        
-        # Soft shadow for ActionPanel
-        shadow_ap = QGraphicsDropShadowEffect(self)
-        shadow_ap.setBlurRadius(15)
-        shadow_ap.setColor(QColor(0, 0, 0, 15))
-        shadow_ap.setOffset(0, 4)
-        self.action_panel.setGraphicsEffect(shadow_ap)
-        
-        ap = QVBoxLayout(self.action_panel)
-        ap.setContentsMargins(12, 10, 12, 10)
-        ap.setSpacing(8)
-        ap_title = QLabel("ACTION BUTTONS")
-        ap_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
-        ap.addWidget(ap_title)
-        r1 = QHBoxLayout(); r1.addWidget(self.mode_combo); r1.addWidget(self.mode_btn); ap.addLayout(r1)
-        r2 = QHBoxLayout()
-        r2.addWidget(self.alt_spin)
-        r2.addWidget(self.takeoff_btn)
-        ap.addLayout(r2)
-
-        # Quick Altitude presets
-        r2_presets = QHBoxLayout()
-        r2_presets.setSpacing(4)
-        for preset_val in [2.5, 5.0, 10.0, 20.0]:
-            p_btn = QPushButton(f"{preset_val:g}m")
-            p_btn.setFixedHeight(22)
-            p_btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {THEME['panel_bg']}; color: {THEME['muted']};
-                    border: 1px solid {THEME['panel_border']}; border-radius: 4px;
-                    font-family: Google Sans Code; font-size: 10px; font-weight: bold;
-                    padding: 1px 4px;
-                }}
-                QPushButton:hover {{
-                    background-color: {THEME['primary']}; color: #ffffff; border-color: {THEME['primary']};
-                }}
-            """)
-            p_btn.clicked.connect(lambda checked, val=preset_val: self.alt_spin.setValue(int(val)))
-            r2_presets.addWidget(p_btn)
-        ap.addLayout(r2_presets)
-        r3 = QHBoxLayout()
-        r3.addWidget(self.rtl_btn)
-        r3.addWidget(self.land_btn)
-        ap.addLayout(r3)
-
-        self.action_hold_btn = QPushButton("🛑 EMERGENCY HOLD")
-        self.action_hold_btn.setFixedHeight(30)
-        self.action_hold_btn.setStyleSheet(self._btn_style(THEME['danger'], THEME['panel_bg']))
-        self.action_hold_btn.clicked.connect(self.on_emergency_hold)
-        ap.addWidget(self.action_hold_btn)
-        r4 = QHBoxLayout()
-        r4.addWidget(self.yawl_btn)
-        r4.addWidget(self.fwd_btn)
-        r4.addWidget(self.yawr_btn)
-        r4.addWidget(self.hover_btn)
-        ap.addLayout(r4)
-        
-        self.kb_checkbox = QCheckBox("Enable Keyboard Flight (W/S/A/D/Q/E/I/K)")
-        self.kb_checkbox.setStyleSheet(f"""
-            QCheckBox {{
-                color: {THEME['muted']};
-                font-family: Google Sans Code;
-                font-size: 11px;
-                background: transparent;
-            }}
-            QCheckBox::indicator {{
-                width: 13px;
-                height: 13px;
-                border: 1px solid {THEME['panel_border']};
-                background: {THEME['panel_bg']};
-            }}
-            QCheckBox::indicator:checked {{
-                background: {THEME['primary']};
+                background-color: {THEME['primary']}; color: #ffffff;
                 border-color: {THEME['primary']};
             }}
         """)
-        ap.addWidget(self.kb_checkbox)
-        ap.addWidget(self.status_label)
 
-        # Mission planning panel container
+        self._build_fly_tab()
+        self._build_plan_tab()
+        self._build_analytics_tab()
+        self._build_cameras_tab()
+        self._build_setup_tab()
+
+        main_layout.addWidget(self.tabs, stretch=1)
+
+    def _on_profile_changed(self, idx):
+        uri = self.profile_combo.currentData()
+        if uri:
+            self.conn_input.setText(uri)
+
+    def _build_fly_tab(self):
+        fly_widget = QWidget()
+        fly_layout = QVBoxLayout(fly_widget)
+        fly_layout.setContentsMargins(0, 4, 0, 0)
+        fly_layout.setSpacing(6)
+
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(8)
+
+        # LEFT COLUMN (Gauges, Preflight, Voice)
+        self.left_col_widget = QWidget()
+        left_col = QVBoxLayout(self.left_col_widget)
+        left_col.setContentsMargins(0, 0, 0, 0)
+        left_col.setSpacing(8)
+
+        # Primary gauges card
+        gauge_card = QFrame()
+        gauge_card.setObjectName("GaugeCard")
+        gauge_card.setStyleSheet(f"#GaugeCard {{ background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; }}")
+        gc_layout = QGridLayout(gauge_card)
+        gc_layout.setContentsMargins(8, 8, 8, 8)
+        gc_layout.setSpacing(6)
+
+        self.gauge_spd = ArcGauge("SPEED", "m/s", 0, 25, THEME['primary'])
+        self.gauge_alt = ArcGauge("ALT REL", "m", 0, 100, THEME['primary'])
+        self.gauge_throttle = ArcGauge("THROTTLE", "%", 0, 100, THEME['warning'])
+        self.gauge_batt = ArcGauge("BATTERY", "%", 0, 100, THEME['success'])
+
+        gc_layout.addWidget(self.gauge_spd, 0, 0)
+        gc_layout.addWidget(self.gauge_alt, 0, 1)
+        gc_layout.addWidget(self.gauge_throttle, 1, 0)
+        gc_layout.addWidget(self.gauge_batt, 1, 1)
+        left_col.addWidget(gauge_card)
+
+        # Preflight Checklist Button
+        self.preflight_btn = QPushButton("📋 PRE-FLIGHT CHECKLIST")
+        self.preflight_btn.setFixedHeight(34)
+        self.preflight_btn.setStyleSheet(f"background-color: {THEME['panel_bg']}; color: {THEME['primary']}; border: 1.5px solid {THEME['primary']}; border-radius: 6px; font-weight: bold;")
+        self.preflight_btn.clicked.connect(self.on_open_preflight_dialog)
+        left_col.addWidget(self.preflight_btn)
+
+        # Voice Toggle Button
+        self.voice_btn = QPushButton("🔊 VOICE: ON")
+        self.voice_btn.setFixedHeight(30)
+        self.voice_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.voice_btn.clicked.connect(self.on_toggle_voice)
+        left_col.addWidget(self.voice_btn)
+
+        # Telemetry plot panel
+        self.plot_panel = TelemetryPlotPanel()
+        self.plot_panel.setFixedHeight(180)
+        left_col.addWidget(self.plot_panel)
+
+        left_col.addStretch(1)
+        self.left_col_widget.setFixedWidth(280)
+        content_layout.addWidget(self.left_col_widget)
+
+        # CENTER COLUMN (Tactical Map, Map toolbar)
+        center_col = QVBoxLayout()
+        center_col.setSpacing(6)
+
+        self.map_view = MapView()
+        self.map_view.goto_requested.connect(self.on_map_goto_requested)
+        self.map_container = PremiumViewContainer(self.map_view, "TacticalMapContainer")
+        center_col.addWidget(self.map_container, stretch=1)
+
+        # Map Toolbar
+        map_bar = QHBoxLayout()
+        map_bar.setSpacing(8)
+
+        self.load_mbtiles_btn = QPushButton("🗺️ LOAD OFFLINE MBTILES")
+        self.load_mbtiles_btn.setFixedHeight(28)
+        self.load_mbtiles_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.load_mbtiles_btn.clicked.connect(self.on_load_offline_mbtiles)
+        map_bar.addWidget(self.load_mbtiles_btn)
+
+        self.export_kml_btn = QPushButton("💾 EXPORT FLIGHT TRAIL")
+        self.export_kml_btn.setFixedHeight(28)
+        self.export_kml_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.export_kml_btn.clicked.connect(self.on_export_flight_trail)
+        map_bar.addWidget(self.export_kml_btn)
+
+        self.expand_map_btn = QPushButton("⛶ EXPAND MAP")
+        self.expand_map_btn.setFixedHeight(28)
+        self.expand_map_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.expand_map_btn.clicked.connect(self.on_toggle_expand_map)
+        map_bar.addWidget(self.expand_map_btn)
+
+        center_col.addLayout(map_bar)
+        content_layout.addLayout(center_col, stretch=1)
+
+        # RIGHT COLUMN (3D Attitude, Aircraft Status, Keyboard flight, Commands)
+        self.right_col_widget = QWidget()
+        right_col = QVBoxLayout(self.right_col_widget)
+        right_col.setContentsMargins(0, 0, 0, 0)
+        right_col.setSpacing(8)
+
+        # Attitude view
+        self.attitude_view = AttitudeView()
+        self.attitude_view.setFixedHeight(220)
+        self.att_container = PremiumViewContainer(self.attitude_view, "AttitudeContainer")
+        right_col.addWidget(self.att_container)
+
+        # Action Panel: Mode dropdown, Arm, Takeoff, Land, RTL, Hold
+        action_card = QFrame()
+        action_card.setObjectName("ActionCard")
+        action_card.setStyleSheet(f"#ActionCard {{ background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; }}")
+        ac_layout = QVBoxLayout(action_card)
+        ac_layout.setContentsMargins(10, 8, 10, 8)
+        ac_layout.setSpacing(6)
+
+        ac_title = QLabel("FLIGHT EXECUTION")
+        ac_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold;")
+        ac_layout.addWidget(ac_title)
+
+        # Mode row
+        mode_row = QHBoxLayout()
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems([
+            "HOLD", "POSCTL", "ALTCTL", "STABILIZED", "MANUAL",
+            "OFFBOARD", "AUTO.TAKEOFF", "AUTO.LOITER", "AUTO.RTL",
+            "AUTO.LAND", "AUTO.MISSION"
+        ])
+        self.mode_combo.setStyleSheet(self._input_style())
+        self.mode_btn = QPushButton("SET MODE")
+        self.mode_btn.setFixedHeight(26)
+        self.mode_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.mode_btn.clicked.connect(self.on_set_mode)
+        mode_row.addWidget(self.mode_combo, stretch=1)
+        mode_row.addWidget(self.mode_btn)
+        ac_layout.addLayout(mode_row)
+
+        # Arm & Takeoff row
+        arm_row = QHBoxLayout()
+        self.arm_btn = QPushButton("ARM")
+        self.arm_btn.setFixedHeight(30)
+        self.arm_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
+        self.arm_btn.clicked.connect(self.on_arm_disarm)
+
+        self.alt_spin = QDoubleSpinBox()
+        self.alt_spin.setRange(2.0, 100.0)
+        self.alt_spin.setValue(5.0)
+        self.alt_spin.setSuffix(" m")
+        self.alt_spin.setStyleSheet(self._input_style())
+
+        self.takeoff_btn = QPushButton("TAKEOFF")
+        self.takeoff_btn.setFixedHeight(30)
+        self.takeoff_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.takeoff_btn.clicked.connect(self.on_takeoff)
+
+        arm_row.addWidget(self.arm_btn)
+        arm_row.addWidget(self.alt_spin)
+        arm_row.addWidget(self.takeoff_btn)
+        ac_layout.addLayout(arm_row)
+
+        # RTL, LAND, EMERGENCY HOLD
+        rec_row = QHBoxLayout()
+        self.rtl_btn = QPushButton("RTL")
+        self.rtl_btn.setFixedHeight(28)
+        self.rtl_btn.setStyleSheet(self._btn_style(THEME['warning'], THEME['panel_bg']))
+        self.rtl_btn.clicked.connect(self.on_rtl)
+
+        self.land_btn = QPushButton("LAND")
+        self.land_btn.setFixedHeight(28)
+        self.land_btn.setStyleSheet(self._btn_style(THEME['warning'], THEME['panel_bg']))
+        self.land_btn.clicked.connect(self.on_land)
+
+        self.hold_btn = QPushButton("EMERGENCY HOLD")
+        self.hold_btn.setFixedHeight(28)
+        self.hold_btn.setStyleSheet(self._btn_style(THEME['danger'], THEME['panel_bg']))
+        self.hold_btn.clicked.connect(self.on_emergency_hold)
+
+        rec_row.addWidget(self.rtl_btn)
+        rec_row.addWidget(self.land_btn)
+        rec_row.addWidget(self.hold_btn)
+        ac_layout.addLayout(rec_row)
+
+        # Offboard Quick Targets (speeds agree with code & README: 2.0 m/s and 0.5 rad/s)
+        off_row = QHBoxLayout()
+        self.fwd_btn = QPushButton("FWD (2 m/s)")
+        self.fwd_btn.setFixedHeight(26)
+        self.fwd_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.fwd_btn.clicked.connect(self.on_forward)
+
+        self.yawl_btn = QPushButton("YAW L (-0.5)")
+        self.yawl_btn.setFixedHeight(26)
+        self.yawl_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.yawl_btn.clicked.connect(self.on_yaw_left)
+
+        self.yawr_btn = QPushButton("YAW R (+0.5)")
+        self.yawr_btn.setFixedHeight(26)
+        self.yawr_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.yawr_btn.clicked.connect(self.on_yaw_right)
+
+        self.hover_btn = QPushButton("HOVER (0 m/s)")
+        self.hover_btn.setFixedHeight(26)
+        self.hover_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
+        self.hover_btn.clicked.connect(self.on_hover)
+
+        off_row.addWidget(self.fwd_btn)
+        off_row.addWidget(self.yawl_btn)
+        off_row.addWidget(self.yawr_btn)
+        off_row.addWidget(self.hover_btn)
+        ac_layout.addLayout(off_row)
+
+        # Keyboard Flight Enable Checkbox
+        self.kb_checkbox = QCheckBox("Enable Keyboard Flight (WASD / QE / IK / Space)")
+        self.kb_checkbox.setStyleSheet(f"color: {THEME['primary']}; font-weight: bold; font-size: 11px;")
+        self.kb_checkbox.toggled.connect(self.on_kb_toggle)
+        ac_layout.addWidget(self.kb_checkbox)
+
+        self.status_label = QLabel("Ready.")
+        self.status_label.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px;")
+        ac_layout.addWidget(self.status_label)
+
+        right_col.addWidget(action_card)
+        right_col.addStretch(1)
+        self.right_col_widget.setFixedWidth(330)
+        content_layout.addWidget(self.right_col_widget)
+
+        fly_layout.addLayout(content_layout, stretch=1)
+
+        # Slim console view at bottom
+        self.console_view = ConsoleView()
+        self.console_view.setFixedHeight(110)
+        fly_layout.addWidget(self.console_view, stretch=0)
+
+        self.tabs.addTab(fly_widget, "FLY")
+
+
+    def _build_plan_tab(self):
+        plan_widget = QWidget()
+        plan_layout = QHBoxLayout(plan_widget)
+        plan_layout.setContentsMargins(8, 8, 8, 8)
+        plan_layout.setSpacing(8)
+
+        self.plan_map_view = MapView()
+        self.plan_map_container = PremiumViewContainer(self.plan_map_view, "PlanMapContainer")
+        plan_layout.addWidget(self.plan_map_container, stretch=3)
+
+        # Mission planning side panel
         self.mission_panel = QFrame()
         self.mission_panel.setObjectName("MissionPanel")
         self.mission_panel.setStyleSheet(f"#MissionPanel {{ background-color: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; }}")
-        
-        # Soft shadow for MissionPanel
-        shadow_mp = QGraphicsDropShadowEffect(self)
-        shadow_mp.setBlurRadius(15)
-        shadow_mp.setColor(QColor(0, 0, 0, 15))
-        shadow_mp.setOffset(0, 4)
-        self.mission_panel.setGraphicsEffect(shadow_mp)
-        
         mp = QVBoxLayout(self.mission_panel)
         mp.setContentsMargins(12, 10, 12, 10)
         mp.setSpacing(6)
-        
+
         mp_title = QLabel("MISSION PLANNING")
-        mp_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        mp_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold;")
         mp.addWidget(mp_title)
-        
+
         self.wp_list = QListWidget()
         self.wp_list.setStyleSheet(f"""
             QListWidget {{
@@ -803,19 +667,50 @@ class GCSWindow(QMainWindow):
             }}
         """)
         mp.addWidget(self.wp_list)
-        
+
+        # Waypoint Edit Action Row (Reorder, Edit Alt, Delete)
+        wp_edit_row = QHBoxLayout()
+        wp_edit_row.setSpacing(4)
+
+        self.wp_up_btn = QPushButton("▲ UP")
+        self.wp_up_btn.setFixedHeight(24)
+        self.wp_up_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.wp_up_btn.clicked.connect(self.on_move_wp_up)
+
+        self.wp_down_btn = QPushButton("▼ DOWN")
+        self.wp_down_btn.setFixedHeight(24)
+        self.wp_down_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.wp_down_btn.clicked.connect(self.on_move_wp_down)
+
+        self.wp_edit_alt_btn = QPushButton("✎ ALT")
+        self.wp_edit_alt_btn.setFixedHeight(24)
+        self.wp_edit_alt_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+        self.wp_edit_alt_btn.clicked.connect(self.on_edit_wp_alt)
+
+        self.wp_del_btn = QPushButton("✕ DEL")
+        self.wp_del_btn.setFixedHeight(24)
+        self.wp_del_btn.setStyleSheet(self._btn_style(THEME['danger'], THEME['panel_bg']))
+        self.wp_del_btn.clicked.connect(self.on_delete_wp)
+
+        wp_edit_row.addWidget(self.wp_up_btn)
+        wp_edit_row.addWidget(self.wp_down_btn)
+        wp_edit_row.addWidget(self.wp_edit_alt_btn)
+        wp_edit_row.addWidget(self.wp_del_btn)
+        mp.addLayout(wp_edit_row)
+
         self.wp_progress_label = QLabel("Active Waypoint: ---")
-        self.wp_progress_label.setStyleSheet(f"color: {THEME['primary']}; font-family: Google Sans Code; font-size: 11px; border: none; background: transparent;")
+        self.wp_progress_label.setStyleSheet(f"color: {THEME['primary']}; font-family: Google Sans Code; font-size: 11px;")
         mp.addWidget(self.wp_progress_label)
-        
+
+        # Sync / Upload / Clear
         m_row = QHBoxLayout()
         m_row.setSpacing(6)
-        
+
         self.sync_btn = QPushButton("SYNC MAP")
         self.sync_btn.setFixedHeight(30)
         self.sync_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.sync_btn.clicked.connect(self.on_sync_map)
-        
+
         self.upload_btn = QPushButton("UPLOAD")
         self.upload_btn.setFixedHeight(30)
         self.upload_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
@@ -825,25 +720,26 @@ class GCSWindow(QMainWindow):
         self.clear_btn.setFixedHeight(30)
         self.clear_btn.setStyleSheet(self._btn_style(THEME['danger'], THEME['panel_bg']))
         self.clear_btn.clicked.connect(self.on_clear_mission)
-        
+
         m_row.addWidget(self.sync_btn)
         m_row.addWidget(self.upload_btn)
         m_row.addWidget(self.clear_btn)
         mp.addLayout(m_row)
 
+        # Import / Export
         m_row2 = QHBoxLayout()
         m_row2.setSpacing(6)
-        
-        self.import_btn = QPushButton("IMPORT")
+
+        self.import_btn = QPushButton("IMPORT .PLAN")
         self.import_btn.setFixedHeight(30)
         self.import_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.import_btn.clicked.connect(self.on_import_mission)
-        
-        self.export_btn = QPushButton("EXPORT")
+
+        self.export_btn = QPushButton("EXPORT .PLAN")
         self.export_btn.setFixedHeight(30)
         self.export_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.export_btn.clicked.connect(self.on_export_mission)
-        
+
         m_row2.addWidget(self.import_btn)
         m_row2.addWidget(self.export_btn)
         mp.addLayout(m_row2)
@@ -851,7 +747,7 @@ class GCSWindow(QMainWindow):
         # Cruise Altitude and Survey Grid
         alt_row = QHBoxLayout()
         alt_lbl = QLabel("CRUISE ALT:")
-        alt_lbl.setStyleSheet(f"color: {THEME['primary']}; font-family: Google Sans Code; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        alt_lbl.setStyleSheet(f"color: {THEME['primary']}; font-family: Google Sans Code; font-size: 11px; font-weight: bold;")
         self.mission_alt_spin = QDoubleSpinBox()
         self.mission_alt_spin.setRange(2.0, 150.0)
         self.mission_alt_spin.setValue(10.0)
@@ -861,7 +757,7 @@ class GCSWindow(QMainWindow):
         alt_row.addWidget(self.mission_alt_spin)
         mp.addLayout(alt_row)
 
-        self.survey_btn = QPushButton("🗺️ SURVEY GRID GENERATOR")
+        self.survey_btn = QPushButton("▦ SURVEY GRID GENERATOR")
         self.survey_btn.setFixedHeight(30)
         self.survey_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
         self.survey_btn.clicked.connect(self.on_open_survey_dialog)
@@ -881,532 +777,86 @@ class GCSWindow(QMainWindow):
         """)
         mp.addWidget(self.mission_stats_label)
 
-        self.start_btn = QPushButton("START MISSION")
+        self.start_btn = QPushButton("START MISSION (AUTO.MISSION)")
         self.start_btn.setFixedHeight(34)
-        self.start_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
+        self.start_btn.setStyleSheet(f"background-color: {THEME['success']}; color: #ffffff; font-weight: bold; border-radius: 4px;")
         self.start_btn.clicked.connect(self.on_start_mission)
+        self.start_btn.setEnabled(False) # Enabled only after confirmed mission upload
         mp.addWidget(self.start_btn)
 
-        # ===== FLY Tab Layout =====
-        fly_widget = QWidget()
-        fly_widget.setObjectName("FlyTab")
-        fly_widget.setStyleSheet(f"#FlyTab {{ background-color: {THEME['bg']}; }}")
-        fly_layout = QVBoxLayout(fly_widget)
-        fly_layout.setContentsMargins(6, 6, 6, 6)
-        fly_layout.setSpacing(6)
-
-        # Initialize telemetry historical lists
-        self.history_time = []
-        self.history_alt = []
-        self.history_speed = []
-        self.start_time = time.time()
-        self.held_keys = set()
-
-        # Real-time Plotting
-        self.plot_panel = TelemetryPlotPanel()
-
-        # Rebuild FLY tab into a 3-column dashboard
-        dashboard_layout = QHBoxLayout()
-        dashboard_layout.setSpacing(8)
-
-        # LEFT column: Arm, Action Buttons, and Safety & Alerts
-        left_col = QVBoxLayout()
-        left_col.setSpacing(8)
-        left_col.addWidget(self.alert_panel, stretch=0)
-        left_col.addWidget(self.preflight_btn, stretch=0)
-        left_col.addWidget(self.action_panel, stretch=0)
-        left_col.addWidget(self.arm_btn, stretch=0)
-        left_col.addStretch(1)
-
-        # CENTER column: Full-Height Map and quick action bar
-        center_col = QVBoxLayout()
-        center_col.setSpacing(6)
-        
-        self.map_container_widget = PremiumViewContainer(self.map_view, "MapContainer")
-        center_col.addWidget(self.map_container_widget, stretch=1)
-        
-        map_bar = QHBoxLayout()
-        map_bar.setSpacing(6)
-        
-        self.download_map_btn = QPushButton("💾 CACHE OFFLINE MAP")
-        self.download_map_btn.setFixedHeight(28)
-        self.download_map_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
-        self.download_map_btn.clicked.connect(self.on_download_offline_area)
-        map_bar.addWidget(self.download_map_btn)
-
-        self.export_kml_btn = QPushButton("🌐 EXPORT FLIGHT TRAIL (KML)")
-        self.export_kml_btn.setFixedHeight(28)
-        self.export_kml_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
-        self.export_kml_btn.clicked.connect(self.on_export_flight_trail)
-        map_bar.addWidget(self.export_kml_btn)
-
-        self.expand_map_btn = QPushButton("⛶ EXPAND MAP")
-        self.expand_map_btn.setFixedHeight(28)
-        self.expand_map_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
-        self.expand_map_btn.clicked.connect(self.on_toggle_expand_map)
-        map_bar.addWidget(self.expand_map_btn)
-
-        center_col.addLayout(map_bar)
-
-        # RIGHT column: Telemetry Gauges, Aircraft Status, and 3D Attitude
-        right_col = QVBoxLayout()
-        right_col.setSpacing(8)
-
-        # TELEMETRY card with 2x2 grid of gauges
-        self.telemetry_card = QFrame()
-        self.telemetry_card.setObjectName("TelemetryCard")
-        self.telemetry_card.setStyleSheet(f"""
-            #TelemetryCard {{
-                background-color: {THEME['panel_bg']};
-                border: 1px solid {THEME['panel_border']};
-                border-radius: 10px;
-            }}
-        """)
-        shadow_tc = QGraphicsDropShadowEffect(self)
-        shadow_tc.setBlurRadius(15)
-        shadow_tc.setColor(QColor(0, 0, 0, 15))
-        shadow_tc.setOffset(0, 4)
-        self.telemetry_card.setGraphicsEffect(shadow_tc)
-        
-        tc_layout = QVBoxLayout(self.telemetry_card)
-        tc_layout.setContentsMargins(12, 10, 12, 10)
-        tc_layout.setSpacing(6)
-        
-        tc_title = QLabel("TELEMETRY")
-        tc_title.setStyleSheet(f"color: {THEME['primary']}; font-size: 11px; font-weight: bold; border: none; background: transparent;")
-        tc_layout.addWidget(tc_title)
-        
-        grid_widget = QWidget()
-        grid_widget.setStyleSheet("background: transparent;")
-        grid_layout = QGridLayout(grid_widget)
-        grid_layout.setContentsMargins(0, 0, 0, 0)
-        grid_layout.setSpacing(8)
-        
-        grid_layout.addWidget(self.alt_gauge, 0, 0)
-        grid_layout.addWidget(self.speed_gauge, 0, 1)
-        grid_layout.addWidget(self.batt_gauge, 1, 0)
-        grid_layout.addWidget(self.gps_gauge, 1, 1)
-        tc_layout.addWidget(grid_widget)
-
-        right_col.addWidget(self.telemetry_card, stretch=0)
-        
-        self.attitude_container_widget = PremiumViewContainer(self.attitude_view, "AttitudeContainer")
-        right_col.addWidget(self.attitude_container_widget, stretch=1)
-
-        # Wrap columns in QWidget for PiP / Expand Map toggling
-        self.left_col_widget = QWidget()
-        self.left_col_widget.setLayout(left_col)
-
-        self.right_col_widget = QWidget()
-        self.right_col_widget.setLayout(right_col)
-
-        dashboard_layout.addWidget(self.left_col_widget, stretch=2)
-        dashboard_layout.addLayout(center_col, stretch=5)
-        dashboard_layout.addWidget(self.right_col_widget, stretch=3)
-
-        fly_layout.addLayout(dashboard_layout, stretch=8)
-        
-        # Horizontal slim strip for console at the bottom
-        self.console_view.setFixedHeight(110)
-        fly_layout.addWidget(self.console_view, stretch=0)
-
-        self.tabs.addTab(fly_widget, "FLY")
-
-        # ===== PLAN Tab Layout =====
-        plan_widget = QWidget()
-        plan_widget.setObjectName("PlanTab")
-        plan_widget.setStyleSheet(f"#PlanTab {{ background-color: {THEME['bg']}; }}")
-        plan_layout = QHBoxLayout(plan_widget)
-        plan_layout.setContentsMargins(8, 8, 8, 8)
-        plan_layout.setSpacing(8)
-        
-        self.plan_map_view = MapView()
-        self.plan_map_container = PremiumViewContainer(self.plan_map_view, "PlanMapContainer")
-        plan_layout.addWidget(self.plan_map_container, stretch=3)
         plan_layout.addWidget(self.mission_panel, stretch=1)
         self.tabs.addTab(plan_widget, "PLAN")
 
-        # ===== ANALYTICS & SENSORS Tab Layout =====
+    def _build_analytics_tab(self):
         analytics_widget = QWidget()
-        analytics_widget.setObjectName("AnalyticsTab")
-        analytics_widget.setStyleSheet(f"#AnalyticsTab {{ background-color: {THEME['bg']}; }}")
         analytics_layout = QHBoxLayout(analytics_widget)
         analytics_layout.setContentsMargins(8, 8, 8, 8)
         analytics_layout.setSpacing(10)
 
-        analytics_layout.addWidget(self.plot_panel, stretch=3)
-        
+        # Left: Strip charts
+        self.analytics_plot_panel = TelemetryPlotPanel()
+        analytics_layout.addWidget(self.analytics_plot_panel, stretch=2)
+
+        # Right: Sensor diagnostics panels
         analytics_side = QVBoxLayout()
         analytics_side.setSpacing(8)
-        analytics_side.addWidget(self.aircraft_status_panel, stretch=0)
-        analytics_side.addWidget(self.power_panel, stretch=0)
-        analytics_side.addWidget(self.gnss_panel, stretch=0)
+
+        # Power panel
+        self.power_panel = StatPanel("POWER & BATTERY TELEMETRY", [
+            ('battery', "Battery Remaining", "%"),
+            ('voltage', "Total Voltage", "V"),
+            ('cells', "Cell Balance", ""),
+            ('throttle', "Throttle Level", "%")
+        ])
+        analytics_side.addWidget(self.power_panel)
+
+        # GNSS panel
+        self.gnss_panel = StatPanel("GNSS NAVIGATION TELEMETRY", [
+            ('fix', "Fix Type", ""),
+            ('sats', "Satellites Visible", ""),
+            ('eph', "HDOP Precision", "m"),
+            ('alt_rel', "Altitude (Launch Rel)", "m"),
+            ('alt_amsl', "Altitude (AMSL)", "m")
+        ])
+        analytics_side.addWidget(self.gnss_panel)
+
+        # MAVLink Link diagnostics panel
+        self.link_panel = StatPanel("MAVLINK LINK & SENSOR DIAGNOSTICS", [
+            ('msg_rate', "Downlink Rate", "Hz"),
+            ('loss_pct', "Packet Loss", "%"),
+            ('packets', "Packets Rcvd / Lost", ""),
+            ('vibration', "IMU Vibration (x,y,z)", ""),
+            ('clipping', "Vibration Clipping", "")
+        ])
+        analytics_side.addWidget(self.link_panel)
+
         analytics_side.addStretch(1)
         analytics_layout.addLayout(analytics_side, stretch=1)
-
         self.tabs.addTab(analytics_widget, "ANALYTICS")
 
-        # ===== CAMERAS Tab Layout =====
+    def _build_cameras_tab(self):
         cameras_widget = QWidget()
-        cameras_widget.setObjectName("CamerasTab")
-        cameras_widget.setStyleSheet(f"#CamerasTab {{ background-color: {THEME['bg']}; }}")
         cameras_layout = QHBoxLayout(cameras_widget)
         cameras_layout.setContentsMargins(8, 8, 8, 8)
         cameras_layout.setSpacing(8)
+        self.front_cam = CameraView("FRONT CAMERA FEED (RTSP/MJPEG - CONFIGURE SOURCE)")
+        self.bottom_cam = CameraView("BOTTOM CAMERA FEED (RTSP/MJPEG - CONFIGURE SOURCE)")
         cameras_layout.addWidget(self.front_cam, stretch=1)
         cameras_layout.addWidget(self.bottom_cam, stretch=1)
         self.tabs.addTab(cameras_widget, "CAMERAS")
 
-        # ===== SETUP Tab Layout =====
+    def _build_setup_tab(self):
         self.setup_view = SetupView(self.vehicle)
-        self.setup_view.setObjectName("SetupTab")
-        self.setup_view.setStyleSheet(f"#SetupTab {{ background-color: {THEME['bg']}; }}")
         self.tabs.addTab(self.setup_view, "SETUP")
 
-        # ===== Assemble Central Layout =====
-        root = QWidget()
-        root.setStyleSheet(f"background-color: {THEME['bg']};")
-        self.setCentralWidget(root)
-        outer = QVBoxLayout(root)
-        outer.setContentsMargins(8, 8, 8, 8)
-
-        # Connection Panel
-        self.conn_panel = QFrame()
-        self.conn_panel.setObjectName("ConnPanel")
-        self.conn_panel.setStyleSheet(f"#ConnPanel {{ background-color: {THEME['panel_bg']}; border-radius: 10px; border: 1px solid {THEME['panel_border']}; }}")
-        self.conn_panel.setFixedHeight(50)
-        
-        # Soft shadow for ConnPanel
-        shadow_conn = QGraphicsDropShadowEffect(self)
-        shadow_conn.setBlurRadius(12)
-        shadow_conn.setColor(QColor(0, 0, 0, 15))
-        shadow_conn.setOffset(0, 3)
-        self.conn_panel.setGraphicsEffect(shadow_conn)
-        
-        conn_layout = QHBoxLayout(self.conn_panel)
-        conn_layout.setContentsMargins(15, 5, 15, 5)
-        conn_layout.setSpacing(10)
-        
-        conn_lbl = QLabel("CONNECTION:")
-        conn_lbl.setStyleSheet(f"color: {THEME['primary']}; font-family: Google Sans Code; font-weight: bold; font-size: 12px; border: none; background: transparent;")
-        conn_layout.addWidget(conn_lbl)
-        
-        self.conn_input = QLineEdit()
-        self.conn_input.setText("udpin:0.0.0.0:14540")
-        self.conn_input.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {THEME['panel_bg']}; color: {THEME['dark_text']};
-                border: 1px solid {THEME['panel_border']}; border-radius: 4px;
-                padding: 4px 8px; font-family: Google Sans Code; font-size: 12px;
-            }}
-        """)
-        conn_layout.addWidget(self.conn_input, stretch=1)
-        
-        self.conn_btn = QPushButton("CONNECT")
-        self.conn_btn.setFixedWidth(120)
-        self.conn_btn.setFixedHeight(30)
-        self.conn_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
-        self.conn_btn.clicked.connect(self.on_connect_toggle)
-        conn_layout.addWidget(self.conn_btn)
-        
-        self.conn_status = QLabel("DISCONNECTED")
-        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none; background: transparent;")
-        conn_layout.addWidget(self.conn_status)
-
-        outer.addWidget(self.conn_panel)
-        outer.addWidget(self.tabs)
-
-        # ===== Refresh timer =====
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.refresh)
-        self.timer.start(500)
-
-        # Initialize connection states
-        if self.vehicle is not None:
-            self.on_connected(self.vehicle)
-        else:
-            self.disconnect_vehicle()
-
-    # ---- styling helpers ----
-    def _btn_style(self, color, bg):
-        return f"""
-            QPushButton {{
-                background-color: {bg}; color: {color};
-                border: 2px solid {color}; border-radius: 6px;
-                font-family: Google Sans Code; font-weight: bold;
-            }}
-            QPushButton:hover {{ background-color: {color}; color: {bg}; }}
-            QPushButton:disabled {{ border-color: #cbd5e1; color: #cbd5e1; }}
-        """
-
-    def _input_style(self):
-        return f"""
-            QComboBox, QSpinBox {{
-                background-color: {THEME['panel_bg']}; color: {THEME['dark_text']};
-                border: 1px solid {THEME['panel_border']}; border-radius: 4px;
-                padding: 4px 8px; font-family: Google Sans Code; font-size: 12px;
-            }}
-            QComboBox QAbstractItemView {{
-                background-color: {THEME['panel_bg']}; color: {THEME['dark_text']};
-                selection-background-color: {THEME['panel_border']};
-            }}
-        """
-
-    
-    def _pill_style(self, border_color, text_color, bg="#ffffff"):
-        return f"""
-            QLabel {{
-                background-color: {bg};
-                color: {text_color};
-                border: 1.5px solid {border_color};
-                border-radius: 6px;
-                padding: 3px 8px;
-                font-family: Google Sans Code;
-                font-weight: bold;
-                font-size: 11px;
-            }}
-        """
-
-    def on_emergency_hold(self):
-        if not self.vehicle:
-            return
-        from gcs.commands import emergency_hold
-        threading.Thread(target=emergency_hold, args=(self.vehicle,), daemon=True).start()
-        self.set_status("EMERGENCY HOLD: Loitering in place, velocity zeroed!")
-        if self.tts and getattr(self, 'voice_enabled', True):
-            self.tts.say("Emergency hold engaged.")
-
-    def on_map_goto_requested(self, lat, lon):
-        if not self.vehicle:
-            self.set_status("Guided Fly-To failed: No vehicle connection.")
-            return
-        curr_alt = telemetry_data.get('alt', 10.0)
-        target_alt = max(5.0, curr_alt)
-        reply = QMessageBox.question(
-            self, "Guided Fly To Here",
-            f"Fly vehicle to clicked position?\n\nLatitude: {lat:.6f}\nLongitude: {lon:.6f}\nTarget Altitude: {target_alt:.1f} m AGL",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            from gcs.commands import goto
-            threading.Thread(target=goto, args=(self.vehicle, lat, lon, target_alt), daemon=True).start()
-            self.set_status(f"Guided target dispatched to ({lat:.5f}, {lon:.5f}) @ {target_alt:.1f}m")
-            if self.tts and getattr(self, 'voice_enabled', True):
-                self.tts.say("Flying to guided waypoint.")
-
-    
-    def _on_tab_changed(self, index):
-        # Invalidate Leaflet maps when switching tabs to prevent black screens
-        if index == 0:
-            self.map_view.page().runJavaScript("if (typeof map !== 'undefined') setTimeout(function(){ map.invalidateSize(); }, 60);")
-        elif index == 1:
-            self.plan_map_view.page().runJavaScript("if (typeof map !== 'undefined') setTimeout(function(){ map.invalidateSize(); }, 60);")
-
-    def on_connect_toggle(self):
-        if self.vehicle is not None:
-            self.disconnect_vehicle()
-        else:
-            connection_string = self.conn_input.text().strip()
-            if not connection_string:
-                self.set_status("Error: Connection string is empty!")
-                return
-            
-            self.set_status("Connecting to vehicle...")
-            self.conn_btn.setText("CONNECTING...")
-            self.conn_btn.setEnabled(False)
-            self.conn_input.setEnabled(False)
-            self.conn_status.setText("CONNECTING")
-            self.conn_status.setStyleSheet(f"color: {THEME['warning']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
-            
-            self.conn_worker = ConnectionWorker(connection_string)
-            self.conn_worker.connected.connect(self.on_connected)
-            self.conn_worker.failed.connect(self.on_connection_failed)
-            self.conn_worker.start()
-
-    def on_connected(self, vehicle):
-        self.vehicle = vehicle
-        self.setup_view.set_vehicle(vehicle)
-        
-        from gcs.commands import _ensure_streamer
-        _ensure_streamer(self.vehicle)
-        
-        from gcs.connection import request_telemetry
-        from gcs.telemetry import read_telemetry
-        try:
-            request_telemetry(self.vehicle)
-            import gcs.telemetry as telemetry
-            telemetry.telemetry_active = True
-            
-            self.telemetry_thread = threading.Thread(target=read_telemetry, args=(self.vehicle,), daemon=True)
-            self.telemetry_thread.start()
-        except Exception as e:
-            self.set_status(f"Telemetry start failed: {e}")
-            
-        self.set_status("Connected to vehicle!")
-        self.conn_btn.setText("DISCONNECT")
-        self.conn_btn.setEnabled(True)
-        self.conn_input.setEnabled(False)
-        self.conn_status.setText("CONNECTED")
-        self.conn_status.setStyleSheet(f"color: {THEME['success']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
-        self.set_controls_enabled(True)
-
-        # Automatically request all parameters upon connection
-        from gcs.commands import request_all_parameters
-        threading.Thread(target=request_all_parameters, args=(self.vehicle,), daemon=True).start()
-
-    def on_connection_failed(self, error_msg):
-        self.set_status(f"Connection failed: {error_msg}")
-        self.disconnect_vehicle()
-
-    def disconnect_vehicle(self):
-        if self.conn_worker is not None:
-            if self.conn_worker:
-                self.conn_worker.stop()
-                self.conn_worker.wait()
-            
-        from gcs.telemetry_logger import logger_instance
-        logger_instance.stop()
-            
-        import gcs.telemetry as telemetry
-        telemetry.telemetry_active = False
-        telemetry_data['last_heartbeat_time'] = 0.0
-        telemetry_data['prearm_fail'] = ""
-        
-        stop_streamer()
-        reset_offboard_targets()
-        
-        if self.vehicle is not None:
-            try:
-                self.vehicle.close()
-            except Exception:
-                pass
-            self.vehicle = None
-            
-        if hasattr(self, 'setup_view'):
-            self.setup_view.set_vehicle(None)
-        
-        self.history_time = []
-        self.history_alt = []
-        self.history_speed = []
-        self.start_time = time.time()
-        self.held_keys.clear()
-        if hasattr(self, 'plot_panel'):
-            self.plot_panel.plot_widget.clear()
-            self.plot_panel.alt_curve = self.plot_panel.plot_widget.plot(pen=pg.mkPen(THEME['primary'], width=1.5))
-            self.plot_panel.speed_curve = self.plot_panel.plot_widget.plot(pen=pg.mkPen(THEME['warning'], width=1.5))
-
-        self.set_status("Disconnected.")
-        self.conn_btn.setText("CONNECT")
-        self.conn_btn.setEnabled(True)
-        self.conn_input.setEnabled(True)
-        self.conn_status.setText("DISCONNECTED")
-        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
-        self.set_controls_enabled(False)
-
-    def set_controls_enabled(self, enabled):
-        self.arm_btn.setEnabled(enabled)
-        self.mode_btn.setEnabled(enabled)
-        self.takeoff_btn.setEnabled(enabled)
-        self.rtl_btn.setEnabled(enabled)
-        self.land_btn.setEnabled(enabled)
-        self.yawl_btn.setEnabled(enabled)
-        self.fwd_btn.setEnabled(enabled)
-        self.yawr_btn.setEnabled(enabled)
-        self.hover_btn.setEnabled(enabled)
-        self.sync_btn.setEnabled(enabled)
-        self.clear_btn.setEnabled(enabled)
-        self.upload_btn.setEnabled(enabled)
-        self.start_btn.setEnabled(enabled)
-        self.import_btn.setEnabled(enabled)
-        self.export_btn.setEnabled(enabled)
-        self.kb_checkbox.setEnabled(enabled)
-
-    # ---- command handlers ----
-    def on_arm_disarm(self):
-        if telemetry_data['armed']:
-            threading.Thread(target=disarm, args=(self.vehicle,), daemon=True).start()
-            self.set_status("Disarm command sent...")
-        else:
-            threading.Thread(target=arm, args=(self.vehicle,), daemon=True).start()
-            self.set_status("Arm command sent...")
-
-    def on_set_mode(self):
-        mode = self.mode_combo.currentText()
-        threading.Thread(target=set_mode, args=(self.vehicle, mode), daemon=True).start()
-        self.set_status(f"Setting mode to {mode}...")
-
-    def on_takeoff(self):
-        alt = self.alt_spin.value()
-        threading.Thread(target=takeoff, args=(self.vehicle, alt), daemon=True).start()
-        self.set_status(f"Takeoff sequence initiated — target {alt}m")
-
-    def on_rtl(self):
-        threading.Thread(target=set_mode, args=(self.vehicle, 'AUTO.RTL'), daemon=True).start()
-        self.set_status("RTL command sent...")
-
-    def on_land(self):
-        threading.Thread(target=set_mode, args=(self.vehicle, 'AUTO.LAND'), daemon=True).start()
-        self.set_status("LAND command sent...")
-
-    def ensure_offboard(self):
-        if not self.vehicle:
-            return
-        current_mode = telemetry_data.get('mode', 'UNKNOWN')
-        if current_mode != 'OFFBOARD':
-            self.mode_combo.setCurrentText('OFFBOARD')
-            telemetry_data['mode'] = 'OFFBOARD'
-            threading.Thread(target=set_mode, args=(self.vehicle, 'OFFBOARD'), daemon=True).start()
-            self.set_status("Auto-switching to OFFBOARD mode...")
-
-    def on_forward(self):
-        self.ensure_offboard()
-        set_offboard_targets(vx=2.0, yaw_rate=0.0)
-        self.set_status("Offboard target: Forward (5.0 m/s)")
-
-    def on_yaw_left(self):
-        self.ensure_offboard()
-        set_offboard_targets(vx=0.0, yaw_rate=-0.5)
-        self.set_status("Offboard target: Yaw Left (-0.5 rad/s)")
-
-    def on_yaw_right(self):
-        self.ensure_offboard()
-        set_offboard_targets(vx=0.0, yaw_rate=0.5)
-        self.set_status("Offboard target: Yaw Right (0.5 rad/s)")
-
-    def on_hover(self):
-        self.ensure_offboard()
-        reset_offboard_targets()
-        self.set_status("Offboard target: Hover")
-
-    def set_status(self, msg):
-        self.status_label.setText(msg)
-
-    
-    def on_open_preflight_dialog(self):
-        dlg = PreflightChecklistDialog(self)
-        dlg.exec()
-
-    
-    def on_toggle_voice(self):
-        self.voice_enabled = not getattr(self, 'voice_enabled', True)
-        if self.voice_enabled:
-            self.voice_btn.setText("🔊 VOICE: ON")
-            self.voice_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
-            if self.tts and getattr(self, 'voice_enabled', True):
-                self.tts.say("Voice alerts enabled.")
-        else:
-            self.voice_btn.setText("🔇 VOICE: MUTE")
-            self.voice_btn.setStyleSheet(self._btn_style(THEME['muted'], THEME['panel_bg']))
-
     def on_toggle_expand_map(self):
-        self.is_map_expanded = not getattr(self, 'is_map_expanded', False)
+        self.is_map_expanded = not self.is_map_expanded
         if self.is_map_expanded:
             self.left_col_widget.hide()
             self.right_col_widget.hide()
             self.plot_panel.hide()
             self.expand_map_btn.setText("🗗 RESTORE DASHBOARD")
-            self.set_status("Map view maximized.")
+            self.set_status("Expanded map mode enabled.")
         else:
             self.left_col_widget.show()
             self.right_col_widget.show()
@@ -1414,133 +864,147 @@ class GCSWindow(QMainWindow):
             self.expand_map_btn.setText("⛶ EXPAND MAP")
             self.set_status("Dashboard layout restored.")
 
+    def on_load_offline_mbtiles(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Load Offline MBTiles Map", "", "MBTiles Map (*.mbtiles);;All Files (*.*)"
+        )
+        if filename:
+            set_mbtiles_file(filename)
+            self.set_status(f"Loaded offline MBTiles: {os.path.basename(filename)}")
+            QMessageBox.information(
+                self, "MBTiles Loaded",
+                f"Loaded offline map database:\n{filename}\n\n"
+                "Tactical map tiles will now be served locally from this file without internet connection."
+            )
+        else:
+            QMessageBox.information(
+                self, "Offline Map Notice",
+                "OpenStreetMap Foundation policy prohibits automated bulk scraping of tiles.\n\n"
+                "PythonGCS automatically caches tiles on disk as you pan and zoom while online.\n\n"
+                "To operate 100% offline in the field, export an .mbtiles file (e.g. via QGIS or OpenMapTiles) "
+                "and load it here."
+            )
+
     def on_export_flight_trail(self):
-        from PyQt6.QtWidgets import QFileDialog
-        import json
         filename, _ = QFileDialog.getSaveFileName(
             self, "Export Flight Trail", "", "Google Earth KML (*.kml);;GeoJSON (*.geojson)"
         )
         if not filename:
             return
-            
-        coords = []
-        import gcs.telemetry_logger as tlog
-        if hasattr(tlog.logger_instance, 'records') and tlog.logger_instance.records:
-            for r in tlog.logger_instance.records:
-                if r.get('lat') and r.get('lon'):
-                    coords.append((r['lon'], r['lat'], r.get('alt', 0.0)))
-        elif telemetry_data['lat'] != 0.0:
-            coords.append((telemetry_data['lon'], telemetry_data['lat'], telemetry_data['alt']))
-            
-        if not coords:
-            self.set_status("Export failed: No GPS flight coordinates recorded yet.")
-            return
-            
         if filename.endswith(".geojson"):
-            geojson_data = {
-                "type": "FeatureCollection",
-                "features": [{
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "LineString",
-                        "coordinates": [[lon, lat, alt] for lon, lat, alt in coords]
-                    },
-                    "properties": {
-                        "name": "PythonGCS Flight Trail",
-                        "points": len(coords)
-                    }
-                }]
-            }
-            try:
-                with open(filename, 'w', encoding='utf-8') as f:
-                    json.dump(geojson_data, f, indent=2)
-                self.set_status(f"Exported {len(coords)} flight coordinates to {filename}")
-            except Exception as e:
-                self.set_status(f"Export failed: {e}")
+            ok = logger_instance.export_geojson(filename)
         else:
-            kml_coord_str = "\n".join([f"{lon:.7f},{lat:.7f},{alt:.2f}" for lon, lat, alt in coords])
-            kml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
-<kml xmlns="http://www.opengis.net/kml/2.2">
-  <Document>
-    <name>PythonGCS Flight Trail</name>
-    <Style id="flightPath">
-      <LineStyle>
-        <color>ff0055ff</color>
-        <width>4</width>
-      </LineStyle>
-      <PolyStyle>
-        <color>7f0055ff</color>
-      </PolyStyle>
-    </Style>
-    <Placemark>
-      <name>UAV Trajectory</name>
-      <styleUrl>#flightPath</styleUrl>
-      <LineString>
-        <extrude>1</extrude>
-        <tessellate>1</tessellate>
-        <altitudeMode>relativeToGround</altitudeMode>
-        <coordinates>
-{kml_coord_str}
-        </coordinates>
-      </LineString>
-    </Placemark>
-  </Document>
-</kml>"""
-            try:
-                with open(filename, 'w', encoding='utf-8') as f:
-                    f.write(kml_content)
-                self.set_status(f"Exported {len(coords)} flight coordinates to {filename}")
-            except Exception as e:
-                self.set_status(f"Export failed: {e}")
+            ok = logger_instance.export_kml(filename)
+
+        if ok:
+            self.set_status(f"Exported flight trail to {filename}")
+            QMessageBox.information(self, "Export Success", f"Flight trail exported successfully to {filename}")
+        else:
+            self.set_status("Export failed: No GPS flight coordinates recorded yet.")
+            QMessageBox.warning(self, "Export Failed", "No GPS flight coordinates recorded yet.")
 
     def on_open_survey_dialog(self):
         curr_lat = telemetry_data.get('lat', 0.0)
         curr_lon = telemetry_data.get('lon', 0.0)
-        dlg = SurveyGridDialog(curr_lat, curr_lon, self)
+        def_alt = self.mission_alt_spin.value()
+        dlg = SurveyGridDialog(curr_lat, curr_lon, default_alt=def_alt, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             wps = dlg.generated_waypoints
             if wps:
-                takeoff = [wps[0][0], wps[0][1]]
-                landing = [wps[-1][0], wps[-1][1]]
-                self.plan_map_view.import_mission(takeoff, wps, landing)
-                self.on_sync_map()
-                self.set_status(f"Generated survey grid: {len(wps)} waypoints.")
-                if self.tts and getattr(self, 'voice_enabled', True):
+                self.mission_alt_spin.setValue(dlg.selected_alt)
+                # Set grid waypoints cleanly without duplicate takeoff/landing
+                self.waypoints = wps
+                self.takeoff_point = None
+                self.landing_point = None
+                self.plan_map_view.import_mission(None, wps, None)
+                self.map_view.import_mission(None, wps, None)
+                self.wp_list.clear()
+                for idx, wp in enumerate(wps):
+                    self.wp_list.addItem(f"WP {idx+1}: {wp[0]:.6f}, {wp[1]:.6f} @ {wp[2]:.1f}m")
+                self.update_mission_stats()
+                self.set_status(f"Generated survey grid: {len(wps)} waypoints @ {dlg.selected_alt:.1f}m.")
+                if self.tts and self.voice_enabled:
                     self.tts.say("Survey grid generated.")
 
-    def on_sync_map(self):
-        self.plan_map_view.get_waypoints(self.on_waypoints_received)
+    def on_move_wp_up(self):
+        row = self.wp_list.currentRow()
+        if row > 0 and row < len(self.waypoints):
+            self.waypoints[row - 1], self.waypoints[row] = self.waypoints[row], self.waypoints[row - 1]
+            self._rebuild_wp_list()
+            self.wp_list.setCurrentRow(row - 1)
+            self._sync_plan_to_map()
 
-    def on_waypoints_received(self, data):
+    def on_move_wp_down(self):
+        row = self.wp_list.currentRow()
+        if row >= 0 and row < len(self.waypoints) - 1:
+            self.waypoints[row + 1], self.waypoints[row] = self.waypoints[row], self.waypoints[row + 1]
+            self._rebuild_wp_list()
+            self.wp_list.setCurrentRow(row + 1)
+            self._sync_plan_to_map()
+
+    def on_edit_wp_alt(self):
+        row = self.wp_list.currentRow()
+        if 0 <= row < len(self.waypoints):
+            wp = self.waypoints[row]
+            curr_alt = wp[2] if len(wp) > 2 else self.mission_alt_spin.value()
+            new_alt, ok = QInputDialog.getDouble(self, "Edit Altitude", f"Waypoint {row+1} Altitude (m):", curr_alt, 2.0, 150.0, 1)
+            if ok:
+                if len(wp) > 2:
+                    wp[2] = new_alt
+                else:
+                    wp.append(new_alt)
+                self._rebuild_wp_list()
+                self.wp_list.setCurrentRow(row)
+                self._sync_plan_to_map()
+
+    def on_delete_wp(self):
+        row = self.wp_list.currentRow()
+        if 0 <= row < len(self.waypoints):
+            del self.waypoints[row]
+            self._rebuild_wp_list()
+            self._sync_plan_to_map()
+
+    def _rebuild_wp_list(self):
         self.wp_list.clear()
-        if not data or not isinstance(data, dict):
-            self.waypoints = []
-            self.takeoff_point = None
-            self.landing_point = None
-            self.set_status("No mission elements to sync.")
-            return
-
-        self.takeoff_point = data.get('takeoff')
-        self.waypoints = data.get('waypoints', [])
-        self.landing_point = data.get('landing')
-
         if self.takeoff_point:
-            self.wp_list.addItem(f"TAKEOFF: {self.takeoff_point[0]:.6f}, {self.takeoff_point[1]:.6f}")
-
+            t_alt = self.takeoff_point[2] if len(self.takeoff_point) > 2 else self.mission_alt_spin.value()
+            self.wp_list.addItem(f"TAKEOFF: {self.takeoff_point[0]:.6f}, {self.takeoff_point[1]:.6f} @ {t_alt:.1f}m")
         for idx, wp in enumerate(self.waypoints):
-            self.wp_list.addItem(f"WP {idx+1}: {wp[0]:.6f}, {wp[1]:.6f}")
-
+            w_alt = wp[2] if len(wp) > 2 else self.mission_alt_spin.value()
+            self.wp_list.addItem(f"WP {idx+1}: {wp[0]:.6f}, {wp[1]:.6f} @ {w_alt:.1f}m")
         if self.landing_point:
             self.wp_list.addItem(f"LAND: {self.landing_point[0]:.6f}, {self.landing_point[1]:.6f}")
+        self.update_mission_stats()
 
-        total_items = (1 if self.takeoff_point else 0) + len(self.waypoints) + (1 if self.landing_point else 0)
-        self.set_status(f"Synced mission: {total_items} items.")
+    def _sync_plan_to_map(self):
+        self.plan_map_view.import_mission(self.takeoff_point, self.waypoints, self.landing_point)
+        self.map_view.import_mission(self.takeoff_point, self.waypoints, self.landing_point)
 
-        # Compute Mission Distance and Estimated Flight Time
+    def on_sync_map(self):
+        self.plan_map_view.get_mission(self.on_mission_retrieved)
+
+    def on_mission_retrieved(self, mission_json):
+        if not mission_json:
+            return
+        import json
+        try:
+            mission = json.loads(mission_json)
+        except Exception:
+            return
+
+        self.takeoff_point = mission.get("takeoff")
+        self.waypoints = mission.get("waypoints", [])
+        self.landing_point = mission.get("landing")
+        self._rebuild_wp_list()
+        self.map_view.import_mission(self.takeoff_point, self.waypoints, self.landing_point)
+
+    def update_mission_stats(self):
         all_pts = []
-        if self.takeoff_point: all_pts.append(self.takeoff_point)
-        all_pts.extend(self.waypoints)
-        if self.landing_point: all_pts.append(self.landing_point)
+        if self.takeoff_point:
+            all_pts.append(self.takeoff_point[:2])
+        all_pts.extend([wp[:2] for wp in self.waypoints])
+        if self.landing_point:
+            all_pts.append(self.landing_point[:2])
 
         total_dist = 0.0
         for i in range(len(all_pts) - 1):
@@ -1553,34 +1017,51 @@ class GCSWindow(QMainWindow):
             a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
             total_dist += 2 * R * math.asin(math.sqrt(a))
 
-        est_secs = total_dist / 5.0 # assuming 5 m/s cruising speed
+        cruise_spd = 5.0
+        est_secs = total_dist / cruise_spd if cruise_spd > 0 else 0
         mins = int(est_secs // 60)
         secs = int(est_secs % 60)
-        if hasattr(self, 'mission_stats_label'):
-            self.mission_stats_label.setText(f"Dist: {total_dist:.1f} m | Est: {mins:02d}:{secs:02d} | WPs: {len(all_pts)}")
+        self.mission_stats_label.setText(f"Dist: {total_dist:.1f} m | Est: {mins:02d}:{secs:02d} | WPs: {len(all_pts)}")
 
     def on_clear_mission(self):
         self.plan_map_view.clear_waypoints()
+        self.map_view.clear_waypoints()
         self.wp_list.clear()
         self.waypoints = []
         self.takeoff_point = None
         self.landing_point = None
-        telemetry_data['wp_current'] = -1
-        if hasattr(self, 'mission_stats_label'):
-            self.mission_stats_label.setText("Dist: 0.0 m | Est: 00:00 | WPs: 0")
+        self.start_btn.setEnabled(False)
+        self.update_mission_stats()
         self.set_status("Mission cleared.")
 
     def on_upload_mission(self):
         if not self.waypoints and not self.takeoff_point and not self.landing_point:
-            self.set_status("Upload failed: Sync map first!")
+            self.set_status("Upload failed: No waypoints in plan. Add waypoints or sync map first!")
             return
-        target_alt = getattr(self, 'mission_alt_spin', None)
-        alt_val = target_alt.value() if target_alt else 10.0
+        if not self.vehicle:
+            self.set_status("Upload failed: No vehicle connection.")
+            return
+
+        alt_val = self.mission_alt_spin.value()
         from gcs.commands import upload_mission
-        threading.Thread(target=upload_mission, args=(
-            self.vehicle, self.waypoints, self.takeoff_point, self.landing_point, alt_val
-        ), daemon=True).start()
-        self.set_status(f"Uploading mission (@ {alt_val:.1f}m)...")
+        self.set_status(f"Uploading mission to flight controller (@ {alt_val:.1f}m)...")
+        self.upload_btn.setEnabled(False)
+
+        def _upload_worker():
+            ok, msg = upload_mission(
+                self.vehicle, self.waypoints, self.takeoff_point, self.landing_point, alt_val
+            )
+            if ok:
+                self.set_status(f"Mission upload SUCCESSFUL: {msg}")
+                self.start_btn.setEnabled(True)
+                if self.tts and self.voice_enabled:
+                    self.tts.say("Mission upload complete.")
+            else:
+                self.set_status(f"Mission upload FAILED: {msg}")
+                self.start_btn.setEnabled(False)
+            self.upload_btn.setEnabled(True)
+
+        threading.Thread(target=_upload_worker, daemon=True).start()
 
     def on_start_mission(self):
         if not self.vehicle:
@@ -1591,133 +1072,359 @@ class GCSWindow(QMainWindow):
 
     def on_export_mission(self):
         if not self.waypoints and not self.takeoff_point and not self.landing_point:
-            self.set_status("Export failed: Synced map is empty!")
-            # Fallback to sync first
             self.on_sync_map()
             if not self.waypoints and not self.takeoff_point and not self.landing_point:
+                self.set_status("Export failed: Plan is empty!")
                 return
-            
-        import json
-        from PyQt6.QtWidgets import QFileDialog
+
         filename, _ = QFileDialog.getSaveFileName(
-            self, "Export Mission Plan", "", "Mission Files (*.plan);;JSON Files (*.json)"
+            self, "Export Mission Plan", "", "QGroundControl Plan (*.plan);;JSON Files (*.json)"
         )
         if not filename:
             return
-        mission_dict = {
-            "takeoff": self.takeoff_point,
-            "waypoints": self.waypoints,
-            "landing": self.landing_point
-        }
-        try:
-            with open(filename, 'w') as f:
-                json.dump(mission_dict, f, indent=4)
-            self.set_status(f"Mission exported to {filename}")
-        except Exception as e:
-            self.set_status(f"Export failed: {e}")
+
+        home_coord = [telemetry_data.get('home_lat', 0.0), telemetry_data.get('home_lon', 0.0)]
+        alt_val = self.mission_alt_spin.value()
+        export_qgc_plan(
+            filename, self.waypoints, self.takeoff_point, self.landing_point,
+            target_alt=alt_val, cruise_speed=5.0, planned_home=home_coord
+        )
+        self.set_status(f"Mission exported to {filename}")
 
     def on_import_mission(self):
-        import json
-        from PyQt6.QtWidgets import QFileDialog
         filename, _ = QFileDialog.getOpenFileName(
-            self, "Import Mission Plan", "", "Mission Files (*.plan);;JSON Files (*.json)"
+            self, "Import Mission Plan", "", "QGroundControl Plan (*.plan);;JSON Files (*.json);;All Files (*.*)"
         )
         if not filename:
             return
-        try:
-            with open(filename, 'r') as f:
-                mission_dict = json.load(f)
-        except Exception as e:
-            self.set_status(f"Import failed: {e}")
+
+        ok, wps, takeoff, landing, detected_alt, msg = import_plan_file(filename)
+        if not ok:
+            self.set_status(f"Import failed: {msg}")
+            QMessageBox.warning(self, "Import Failed", msg)
             return
-        takeoff = mission_dict.get("takeoff")
-        wps = mission_dict.get("waypoints", [])
-        landing = mission_dict.get("landing")
-        
+
         self.takeoff_point = takeoff
         self.waypoints = wps
         self.landing_point = landing
-        
-        self.map_view.import_mission(takeoff, wps, landing)
-        self.plan_map_view.import_mission(takeoff, wps, landing)
-        
-        self.wp_list.clear()
-        if takeoff:
-            self.wp_list.addItem(f"TAKEOFF: {takeoff[0]:.6f}, {takeoff[1]:.6f}")
-        for idx, wp in enumerate(wps):
-            self.wp_list.addItem(f"WP {idx+1}: {wp[0]:.6f}, {wp[1]:.6f}")
-        if landing:
-            self.wp_list.addItem(f"LAND: {landing[0]:.6f}, {landing[1]:.6f}")
-            
-        total_items = (1 if takeoff else 0) + len(wps) + (1 if landing else 0)
-        self.set_status(f"Imported mission: {total_items} items.")
+        self.mission_alt_spin.setValue(detected_alt)
 
-    def on_download_offline_area(self):
-        # Fetch bounds from map_view
-        self.map_view.get_map_bounds(self.on_bounds_retrieved)
-        
-    def on_bounds_retrieved(self, bounds_json):
-        if not bounds_json:
-            self.set_status("Download failed: Map bounds not loaded yet.")
-            return
-            
-        import json
-        try:
-            bounds = json.loads(bounds_json)
-        except Exception as e:
-            self.set_status(f"Download failed: Could not parse bounds {e}")
-            return
-            
-        # Create and configure progress dialog
-        self.progress_dialog = QProgressDialog("Calculating offline tiles...", "Cancel", 0, 100, self)
-        self.progress_dialog.setWindowTitle("Offline Map Downloader")
-        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        self.progress_dialog.setMinimumDuration(0)
-        self.progress_dialog.setAutoClose(True)
-        self.progress_dialog.setValue(0)
-        
-        # Start background thread
-        self.download_worker = MapDownloadWorker(bounds)
-        self.download_worker.progress_signal.connect(self.on_download_progress)
-        self.download_worker.finished_signal.connect(self.on_download_finished)
-        
-        # Handle cancel button clicked
-        self.progress_dialog.canceled.connect(self.download_worker.cancel)
-        
-        self.download_map_btn.setEnabled(False)
-        self.download_worker.start()
-        
-    def on_download_progress(self, curr, total):
-        if hasattr(self, 'progress_dialog') and self.progress_dialog:
-            self.progress_dialog.setMaximum(total)
-            self.progress_dialog.setValue(curr)
-            self.progress_dialog.setLabelText(f"Downloading zoom 13-18 tile cache: {curr} of {total}...")
-            
-    def on_download_finished(self, dl, skip, ok):
-        self.download_map_btn.setEnabled(True)
-        if hasattr(self, 'progress_dialog') and self.progress_dialog:
-            self.progress_dialog.close()
-            self.progress_dialog = None
-            
-        if ok:
-            QMessageBox.information(
-                self, "Success",
-                f"Offline Map Download Complete!\n\nDownloaded: {dl} tiles\nSkipped (already cached): {skip} tiles\n\nThese tiles are now cached on disk and will render offline."
-            )
-            self.set_status(f"Offline Map Download Success: {dl} downloaded, {skip} cached.")
+        self._sync_plan_to_map()
+        self._rebuild_wp_list()
+        self.set_status(f"Import success: {msg}")
+        self.start_btn.setEnabled(False) # Require re-upload before start
+
+
+    def on_connect_toggle(self):
+        if self.vehicle is not None:
+            self.disconnect_vehicle()
         else:
-            self.set_status("Offline Map Download cancelled or encountered errors.")
+            connection_string = self.conn_input.text().strip()
+            if not connection_string:
+                self.set_status("Error: Connection string is empty!")
+                return
 
-    # ---- Keyboard Offboard Flight Controls ----
+            self.set_status("Connecting to vehicle...")
+            self.conn_btn.setText("CONNECTING...")
+            self.conn_btn.setEnabled(False)
+            self.conn_input.setEnabled(False)
+            self.conn_status.setText("CONNECTING")
+            self.conn_status.setStyleSheet(f"color: {THEME['warning']}; font-weight: bold;")
+
+            self.conn_worker = ConnectionWorker(connection_string)
+            self.conn_worker.connected.connect(self.on_connected)
+            self.conn_worker.failed.connect(self.on_connection_failed)
+            self.conn_worker.start()
+
+    def on_connected(self, vehicle):
+        self.vehicle = vehicle
+        self.setup_view.set_vehicle(vehicle)
+        _ensure_streamer(self.vehicle)
+        self._home_set_on_map = False
+
+        # Create new telemetry session
+        self._telemetry_session_id = create_new_session()
+
+        try:
+            request_telemetry(self.vehicle)
+            self.telemetry_thread = threading.Thread(
+                target=read_telemetry,
+                args=(self.vehicle, self._telemetry_session_id),
+                daemon=True
+            )
+            self.telemetry_thread.start()
+        except Exception as e:
+            self.set_status(f"Telemetry start failed: {e}")
+
+        # Start telemetry CSV logging
+        logger_instance.start()
+
+        self.set_status("Connected to vehicle!")
+        self.conn_btn.setText("DISCONNECT")
+        self.conn_btn.setEnabled(True)
+        self.conn_input.setEnabled(False)
+        self.conn_status.setText("CONNECTED")
+        self.conn_status.setStyleSheet(f"color: {THEME['success']}; font-weight: bold;")
+        self.set_controls_enabled(True)
+
+        # Automatically request all parameters upon connection
+        threading.Thread(target=request_all_parameters, args=(self.vehicle,), daemon=True).start()
+
+    def on_connection_failed(self, error_msg):
+        self.set_status(f"Connection failed: {error_msg}")
+        self.disconnect_vehicle()
+
+    def disconnect_vehicle(self):
+        if hasattr(self, 'conn_worker') and self.conn_worker:
+            self.conn_worker.stop()
+            self.conn_worker.wait()
+
+        # Stop telemetry logger and streamer
+        logger_instance.stop()
+        stop_streamer()
+        reset_offboard_targets()
+
+        # Cancel telemetry session
+        cancel_current_session()
+
+        if self.vehicle is not None:
+            try:
+                self.vehicle.close()
+            except Exception:
+                pass
+            self.vehicle = None
+
+        if hasattr(self, 'setup_view'):
+            self.setup_view.set_vehicle(None)
+
+        self._home_set_on_map = False
+        self.held_keys.clear()
+        self.history_time = []
+        self.history_alt = []
+        self.history_speed = []
+        self.start_time = time.monotonic()
+        if hasattr(self, 'plot_panel'):
+            self.plot_panel.plot_widget.clear()
+            self.plot_panel.alt_curve = self.plot_panel.plot_widget.plot(pen=pg.mkPen(THEME['primary'], width=1.5))
+            self.plot_panel.speed_curve = self.plot_panel.plot_widget.plot(pen=pg.mkPen(THEME['warning'], width=1.5))
+
+        self.set_status("Disconnected.")
+        self.conn_btn.setText("CONNECT")
+        self.conn_btn.setEnabled(True)
+        self.conn_input.setEnabled(True)
+        self.conn_status.setText("DISCONNECTED")
+        self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold;")
+        self.set_controls_enabled(False)
+
+    def set_controls_enabled(self, enabled):
+        self.arm_btn.setEnabled(enabled)
+        self.mode_btn.setEnabled(enabled)
+        self.takeoff_btn.setEnabled(enabled)
+        self.rtl_btn.setEnabled(enabled)
+        self.land_btn.setEnabled(enabled)
+        self.hold_btn.setEnabled(enabled)
+        self.fwd_btn.setEnabled(enabled)
+        self.yawl_btn.setEnabled(enabled)
+        self.yawr_btn.setEnabled(enabled)
+        self.hover_btn.setEnabled(enabled)
+        self.sync_btn.setEnabled(enabled)
+        self.clear_btn.setEnabled(enabled)
+        self.upload_btn.setEnabled(enabled)
+        self.import_btn.setEnabled(enabled)
+        self.export_btn.setEnabled(enabled)
+        self.kb_checkbox.setEnabled(enabled)
+
+    # ---- Flight Command Handlers with ACK and Telemetry State Confirmation ----
+    def on_arm_disarm(self):
+        if not self.vehicle:
+            return
+
+        if telemetry_data.get('armed', False):
+            # Vehicle is armed: check airborne state
+            if is_vehicle_airborne():
+                reply = QMessageBox.warning(
+                    self,
+                    "AIRBORNE DISARM SAFETY GUARD",
+                    f"The vehicle is currently AIRBORNE (Alt: {telemetry_data.get('alt', 0.0):.1f}m)!\n\n"
+                    "Disarming in flight will stop the motors immediately and cause the aircraft to fall.\n\n"
+                    "To land safely, click Cancel and use the LAND or RTL button.\n\n"
+                    "Are you sure you want to FORCE EMERGENCY IN-FLIGHT DISARM?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Cancel
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    self.set_status("In-flight disarm cancelled for flight safety.")
+                    return
+                # User deliberately confirmed in-flight disarm
+                self.set_status("Emergency in-flight disarm dispatched...")
+                def _disarm_force_worker():
+                    ok, msg = disarm(self.vehicle, force=True)
+                    self.set_status(f"Disarm: {msg}")
+                threading.Thread(target=_disarm_force_worker, daemon=True).start()
+            else:
+                self.set_status("Disarming vehicle...")
+                def _disarm_worker():
+                    ok, msg = disarm(self.vehicle, force=False)
+                    self.set_status(f"Disarm: {msg}")
+                threading.Thread(target=_disarm_worker, daemon=True).start()
+        else:
+            self.set_status("Arming vehicle...")
+            def _arm_worker():
+                ok, msg = arm(self.vehicle)
+                self.set_status(f"Arm: {msg}")
+                if ok and self.tts and self.voice_enabled:
+                    self.tts.say("Vehicle armed.")
+            threading.Thread(target=_arm_worker, daemon=True).start()
+
+    def on_set_mode(self):
+        if not self.vehicle:
+            return
+        mode = self.mode_combo.currentText()
+        self.set_status(f"Requesting mode {mode}...")
+        def _mode_worker():
+            ok, msg = set_mode(self.vehicle, mode)
+            self.set_status(f"Mode {mode}: {msg}")
+        threading.Thread(target=_mode_worker, daemon=True).start()
+
+    def on_takeoff(self):
+        if not self.vehicle:
+            return
+        alt = self.alt_spin.value()
+        self.set_status(f"Takeoff sequence initiated — target {alt:.1f}m...")
+        def _takeoff_worker():
+            ok, msg = takeoff(self.vehicle, alt)
+            self.set_status(f"Takeoff: {msg}")
+            if ok and self.tts and self.voice_enabled:
+                self.tts.say(f"Taking off to {alt:.0f} meters.")
+        threading.Thread(target=_takeoff_worker, daemon=True).start()
+
+    def on_rtl(self):
+        if not self.vehicle:
+            return
+        self.set_status("Requesting AUTO.RTL (Return to Launch)...")
+        def _rtl_worker():
+            ok, msg = set_mode(self.vehicle, 'AUTO.RTL')
+            self.set_status(f"RTL: {msg}")
+        threading.Thread(target=_rtl_worker, daemon=True).start()
+
+    def on_land(self):
+        if not self.vehicle:
+            return
+        self.set_status("Requesting AUTO.LAND (Landing)...")
+        def _land_worker():
+            ok, msg = set_mode(self.vehicle, 'AUTO.LAND')
+            self.set_status(f"LAND: {msg}")
+        threading.Thread(target=_land_worker, daemon=True).start()
+
+    def on_emergency_hold(self):
+        if not self.vehicle:
+            return
+        self.set_status("EMERGENCY HOLD triggered: Zeroing velocity setpoints and entering AUTO.LOITER...")
+        def _hold_worker():
+            ok, msg = emergency_hold(self.vehicle)
+            self.set_status(f"HOLD: {msg}")
+            if self.tts and self.voice_enabled:
+                self.tts.say("Emergency hold engaged.")
+        threading.Thread(target=_hold_worker, daemon=True).start()
+
+    def ensure_offboard(self):
+        if not self.vehicle:
+            return
+        curr_mode = telemetry_data.get('mode', 'UNKNOWN').upper()
+        if curr_mode != 'OFFBOARD':
+            self.set_status("Warming up stream and requesting OFFBOARD mode...")
+            def _offboard_worker():
+                ok, msg = set_mode(self.vehicle, 'OFFBOARD')
+                self.set_status(f"OFFBOARD: {msg}")
+            threading.Thread(target=_offboard_worker, daemon=True).start()
+
+    def on_forward(self):
+        self.ensure_offboard()
+        set_offboard_targets(vx=2.0, yaw_rate=0.0)
+        self.set_status("Offboard target: Forward (2.0 m/s)")
+
+    def on_yaw_left(self):
+        self.ensure_offboard()
+        set_offboard_targets(vx=0.0, yaw_rate=-0.5)
+        self.set_status("Offboard target: Yaw Left (-0.5 rad/s)")
+
+    def on_yaw_right(self):
+        self.ensure_offboard()
+        set_offboard_targets(vx=0.0, yaw_rate=0.5)
+        self.set_status("Offboard target: Yaw Right (+0.5 rad/s)")
+
+    def on_hover(self):
+        self.ensure_offboard()
+        reset_offboard_targets()
+        self.set_status("Offboard target: Hover (0.0 m/s)")
+
+    def on_kb_toggle(self, checked):
+        if not checked:
+            self.held_keys.clear()
+            reset_offboard_targets()
+            self.set_status("Keyboard flight disabled: hover setpoint sent.")
+        else:
+            self.ensure_offboard()
+            self.set_status("Keyboard flight enabled: WASD / QE / IK / Space active.")
+
+    def on_map_goto_requested(self, lat, lon):
+        if not self.vehicle:
+            self.set_status("Guided Fly-To failed: No vehicle connection.")
+            return
+
+        if not telemetry_data.get('armed', False) or not is_vehicle_airborne():
+            QMessageBox.warning(
+                self, "Cannot Reposition",
+                "Guided Fly-To requires the vehicle to be armed and airborne.\n\nTake off before sending fly-to targets."
+            )
+            return
+
+        curr_alt = telemetry_data.get('alt', 10.0)
+        target_alt = max(5.0, curr_alt)
+
+        reply = QMessageBox.question(
+            self, 'Confirm Guided Fly-To',
+            f"Fly vehicle to clicked coordinates?\n\nLatitude: {lat:.6f}\nLongitude: {lon:.6f}\nAltitude: {target_alt:.1f} m (Launch Rel)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.set_status(f"Guided target dispatched to ({lat:.5f}, {lon:.5f}) @ {target_alt:.1f}m...")
+            def _goto_worker():
+                ok, msg = goto(self.vehicle, lat, lon, target_alt)
+                self.set_status(f"Guided Goto: {msg}")
+                if ok and self.tts and self.voice_enabled:
+                    self.tts.say("Flying to reposition target.")
+            threading.Thread(target=_goto_worker, daemon=True).start()
+
+    def set_status(self, msg):
+        self.status_label.setText(msg)
+
+    def on_open_preflight_dialog(self):
+        dlg = PreflightChecklistDialog(self)
+        dlg.exec()
+
+    def on_toggle_voice(self):
+        self.voice_enabled = not getattr(self, 'voice_enabled', True)
+        if self.voice_enabled:
+            self.voice_btn.setText("🔊 VOICE: ON")
+            self.voice_btn.setStyleSheet(self._btn_style(THEME['primary'], THEME['panel_bg']))
+            self.set_status("Voice notifications enabled.")
+        else:
+            self.voice_btn.setText("🔇 VOICE: OFF")
+            self.voice_btn.setStyleSheet(self._btn_style(THEME['muted'], THEME['panel_bg']))
+            self.set_status("Voice notifications muted.")
+
+    # ---- Keyboard Offboard Flight Controls (WASD / QE / IK / Space) ----
     def keyPressEvent(self, event):
         if not hasattr(self, 'kb_checkbox') or not self.kb_checkbox.isChecked() or not self.vehicle:
             super().keyPressEvent(event)
             return
-        if self.conn_input.hasFocus() or self.setup_view.search_bar.hasFocus():
+        if self.conn_input.hasFocus() or (hasattr(self, 'setup_view') and self.setup_view.search_bar.hasFocus()):
             super().keyPressEvent(event)
             return
         key = event.key()
-        if key in [Qt.Key.Key_W, Qt.Key.Key_S, Qt.Key.Key_A, Qt.Key.Key_D, 
+        if key in [Qt.Key.Key_W, Qt.Key.Key_S, Qt.Key.Key_A, Qt.Key.Key_D,
                    Qt.Key.Key_Q, Qt.Key.Key_E, Qt.Key.Key_I, Qt.Key.Key_K]:
             self.held_keys.add(key)
             self.update_keyboard_offboard()
@@ -1751,7 +1458,6 @@ class GCSWindow(QMainWindow):
         super().focusOutEvent(event)
 
     def changeEvent(self, event):
-        from PyQt6.QtCore import QEvent
         if event.type() == QEvent.Type.ActivationChange:
             if not self.isActiveWindow():
                 if hasattr(self, 'held_keys') and self.held_keys:
@@ -1766,359 +1472,227 @@ class GCSWindow(QMainWindow):
         vy = 0.0
         vz = 0.0
         yaw_rate = 0.0
+
+        # Speeds strictly agree with code, buttons, and README:
+        # W/S: vx = ±2.0 m/s
+        # A/D: vy = ∓2.0 m/s (D is right +2.0, A is left -2.0)
+        # Q/E: yaw_rate = ∓0.5 rad/s (E is right +0.5, Q is left -0.5)
+        # I/K: vz = ∓1.5 m/s (In NED: I is climb -1.5, K is descend +1.5)
         if Qt.Key.Key_W in self.held_keys:
-            vx += 5.0
+            vx += 2.0
         if Qt.Key.Key_S in self.held_keys:
-            vx -= 5.0
+            vx -= 2.0
         if Qt.Key.Key_A in self.held_keys:
-            vy -= 4.0
+            vy -= 2.0
         if Qt.Key.Key_D in self.held_keys:
-            vy += 4.0
+            vy += 2.0
         if Qt.Key.Key_Q in self.held_keys:
-            yaw_rate -= 0.8
+            yaw_rate -= 0.5
         if Qt.Key.Key_E in self.held_keys:
-            yaw_rate += 0.8
+            yaw_rate += 0.5
         if Qt.Key.Key_I in self.held_keys:
-            vz -= 2.5
+            vz -= 1.5
         if Qt.Key.Key_K in self.held_keys:
-            vz += 2.5
-            
-        self.ensure_offboard()
+            vz += 1.5
+
         set_offboard_targets(vx=vx, vy=vy, vz=vz, yaw_rate=yaw_rate)
         if any(k in self.held_keys for k in [Qt.Key.Key_W, Qt.Key.Key_S, Qt.Key.Key_A, Qt.Key.Key_D, Qt.Key.Key_Q, Qt.Key.Key_E, Qt.Key.Key_I, Qt.Key.Key_K]):
-            self.set_status(f"Keyboard flying: vx={vx:.1f}, vy={vy:.1f}, vz={vz:.1f}, yaw_rate={yaw_rate:.1f}")
+            self.set_status(f"Keyboard flying: vx={vx:.1f} vy={vy:.1f} vz={vz:.1f} yaw={yaw_rate:.1f}")
         else:
-            self.set_status("Keyboard offboard: Hover")
+            self.set_status("Keyboard offboard: Hover (0.0 m/s)")
 
-    # ---- live refresh ----
+    # ---- Live 500ms Refresh ----
     def refresh(self):
-        import time
         d = telemetry_data
 
         if not self.vehicle:
             self.power_panel.set('battery', "---", THEME['muted'])
             self.power_panel.set('voltage', "---", THEME['muted'])
-            self.gnss_panel.set('fix', "DISCONNECTED", THEME['danger'])
-            self.gnss_panel.set('sats', "---", THEME['muted'])
-            self.gnss_panel.set('lat', "---", THEME['muted'])
-            self.gnss_panel.set('lon', "---", THEME['muted'])
-            self.gnss_panel.set('alt', "---", THEME['muted'])
-            self.attspeed_panel.set('roll', "---", THEME['muted'])
-            self.attspeed_panel.set('pitch', "---", THEME['muted'])
-            self.attspeed_panel.set('yaw', "---", THEME['muted'])
-            self.attspeed_panel.set('speed', "---", THEME['muted'])
-            self.alert_panel.set('status', "DISCONNECTED", THEME['danger'])
-            self.alert_panel.set('alert_msg', "NO TELEMETRY", THEME['muted'])
-            self.alert_panel.set('check_link', "DISCONNECTED", THEME['danger'])
-            self.alert_panel.set('check_gps', "NO TELEMETRY", THEME['muted'])
-            self.alert_panel.set('check_batt', "NO TELEMETRY", THEME['muted'])
-            
-            # Reset aircraft status panel
-            self.aircraft_status_panel.set('pitch', "---", THEME['muted'])
-            self.aircraft_status_panel.set('roll', "---", THEME['muted'])
-            self.aircraft_status_panel.set('yaw', "---", THEME['muted'])
-            self.aircraft_status_panel.set('mode', "---", THEME['muted'])
-            self.aircraft_status_panel.set('throttle', "---", THEME['muted'])
-            
-            # Reset gauges
-            self.alt_gauge.set_value(0.0)
-            self.alt_gauge.set_accent(THEME['muted'])
-            self.speed_gauge.set_value(0.0)
-            self.speed_gauge.set_accent(THEME['muted'])
-            self.batt_gauge.set_value(0.0)
-            self.batt_gauge.set_accent(THEME['muted'])
-            self.gps_gauge.set_value(0.0)
-            self.gps_gauge.set_accent(THEME['muted'])
-            
-            self.conn_status.setText("DISCONNECTED")
-            self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Google Sans Code; font-size: 11px; border: none;")
-            if hasattr(self, 'ribbon_arm_pill'):
-                self.ribbon_arm_pill.setText("DISARMED")
-                self.ribbon_arm_pill.setStyleSheet(self._pill_style(THEME['danger'], THEME['danger']))
-                self.ribbon_mode_pill.setText("MODE: ---")
-                self.ribbon_gps_pill.setText("GPS: DISCONNECTED")
-                self.ribbon_batt_pill.setText("BATT: ---")
-                self.ribbon_timer_pill.setText("⏱️ 00:00")
-                self.ribbon_dist_pill.setText("🚩 0 m")
+            self.power_panel.set('cells', "---", THEME['muted'])
+            self.power_panel.set('throttle', "---", THEME['muted'])
+
+            self.gnss_panel.set('fix', "No Link", THEME['danger'])
+            self.gnss_panel.set('sats', 0, THEME['muted'])
+            self.gnss_panel.set('eph', "---", THEME['muted'])
+            self.gnss_panel.set('alt_rel', 0.0, THEME['muted'])
+            self.gnss_panel.set('alt_amsl', 0.0, THEME['muted'])
+
+            self.link_panel.set('msg_rate', 0.0, THEME['muted'])
+            self.link_panel.set('loss_pct', 0.0, THEME['muted'])
+            self.link_panel.set('packets', "---", THEME['muted'])
+            self.link_panel.set('vibration', "---", THEME['muted'])
+            self.link_panel.set('clipping', "---", THEME['muted'])
+
+            self.gauge_spd.set_value(0.0)
+            self.gauge_alt.set_value(0.0)
+            self.gauge_throttle.set_value(0.0)
+            self.gauge_batt.set_value(0.0)
             self.console_view.refresh_logs()
             return
 
-        # Check for link loss (heartbeat older than 3 seconds)
-        last_hb = d.get('last_heartbeat_time', 0.0)
-        is_link_lost = last_hb == 0.0 or (time.time() - last_hb) > 3.0
+        # Heartbeat staleness detection
+        now_mono = time.monotonic()
+        last_hb = d.get('last_heartbeat_monotonic', 0.0)
+        hb_age = now_mono - last_hb if last_hb > 0.0 else 999.0
+        is_link_lost = (last_hb == 0.0 or hb_age > 3.0)
 
         if is_link_lost:
-            val_color = THEME['muted']
-            battery_color = THEME['muted']
-            fix_color = THEME['muted']
-            status_text = "LINK LOST"
-            status_color = THEME['danger']
-            alert_text = "NO TELEMETRY"
-            alert_color = THEME['muted']
-            self.alert_panel.set('check_link', "LOST", THEME['danger'])
-            self.alert_panel.set('check_gps', "NO TELEMETRY", THEME['muted'])
-            self.alert_panel.set('check_batt', "NO TELEMETRY", THEME['muted'])
-            
-            # Link lost gauges
-            self.alt_gauge.set_value(d.get('alt', 0.0))
-            self.alt_gauge.set_accent(THEME['muted'])
-            self.speed_gauge.set_value(d.get('groundspeed', 0.0))
-            self.speed_gauge.set_accent(THEME['muted'])
-            self.batt_gauge.set_value(d.get('battery', 0))
-            self.batt_gauge.set_accent(THEME['muted'])
-            self.gps_gauge.set_value(d.get('satellites', 0))
-            self.gps_gauge.set_accent(THEME['muted'])
-            
-            self.aircraft_status_panel.set('pitch', "---", THEME['muted'])
-            self.aircraft_status_panel.set('roll', "---", THEME['muted'])
-            self.aircraft_status_panel.set('yaw', "---", THEME['muted'])
-            self.aircraft_status_panel.set('mode', "---", THEME['muted'])
-            self.aircraft_status_panel.set('throttle', "---", THEME['muted'])
-            
-            self.conn_status.setText("LINK LOST")
-            self.conn_status.setStyleSheet(f"color: {THEME['danger']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
+            self.conn_status.setText("LINK DEGRADED")
+            self.conn_status.setStyleSheet(f"color: {THEME['warning']}; font-weight: bold;")
+            self.set_controls_enabled(False)
         else:
-            val_color = THEME['dark_text']
-            battery_color = THEME['danger'] if d['battery'] < 20 else THEME['dark_text']
-            fix_labels_colors = {0: THEME['danger'], 1: THEME['danger'], 2: THEME['warning'], 3: THEME['success'],
-                                 4: THEME['success'], 5: THEME['success'], 6: THEME['success']}
-            fix_color = fix_labels_colors.get(d['fix_type'], THEME['danger'])
-            
-            # Check warning alerts
-            active_alerts = []
-            if d['battery'] > 0:
-                if d['battery'] < 10:
-                    active_alerts.append("CRIT BATT")
-                elif d['battery'] < 20:
-                    active_alerts.append("LOW BATT")
-            if d['voltage'] > 0.0 and d['voltage'] < 14.4:
-                active_alerts.append("LOW VOLT")
-            if d['fix_type'] < 3:
-                active_alerts.append("NO 3D GPS")
-            elif d['satellites'] < 6:
-                active_alerts.append("WEAK GPS")
-            
-            prearm = d.get('prearm_fail', '')
-            if prearm:
-                active_alerts.append(f"PREARM: {prearm}")
-
-            if active_alerts:
-                status_text = "ARM BLOCKED"
-                status_color = THEME['danger']
-                alert_text = ", ".join(active_alerts)
-                if len(alert_text) > 22:
-                    alert_text = alert_text[:19] + "..."
-                alert_color = THEME['danger']
-            else:
-                status_text = "SAFE"
-                status_color = THEME['success']
-                alert_text = "NONE"
-                alert_color = THEME['success']
-
-            self.alert_panel.set('check_link', "OK", THEME['success'])
-            gps_ok = d['fix_type'] >= 3
-            gps_text = "3D FIX" if gps_ok else f"NO 3D ({d['fix_type']}D)"
-            gps_color = THEME['success'] if gps_ok else THEME['danger']
-            self.alert_panel.set('check_gps', gps_text, gps_color)
-            
-            if d['battery'] >= 30:
-                batt_text = "OK"
-                batt_color = THEME['success']
-            elif d['battery'] >= 20:
-                batt_text = "LOW"
-                batt_color = THEME['warning']
-            else:
-                batt_text = "CRIT"
-                batt_color = THEME['danger']
-            self.alert_panel.set('check_batt', f"{batt_text} ({d['battery']}%)", batt_color)
-
             self.conn_status.setText("CONNECTED")
-            self.conn_status.setStyleSheet(f"color: {THEME['success']}; font-weight: bold; font-family: Google Sans Code; font-size: 12px; border: none;")
+            self.conn_status.setStyleSheet(f"color: {THEME['success']}; font-weight: bold;")
+            self.set_controls_enabled(True)
 
-            # Record history for plotting
-            elapsed = time.time() - self.start_time
-            self.history_time.append(elapsed)
-            self.history_alt.append(d.get('alt', 0.0))
-            self.history_speed.append(d.get('groundspeed', 0.0))
-            if len(self.history_time) > 120:
-                self.history_time.pop(0)
-                self.history_alt.pop(0)
-                self.history_speed.pop(0)
-            self.plot_panel.update_plots(self.history_time, self.history_alt, self.history_speed)
+        # Update Gauges
+        self.gauge_spd.set_value(d.get('groundspeed', 0.0))
+        self.gauge_alt.set_value(d.get('alt', 0.0))
+        self.gauge_throttle.set_value(d.get('throttle', 0))
+        batt_disp = max(0, d.get('battery', 0)) if d.get('battery', -1) >= 0 else 0
+        self.gauge_batt.set_value(batt_disp)
 
-            # Update Gauges
-            alt_accent = THEME['primary']
-            speed_accent = THEME['primary']
-            if d['battery'] < 10:
-                batt_accent = THEME['danger']
-            elif d['battery'] < 20:
-                batt_accent = THEME['warning']
-            else:
-                batt_accent = THEME['success']
-            gps_accent = fix_color
-            
-            self.alt_gauge.set_value(d.get('alt', 0.0))
-            self.alt_gauge.set_accent(alt_accent)
-            self.speed_gauge.set_value(d.get('groundspeed', 0.0))
-            self.speed_gauge.set_accent(speed_accent)
-            self.batt_gauge.set_value(d.get('battery', 0))
-            self.batt_gauge.set_accent(batt_accent)
-            self.gps_gauge.set_value(d.get('satellites', 0))
-            self.gps_gauge.set_accent(gps_accent)
+        # Update Analytics Panels
+        batt_str = f"{d.get('battery')}%" if d.get('battery', -1) >= 0 else "UNKNOWN"
+        self.power_panel.set('battery', batt_str, THEME['success'] if d.get('battery', -1) >= 30 else THEME['danger'])
+        self.power_panel.set('voltage', f"{d.get('voltage', 0.0):.1f}", THEME['primary'])
 
-            # Update new Aircraft Status panel
-            self.aircraft_status_panel.set('pitch', f"{math.degrees(d['pitch']):.0f}\u00b0", val_color)
-            self.aircraft_status_panel.set('roll', f"{math.degrees(d['roll']):.0f}\u00b0", val_color)
-            yaw_deg = math.degrees(d['yaw']) % 360
-            self.aircraft_status_panel.set('yaw', f"{yaw_deg:.0f}\u00b0", val_color)
-            self.aircraft_status_panel.set('mode', str(d.get('mode', 'UNKNOWN')), val_color)
-            self.aircraft_status_panel.set('throttle', f"{d.get('throttle', 0)}%", val_color)
-
-        # Update panels (retaining original functionality)
-        self.power_panel.set('battery', f"{d['battery']}%", battery_color)
-        self.power_panel.set('voltage', f"{d['voltage']:.1f}V", val_color)
-
-        fix_labels = {0: "NO FIX", 1: "NO FIX", 2: "2D", 3: "3D",
-                      4: "DGPS", 5: "RTK-FLT", 6: "RTK-FIX"}
-        fix = d['fix_type']
-        self.gnss_panel.set('fix', fix_labels.get(fix, str(fix)), fix_color)
-        self.gnss_panel.set('sats', str(d['satellites']), val_color)
-        self.gnss_panel.set('lat', f"{d['lat']:.6f}", val_color)
-        self.gnss_panel.set('lon', f"{d['lon']:.6f}", val_color)
-        self.gnss_panel.set('alt', f"{d['alt']:.1f} m", val_color)
-
-        self.attspeed_panel.set('roll', f"{math.degrees(d['roll']):.0f}\u00b0", val_color)
-        self.attspeed_panel.set('pitch', f"{math.degrees(d['pitch']):.0f}\u00b0", val_color)
-        yaw_deg = math.degrees(d['yaw']) % 360
-        self.attspeed_panel.set('yaw', f"{yaw_deg:.0f}\u00b0", val_color)
-        self.attspeed_panel.set('speed', f"{d['groundspeed']:.1f} m/s", val_color)
-
-        # Toggle flashing state for warnings
-        self._alert_flash_toggle = getattr(self, '_alert_flash_toggle', False)
-        self._alert_flash_toggle = not self._alert_flash_toggle
-
-        self.alert_panel.set('status', status_text, status_color)
-        if alert_text != "NONE" and self._alert_flash_toggle and not is_link_lost:
-            self.alert_panel.set('alert_msg', alert_text, THEME['dark_text']) # flash text
+        cells = d.get('battery_cells', [])
+        if cells:
+            cells_str = " | ".join([f"{c:.2f}V" for c in cells[:4]])
+            self.power_panel.set('cells', cells_str, THEME['primary'])
         else:
-            self.alert_panel.set('alert_msg', alert_text, alert_color)
+            self.power_panel.set('cells', "Awaiting BATTERY_STATUS", THEME['muted'])
+        self.power_panel.set('throttle', d.get('throttle', 0), THEME['warning'])
 
-        if not is_link_lost:
-            if d['armed']:
-                self.arm_btn.setText("DISARM")
-                self.arm_btn.setStyleSheet(self._btn_style(THEME['danger'], THEME['panel_bg']))
-            else:
-                self.arm_btn.setText("ARM")
-                self.arm_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
-            
-            yaw_deg = math.degrees(d['yaw']) % 360
-            self.map_view.update_position(d['lat'], d['lon'], yaw_deg, d.get('groundspeed', 0.0), d.get('alt', 0.0))
-            self.plan_map_view.update_position(d['lat'], d['lon'], yaw_deg, d.get('groundspeed', 0.0), d.get('alt', 0.0))
-            self.attitude_view.update_attitude(d['roll'], d['pitch'], d['yaw'], d.get('alt', 0.0), d.get('groundspeed', 0.0))
+        fix_names = {0: "No Fix", 1: "No Fix", 2: "2D Fix", 3: "3D Fix", 4: "DGPS", 5: "RTK Float", 6: "RTK Fixed"}
+        self.gnss_panel.set('fix', fix_names.get(d.get('fix_type', 0), "Unknown"), THEME['success'] if d.get('fix_type', 0) >= 3 else THEME['danger'])
+        self.gnss_panel.set('sats', d.get('satellites', 0), THEME['primary'])
+        eph = d.get('eph', 9999)
+        self.gnss_panel.set('eph', f"{eph/100:.1f}" if eph < 9000 else "---", THEME['muted'])
+        self.gnss_panel.set('alt_rel', f"{d.get('alt', 0.0):.1f}", THEME['primary'])
+        self.gnss_panel.set('alt_amsl', f"{d.get('alt_amsl', 0.0):.1f}", THEME['primary'])
 
-            # Set Home on map if armed and position valid
-            if d['armed'] and d['lat'] != 0.0 and d['lon'] != 0.0:
+        self.link_panel.set('msg_rate', f"{d.get('message_rate_hz', 0.0):.1f}", THEME['primary'])
+        self.link_panel.set('loss_pct', f"{d.get('packet_loss_pct', 0.0):.1f}", THEME['danger'] if d.get('packet_loss_pct', 0.0) > 5.0 else THEME['success'])
+        self.link_panel.set('packets', f"{d.get('packets_received', 0)} / {d.get('packets_lost', 0)}", THEME['muted'])
+
+        vib = d.get('vibration', (0.0, 0.0, 0.0))
+        if vib != (0.0, 0.0, 0.0):
+            self.link_panel.set('vibration', f"{vib[0]:.1f}, {vib[1]:.1f}, {vib[2]:.1f}", THEME['primary'])
+        else:
+            self.link_panel.set('vibration', "Awaiting VIBRATION", THEME['muted'])
+
+        clip = d.get('clipping', (0, 0, 0))
+        self.link_panel.set('clipping', f"{clip[0]}, {clip[1]}, {clip[2]}", THEME['muted'])
+
+        # Update Plots
+        elapsed = time.monotonic() - self.start_time
+        self.history_time.append(elapsed)
+        self.history_alt.append(d.get('alt', 0.0))
+        self.history_speed.append(d.get('groundspeed', 0.0))
+        if len(self.history_time) > 200:
+            self.history_time.pop(0)
+            self.history_alt.pop(0)
+            self.history_speed.pop(0)
+        self.plot_panel.update_plots(self.history_time, self.history_alt, self.history_speed)
+        self.analytics_plot_panel.update_plots(self.history_time, self.history_alt, self.history_speed)
+
+        # Update Map & Attitude
+        yaw_deg = math.degrees(d.get('yaw', 0.0)) % 360
+        self.map_view.update_position(d.get('lat', 0.0), d.get('lon', 0.0), yaw_deg, d.get('groundspeed', 0.0), d.get('alt', 0.0))
+        self.plan_map_view.update_position(d.get('lat', 0.0), d.get('lon', 0.0), yaw_deg, d.get('groundspeed', 0.0), d.get('alt', 0.0))
+        self.attitude_view.update_attitude(d.get('roll', 0.0), d.get('pitch', 0.0), d.get('yaw', 0.0), d.get('alt', 0.0), d.get('groundspeed', 0.0))
+
+        # Set Home ONCE on confirmed HOME_POSITION or initial arming
+        if not self._home_set_on_map:
+            if d.get('has_home', False) and (d.get('home_lat', 0.0) != 0.0 or d.get('home_lon', 0.0) != 0.0):
+                self.map_view.set_home(d['home_lat'], d['home_lon'])
+                self.plan_map_view.set_home(d['home_lat'], d['home_lon'])
+                self._home_set_on_map = True
+                log(f"Map: Home position set to ({d['home_lat']:.6f}, {d['home_lon']:.6f})")
+            elif d.get('armed', False) and d.get('lat', 0.0) != 0.0 and d.get('lon', 0.0) != 0.0:
                 self.map_view.set_home(d['lat'], d['lon'])
                 self.plan_map_view.set_home(d['lat'], d['lon'])
+                self._home_set_on_map = True
+                log(f"Map: Launch home position locked to ({d['lat']:.6f}, {d['lon']:.6f})")
 
-            # Update Ribbon Pills
-            if hasattr(self, 'ribbon_arm_pill'):
-                if d['armed']:
-                    self.ribbon_arm_pill.setText("ARMED")
-                    self.ribbon_arm_pill.setStyleSheet(self._pill_style(THEME['success'], '#ffffff', THEME['success']))
-                else:
-                    self.ribbon_arm_pill.setText("DISARMED")
-                    self.ribbon_arm_pill.setStyleSheet(self._pill_style(THEME['danger'], THEME['danger']))
-                
-                self.ribbon_mode_pill.setText(f"MODE: {d.get('mode', 'UNKNOWN')}")
-                gps_str = f"GPS: {d.get('fix_type', 0)}D ({d.get('satellites', 0)}s)"
-                self.ribbon_gps_pill.setText(gps_str)
-                self.ribbon_batt_pill.setText(f"BATT: {d.get('battery', 0)}% | {d.get('voltage', 0.0):.1f}V")
+        # Update Ribbon Pills
+        if d.get('armed', False):
+            if is_vehicle_airborne():
+                self.ribbon_arm_pill.setText("ARMED (AIRBORNE)")
+            else:
+                self.ribbon_arm_pill.setText("ARMED (GROUND)")
+            self.ribbon_arm_pill.setStyleSheet(self._pill_style(THEME['success'], '#ffffff', THEME['success']))
+            self.arm_btn.setText("DISARM")
+            self.arm_btn.setStyleSheet(self._btn_style(THEME['danger'], THEME['panel_bg']))
+        else:
+            self.ribbon_arm_pill.setText("DISARMED")
+            self.ribbon_arm_pill.setStyleSheet(self._pill_style(THEME['danger'], THEME['danger']))
+            self.arm_btn.setText("ARM")
+            self.arm_btn.setStyleSheet(self._btn_style(THEME['success'], THEME['panel_bg']))
 
-                # Flight duration timer & distance calculation
-                if d['armed']:
-                    if not self.was_armed:
-                        self.armed_start_time = time.time()
-                        self.total_flight_dist = 0.0
-                        self.last_flight_coord = (d['lat'], d['lon'])
-                    
-                    if self.armed_start_time:
-                        elapsed = time.time() - self.armed_start_time
-                        mins = int(elapsed // 60)
-                        secs = int(elapsed % 60)
-                        self.ribbon_timer_pill.setText(f"⏱️ {mins:02d}:{secs:02d}")
-                    
-                    if self.last_flight_coord and d['lat'] != 0.0 and d['lon'] != 0.0:
-                        lat1, lon1 = self.last_flight_coord
-                        lat2, lon2 = d['lat'], d['lon']
-                        R = 6371e3
-                        p1, p2 = math.radians(lat1), math.radians(lat2)
-                        dp = math.radians(lat2 - lat1)
-                        dl = math.radians(lon2 - lon1)
-                        a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
-                        dist_step = 2 * R * math.asin(math.sqrt(a))
-                        if 0.5 <= dist_step <= 50.0:
-                            self.total_flight_dist += dist_step
-                            self.last_flight_coord = (lat2, lon2)
-                    self.ribbon_dist_pill.setText(f"🚩 {self.total_flight_dist:.0f} m")
-            
-            # Update active waypoint highlight on map views
-            wp_idx = d.get('wp_current', -1)
-            self.map_view.page().runJavaScript(f"if (typeof setActiveWaypoint === 'function') setActiveWaypoint({wp_idx});")
-            self.plan_map_view.page().runJavaScript(f"if (typeof setActiveWaypoint === 'function') setActiveWaypoint({wp_idx});")
+        self.ribbon_mode_pill.setText(f"MODE: {d.get('mode', 'UNKNOWN')}")
+        self.ribbon_fw_pill.setText(d.get('autopilot_version', 'PX4 AUTOPILOT'))
+        gps_str = f"GPS: {d.get('fix_type', 0)}D ({d.get('satellites', 0)}s)"
+        self.ribbon_gps_pill.setText(gps_str)
+        batt_txt = f"{d.get('battery')}%" if d.get('battery', -1) >= 0 else "---%"
+        self.ribbon_batt_pill.setText(f"BATT: {batt_txt} | {d.get('voltage', 0.0):.1f}V")
 
+        # Flight duration timer & distance calculation
+        if d.get('armed', False):
+            if not self.was_armed:
+                self.armed_start_time = time.monotonic()
+                self.total_flight_dist = 0.0
+                self.last_flight_coord = (d['lat'], d['lon'])
+
+            if self.armed_start_time:
+                elapsed_flight = time.monotonic() - self.armed_start_time
+                mins = int(elapsed_flight // 60)
+                secs = int(elapsed_flight % 60)
+                self.ribbon_timer_pill.setText(f"⏱ {mins:02d}:{secs:02d}")
+
+            if self.last_flight_coord and d.get('lat', 0.0) != 0.0 and d.get('lon', 0.0) != 0.0:
+                lat1, lon1 = self.last_flight_coord
+                lat2, lon2 = d['lat'], d['lon']
+                R = 6371e3
+                p1, p2 = math.radians(lat1), math.radians(lat2)
+                dp = math.radians(lat2 - lat1)
+                dl = math.radians(lon2 - lon1)
+                a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+                dist_step = 2 * R * math.asin(math.sqrt(a))
+                if 0.5 <= dist_step <= 50.0:
+                    self.total_flight_dist += dist_step
+                    self.last_flight_coord = (lat2, lon2)
+            self.ribbon_dist_pill.setText(f"🚩 {self.total_flight_dist:.0f} m")
+
+        # Waypoint progress
         wp_idx = d.get('wp_current', -1)
         total_items = self.wp_list.count()
-        if wp_idx > 0 and total_items > 0:
-            if wp_idx - 1 < total_items:
-                self.wp_list.setCurrentRow(wp_idx - 1)
-                item_text = self.wp_list.item(wp_idx - 1).text()
+        if wp_idx >= 0 and total_items > 0:
+            if wp_idx < total_items:
+                self.wp_list.setCurrentRow(wp_idx)
+                item_text = self.wp_list.item(wp_idx).text()
                 active_name = item_text.split(':')[0]
-                self.wp_progress_label.setText(f"Active: {active_name} (Item {wp_idx} / {total_items})")
+                self.wp_progress_label.setText(f"Active: {active_name} (Item {wp_idx+1} / {total_items})")
             else:
-                self.wp_progress_label.setText("Active: ---")
-                self.wp_list.clearSelection()
-        elif wp_idx == 0:
-            self.wp_progress_label.setText("Active: Home / Preflight")
-            self.wp_list.clearSelection()
+                self.wp_progress_label.setText(f"Active: Item {wp_idx}")
         else:
-            self.wp_progress_label.setText("Active: ---")
-            self.wp_list.clearSelection()
+            self.wp_progress_label.setText("Active Waypoint: ---")
 
-        # TTS Alerts
-        if self.tts and getattr(self, 'voice_enabled', True):
-            if is_link_lost and not self.was_link_lost:
-                self.tts.say("Warning, telemetry link lost.")
-            elif not is_link_lost and self.was_link_lost:
-                self.tts.say("Telemetry link recovered.")
-            
-            if not is_link_lost:
-                if d['armed'] and not self.was_armed:
-                    self.tts.say("Vehicle armed.")
-                elif not d['armed'] and self.was_armed:
-                    self.tts.say("Vehicle disarmed.")
-                    
-                current_mode = d.get('mode', 'UNKNOWN')
-                if current_mode != self.last_spoken_mode and current_mode != 'UNKNOWN':
-                    mode_spoken = current_mode.replace(".", " ")
-                    self.tts.say(f"Flight mode {mode_spoken}.")
-                    self.last_spoken_mode = current_mode
-
-                if active_alerts:
-                    highest_alert = active_alerts[0]
-                    if highest_alert != self.last_spoken_alert:
-                        self.tts.say(f"Alert: {highest_alert}.")
-                        self.last_spoken_alert = highest_alert
-                else:
-                    self.last_spoken_alert = ""
+        # Voice status changes
+        if self.tts and self.voice_enabled:
+            current_mode = d.get('mode', 'UNKNOWN')
+            if current_mode != self.last_spoken_mode and current_mode not in ('UNKNOWN', 'DISCONNECTED'):
+                self.tts.say(f"Flight mode {current_mode.replace('.', ' ')}.")
+                self.last_spoken_mode = current_mode
 
         self.was_link_lost = is_link_lost
-        self.was_armed = d['armed']
-
+        self.was_armed = d.get('armed', False)
         self.console_view.refresh_logs()
 
-    def closeEvent(self, event):  # type: ignore
-        if self.vehicle is not None and telemetry_data['armed']:
+    def closeEvent(self, event):
+        if self.vehicle is not None and telemetry_data.get('armed', False):
             reply = QMessageBox.question(
                 self, 'Warning',
                 "Drone is still ARMED! Are you sure you want to exit the GCS?",
@@ -2126,7 +1700,6 @@ class GCSWindow(QMainWindow):
                 QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.Yes:
-                print("Closing GCS...")
                 self.disconnect_vehicle()
                 event.accept()
             else:
@@ -2138,12 +1711,8 @@ class GCSWindow(QMainWindow):
 
 def launch_gui(vehicle=None):
     app = QApplication(sys.argv)
-    
-    # Register Google Sans Code font weights
     from gcs.paths import resource_path
     from PyQt6.QtGui import QFontDatabase, QFont
-    import os
-    
     font_files = [
         "GoogleSansCode-Regular.ttf",
         "GoogleSansCode-Medium.ttf",
@@ -2158,10 +1727,9 @@ def launch_gui(vehicle=None):
                 families = QFontDatabase.applicationFontFamilies(fid)
                 if families:
                     family_name = families[0]
-                    
     if family_name:
         app.setFont(QFont(family_name))
-        
+
     window = GCSWindow(vehicle)
     window.show()
     app.exec()

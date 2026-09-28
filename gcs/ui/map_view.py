@@ -206,7 +206,7 @@ MAP_HTML = """
                 <span id="hud-speed" class="val">0.0 m/s</span>
             </div>
             <div class="hud-item">
-                <span class="label">Alt (AGL)</span>
+                <span class="label">Alt (Rel Home)</span>
                 <span id="hud-alt" class="val">0.0 m</span>
             </div>
             <div class="hud-item">
