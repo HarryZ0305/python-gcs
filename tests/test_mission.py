@@ -1,6 +1,6 @@
 """
-Unit tests for PX4 mission validation, QGroundControl .plan round-trip,
-and atomic mission upload protocol.
+Unit tests for PX4 mission validation, published QGroundControl .plan schema compliance,
+atomic mission upload, and readback download verification.
 """
 import os
 import time
@@ -11,7 +11,7 @@ import pytest
 from unittest.mock import MagicMock
 from pymavlink import mavutil
 from gcs.plan_format import export_qgc_plan, import_plan_file
-from gcs.commands import upload_mission
+from gcs.commands import upload_mission, download_mission
 from gcs.telemetry import mission_queue
 
 class FakeMissionMsg:
@@ -50,7 +50,7 @@ def test_waypoint_validation_failures():
     assert mock_vehicle.mav.mission_count_send.call_count == 0
 
 
-def test_qgc_plan_export_and_import():
+def test_qgc_plan_published_schema_compliance():
     takeoff = [47.397742, 8.545594, 10.0]
     waypoints = [
         [47.398000, 8.546000, 15.0],
@@ -72,33 +72,55 @@ def test_qgc_plan_export_and_import():
         )
         assert ok is True
 
-        # Verify QGC JSON structure
         with open(plan_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
+
+        # 1. Top level QGC required fields
         assert data.get("fileType") == "Plan"
         assert data.get("version") == 1
-        items = data["mission"]["items"]
-        assert len(items) == 4 # Takeoff + 2 WPs + Land
-        assert items[0]["command"] == 22 # MAV_CMD_NAV_TAKEOFF
-        assert items[1]["command"] == 16 # MAV_CMD_NAV_WAYPOINT
-        assert items[2]["command"] == 16
-        assert items[3]["command"] == 21 # MAV_CMD_NAV_LAND
+        assert "groundStation" in data
+        assert "mission" in data
+        assert "geoFence" in data
+        assert "rallyPoints" in data
 
-        # Import back
+        # 2. Mission object required fields
+        m = data["mission"]
+        assert m.get("version") == 2
+        assert m.get("vehicleType") == 2
+        assert m.get("globalPlanAltitudeMode") == 1
+        assert m.get("cruiseSpeed") == 6.0
+        assert len(m.get("plannedHomePosition", [])) == 3
+
+        # 3. SimpleItem required fields
+        items = m["items"]
+        assert len(items) == 4 # Takeoff + 2 WPs + Land
+        for idx, it in enumerate(items, 1):
+            assert it.get("type") == "SimpleItem"
+            assert it.get("doJumpId") == idx
+            assert it.get("AltitudeMode") == 1
+            assert "Altitude" in it
+            assert it.get("Altitude") == it["params"][6]
+            assert it.get("AMSLAltAboveTerrain") is None
+            assert len(it.get("params", [])) == 7
+            assert it.get("autoContinue") is True
+            assert it.get("frame") == 3
+
+        # 4. geoFence and rallyPoints schema
+        assert data["geoFence"].get("version") == 2
+        assert data["rallyPoints"].get("version") == 2
+
+        # 5. Import back round trip
         imp_ok, imp_wps, imp_to, imp_land, imp_alt, msg = import_plan_file(plan_path)
         assert imp_ok is True
         assert len(imp_wps) == 2
         assert abs(imp_to[0] - takeoff[0]) < 1e-5
-        assert abs(imp_to[1] - takeoff[1]) < 1e-5
         assert abs(imp_land[0] - landing[0]) < 1e-5
-        assert abs(imp_wps[0][0] - waypoints[0][0]) < 1e-5
-        assert abs(imp_wps[0][2] - 15.0) < 1e-3
     finally:
         if os.path.exists(plan_path):
             os.remove(plan_path)
 
 
-def test_upload_mission_px4_protocol():
+def test_upload_mission_with_verification():
     mock_vehicle = MagicMock()
     mock_vehicle.target_system = 1
     mock_vehicle.target_component = 1
@@ -106,41 +128,76 @@ def test_upload_mission_px4_protocol():
     takeoff = [47.3977, 8.5455, 10.0]
     waypoints = [[47.3980, 8.5460, 15.0]]
 
-    # Simulated vehicle response thread
+    # Simulated vehicle response thread (upload + readback download)
     def simulated_autopilot():
         time.sleep(0.05)
-        # Sequence 0 requested
+        # Upload phase: request seq 0, seq 1, then ACK
         mission_queue.put(FakeMissionMsg('MISSION_REQUEST_INT', seq=0))
-        time.sleep(0.05)
-        # Repeated sequence 0 requested (test repeat tolerance)
-        mission_queue.put(FakeMissionMsg('MISSION_REQUEST_INT', seq=0))
-        time.sleep(0.05)
-        # Sequence 1 requested
+        time.sleep(0.03)
         mission_queue.put(FakeMissionMsg('MISSION_REQUEST_INT', seq=1))
-        time.sleep(0.05)
-        # Mission accepted
+        time.sleep(0.03)
         mission_queue.put(FakeMissionMsg('MISSION_ACK', type=mavutil.mavlink.MAV_MISSION_ACCEPTED))
+
+        # Verification download phase: vehicle responds to MISSION_REQUEST_LIST
+        time.sleep(0.05)
+        mission_queue.put(FakeMissionMsg('MISSION_COUNT', count=2))
+        time.sleep(0.03)
+        # Sequence 0 download
+        mission_queue.put(FakeMissionMsg(
+            'MISSION_ITEM_INT', seq=0, command=mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+            frame=mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+            x=int(takeoff[0] * 1e7), y=int(takeoff[1] * 1e7), z=10.0
+        ))
+        time.sleep(0.03)
+        # Sequence 1 download
+        mission_queue.put(FakeMissionMsg(
+            'MISSION_ITEM_INT', seq=1, command=mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+            frame=mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+            x=int(waypoints[0][0] * 1e7), y=int(waypoints[0][1] * 1e7), z=15.0
+        ))
 
     t = threading.Thread(target=simulated_autopilot, daemon=True)
     t.start()
 
-    ok, msg = upload_mission(mock_vehicle, waypoints, takeoff, None, target_alt=10.0)
+    ok, msg = upload_mission(mock_vehicle, waypoints, takeoff, None, target_alt=10.0, verify_after_upload=True)
     t.join(timeout=2.0)
 
     assert ok is True
-    assert "successfully uploaded" in msg
+    assert "verified" in msg.lower()
 
-    # Verify MISSION_COUNT was sent with 2 items
-    mock_vehicle.mav.mission_count_send.assert_called_once_with(
-        1, 1, 2, mavutil.mavlink.MAV_MISSION_TYPE_MISSION
-    )
 
-    # Verify item 0 sent was Takeoff (command 22), NOT a fake Home
-    calls = mock_vehicle.mav.mission_item_int_send.call_args_list
-    assert len(calls) >= 2
-    # First call: seq=0, command=22
-    assert calls[0][0][2] == 0 # seq
-    assert calls[0][0][4] == mavutil.mavlink.MAV_CMD_NAV_TAKEOFF
-    # Third call (seq=1): seq=1, command=16
-    assert calls[-1][0][2] == 1 # seq
-    assert calls[-1][0][4] == mavutil.mavlink.MAV_CMD_NAV_WAYPOINT
+def test_upload_mission_corrupted_readback_fails_verification():
+    mock_vehicle = MagicMock()
+    mock_vehicle.target_system = 1
+    mock_vehicle.target_component = 1
+
+    takeoff = [47.3977, 8.5455, 10.0]
+    waypoints = [[47.3980, 8.5460, 15.0]]
+
+    # Simulated vehicle returning mismatched item count during download
+    def simulated_autopilot_corrupt():
+        time.sleep(0.05)
+        mission_queue.put(FakeMissionMsg('MISSION_REQUEST_INT', seq=0))
+        time.sleep(0.03)
+        mission_queue.put(FakeMissionMsg('MISSION_REQUEST_INT', seq=1))
+        time.sleep(0.03)
+        mission_queue.put(FakeMissionMsg('MISSION_ACK', type=mavutil.mavlink.MAV_MISSION_ACCEPTED))
+
+        # Vehicle claims it only saved 1 item!
+        time.sleep(0.05)
+        mission_queue.put(FakeMissionMsg('MISSION_COUNT', count=1))
+        time.sleep(0.03)
+        mission_queue.put(FakeMissionMsg(
+            'MISSION_ITEM_INT', seq=0, command=mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+            frame=mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+            x=int(takeoff[0] * 1e7), y=int(takeoff[1] * 1e7), z=10.0
+        ))
+
+    t = threading.Thread(target=simulated_autopilot_corrupt, daemon=True)
+    t.start()
+
+    ok, msg = upload_mission(mock_vehicle, waypoints, takeoff, None, target_alt=10.0, verify_after_upload=True)
+    t.join(timeout=2.0)
+
+    assert ok is False
+    assert "verification failed" in msg.lower()

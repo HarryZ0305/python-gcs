@@ -1,6 +1,6 @@
 """
 Unit tests for telemetry session lifecycle, stale heartbeat detection,
-and message filtering.
+message filtering, and per-source packet loss isolation.
 """
 import time
 import pytest
@@ -13,6 +13,8 @@ from gcs.telemetry import (
     telemetry_data,
     link_stats,
     handle_mavlink_message,
+    reset_telemetry_data,
+    battery_config,
     HEARTBEAT_TIMEOUT_SEC,
 )
 
@@ -79,30 +81,39 @@ def test_component_filtering():
     assert telemetry_data['last_heartbeat_monotonic'] == 0.0
 
     # Autopilot heartbeat (comp_id=1) MUST update status
-    autopilot_hb = FakeMessage('HEARTBEAT', sys_id=1, comp_id=1, base_mode=128, custom_mode=0x01030000, system_status=4) # 128 has MAV_MODE_FLAG_SAFETY_ARMED
+    autopilot_hb = FakeMessage('HEARTBEAT', sys_id=1, comp_id=1, base_mode=128, custom_mode=0x01030000, system_status=3) # 128 has MAV_MODE_FLAG_SAFETY_ARMED
     handle_mavlink_message(autopilot_hb)
     assert telemetry_data['last_heartbeat_monotonic'] > 0.0
     assert telemetry_data['armed'] is True
+    assert telemetry_data['system_status'] == 3
 
 
-def test_packet_loss_calculation():
+def test_per_source_packet_loss_isolation():
     session = start_telemetry_session()
     telemetry_data['sysid'] = 1
     telemetry_data['compid'] = 1
 
-    # Send packets with sequences: 0, 1, 2, then 5 (missing 3, 4)
+    # Component 1 (autopilot) sends packets: 0, 1, 2 (no gaps)
     p0 = FakeMessage('STATUSTEXT', sys_id=1, comp_id=1, seq=0, text=b'ok\x00', severity=6)
     p1 = FakeMessage('STATUSTEXT', sys_id=1, comp_id=1, seq=1, text=b'ok\x00', severity=6)
     p2 = FakeMessage('STATUSTEXT', sys_id=1, comp_id=1, seq=2, text=b'ok\x00', severity=6)
-    p5 = FakeMessage('STATUSTEXT', sys_id=1, comp_id=1, seq=5, text=b'ok\x00', severity=6)
+
+    # Interleaved companion component (comp 197) sends packets with totally different sequence numbers
+    c0 = FakeMessage('STATUSTEXT', sys_id=1, comp_id=197, seq=50, text=b'ok\x00', severity=6)
+    c1 = FakeMessage('STATUSTEXT', sys_id=1, comp_id=197, seq=80, text=b'ok\x00', severity=6)
 
     handle_mavlink_message(p0)
+    handle_mavlink_message(c0)
     handle_mavlink_message(p1)
+    handle_mavlink_message(c1)
     handle_mavlink_message(p2)
-    handle_mavlink_message(p5)
 
-    assert link_stats['packets_dropped'] == 2
-    assert link_stats['packets_received'] == 4
-    # Packet loss = 2 / (4 + 2) = 33.3%
-    assert 30.0 < link_stats['packet_loss_pct'] < 35.0
+    # Component 1 continues with sequence 3
+    p3 = FakeMessage('STATUSTEXT', sys_id=1, comp_id=1, seq=3, text=b'ok\x00', severity=6)
+    handle_mavlink_message(p3)
+
+    # Autopilot component 1 sequence was completely contiguous: 0, 1, 2, 3 -> ZERO dropped
+    assert telemetry_data['packets_lost'] == 0
+    assert telemetry_data['packet_loss_pct'] == 0.0
+    assert telemetry_data['packets_received'] == 4
     cancel_current_session()

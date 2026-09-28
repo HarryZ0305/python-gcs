@@ -4,7 +4,7 @@ import threading
 import uuid
 import struct
 import math
-from typing import Optional, Dict, Any, Set
+from typing import Optional, Dict, Any, Set, Tuple
 from pymavlink import mavutil
 from gcs.logs import log
 from gcs.params import decode_param_value, PARAM_TYPE_NAMES, PARAM_TYPE_REAL32
@@ -37,6 +37,14 @@ _active_session_obj: Optional[TelemetrySession] = None
 _active_session_id: Optional[str] = None
 _session_lock = threading.Lock()
 
+battery_config = {
+    'cells': 4,
+    'warn_volt_per_cell': 3.5,
+    'crit_volt_per_cell': 3.3,
+    'warn_pct': 25,
+    'crit_pct': 15
+}
+
 telemetry_data = {
     'sysid': 1,
     'compid': 1,
@@ -60,6 +68,7 @@ telemetry_data = {
     'last_heartbeat_time': 0.0, # Wall time for UI display
     'last_heartbeat_monotonic': 0.0, # Monotonic time for safety checks
     'prearm_fail': '',
+    'system_status': 0,       # 0: UNINIT, 1: BOOT, 2: CALIBRATING, 3: STANDBY, 4: ACTIVE, etc.
     'landed_state': 0,        # 0: Undefined, 1: On ground, 2: In air, 3: Takeoff, 4: Landing
     'has_home': False,
     'home_lat': 0.0,
@@ -88,6 +97,9 @@ link_stats = {
     'rate_count': 0,
     'message_rate_hz': 0.0,
 }
+
+# Per-source sequence tracking: (sys_id, comp_id) -> stats
+_source_seq_trackers: Dict[Tuple[int, int], dict] = {}
 
 def start_telemetry_session() -> TelemetrySession:
     global _active_session_obj, _active_session_id
@@ -130,6 +142,7 @@ def reset_telemetry_data():
     telemetry_data['last_heartbeat_time'] = 0.0
     telemetry_data['last_heartbeat_monotonic'] = 0.0
     telemetry_data['prearm_fail'] = ''
+    telemetry_data['system_status'] = 0
     telemetry_data['landed_state'] = 0
     telemetry_data['battery'] = -1
     telemetry_data['voltage'] = 0.0
@@ -151,6 +164,8 @@ def reset_telemetry_data():
     link_stats['rate_timer'] = 0.0
     link_stats['rate_count'] = 0
     link_stats['message_rate_hz'] = 0.0
+
+    _source_seq_trackers.clear()
     
     with parameters_lock:
         parameters_data.clear()
@@ -181,7 +196,7 @@ def is_vehicle_airborne() -> bool:
 def handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
     """
     Process a single MAVLink message, updating telemetry_data, parameters, command acks, etc.
-    Returns True if processed, False if dropped or ignored.
+    Calculates packet loss per source (src_sys, src_comp) to prevent multi-source sequence corruption.
     """
     if not msg:
         return False
@@ -194,7 +209,7 @@ def handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
     if target_sys != 0 and src_sys != 0 and src_sys != target_sys:
         return False
 
-    # Track sequence loss
+    # Track sequence loss strictly PER SOURCE
     seq = None
     if hasattr(msg, 'get_seq'):
         seq = msg.get_seq()
@@ -204,23 +219,41 @@ def handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
     now_mono = time.monotonic()
 
     if seq is not None:
-        last_seq = link_stats['last_seq']
+        src_key = (src_sys, src_comp)
+        if src_key not in _source_seq_trackers:
+            _source_seq_trackers[src_key] = {
+                'last_seq': None,
+                'packets_received': 0,
+                'packets_dropped': 0,
+                'packet_loss_pct': 0.0
+            }
+        tracker = _source_seq_trackers[src_key]
+
+        last_seq = tracker['last_seq']
         if last_seq is not None:
             expected = (last_seq + 1) % 256
             diff = (seq - expected) % 256
             if 0 < diff < 50:
-                link_stats['packets_dropped'] += diff
-        link_stats['last_seq'] = seq
-        link_stats['packets_received'] += 1
+                tracker['packets_dropped'] += diff
+        tracker['last_seq'] = seq
+        tracker['packets_received'] += 1
+
+        total = tracker['packets_received'] + tracker['packets_dropped']
+        if total > 0:
+            tracker['packet_loss_pct'] = (tracker['packets_dropped'] / total) * 100.0
+
+        # Update active autopilot stats
+        autopilot_comps = (mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1, 1)
+        if src_comp in autopilot_comps:
+            link_stats['last_seq'] = tracker['last_seq']
+            link_stats['packets_received'] = tracker['packets_received']
+            link_stats['packets_dropped'] = tracker['packets_dropped']
+            link_stats['packet_loss_pct'] = tracker['packet_loss_pct']
+            telemetry_data['packet_loss_pct'] = tracker['packet_loss_pct']
+            telemetry_data['packets_received'] = tracker['packets_received']
+            telemetry_data['packets_lost'] = tracker['packets_dropped']
+
         link_stats['rate_count'] += 1
-
-        total_pkts = link_stats['packets_received'] + link_stats['packets_dropped']
-        if total_pkts > 0:
-            link_stats['packet_loss_pct'] = (link_stats['packets_dropped'] / total_pkts) * 100.0
-            telemetry_data['packet_loss_pct'] = link_stats['packet_loss_pct']
-            telemetry_data['packets_received'] = link_stats['packets_received']
-            telemetry_data['packets_lost'] = link_stats['packets_dropped']
-
         if link_stats['rate_timer'] == 0.0:
             link_stats['rate_timer'] = now_mono
         elif now_mono - link_stats['rate_timer'] >= 1.0:
@@ -251,12 +284,54 @@ def handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
         if getattr(msg, 'type', 0) in autopilot_types or getattr(msg, 'autopilot', 0) == mavutil.mavlink.MAV_AUTOPILOT_PX4 or src_comp in autopilot_comps:
             telemetry_data['last_heartbeat_time'] = time.time()
             telemetry_data['last_heartbeat_monotonic'] = now_mono
+            telemetry_data['system_status'] = getattr(msg, 'system_status', 0)
             telemetry_data['armed'] = bool(
                 msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED
             )
             if telemetry_data['armed']:
                 telemetry_data['prearm_fail'] = ''
-            if vehicle and hasattr(vehicle, 'flightmode'):
+            # Decode flight mode: Support PX4 custom modes directly
+            custom_mode = getattr(msg, 'custom_mode', 0)
+            main_mode = (custom_mode >> 16) & 0xFF
+            sub_mode = (custom_mode >> 24) & 0xFF
+
+            mode_str = None
+            if vehicle and hasattr(vehicle, 'mode_mapping'):
+                mapping = vehicle.mode_mapping()
+                if mapping:
+                    for name, mid in mapping.items():
+                        if isinstance(mid, tuple) and len(mid) == 3:
+                            if mid[1] == main_mode and mid[2] == sub_mode:
+                                mode_str = name
+                                break
+                        elif isinstance(mid, int) and mid == main_mode and sub_mode == 0:
+                            mode_str = name
+                            break
+
+            if not mode_str:
+                px4_modes = {
+                    (1, 0): 'MANUAL',
+                    (2, 0): 'ALTCTL',
+                    (3, 0): 'POSCTL',
+                    (4, 1): 'AUTO.READY',
+                    (4, 2): 'TAKEOFF',
+                    (4, 3): 'LOITER',
+                    (4, 4): 'MISSION',
+                    (4, 5): 'RTL',
+                    (4, 6): 'LAND',
+                    (4, 7): 'RTGS',
+                    (4, 8): 'FOLLOWME',
+                    (4, 9): 'PRECLAND',
+                    (5, 0): 'ACRO',
+                    (6, 0): 'OFFBOARD',
+                    (7, 0): 'STABILIZED',
+                    (8, 0): 'RATTITUDE'
+                }
+                mode_str = px4_modes.get((main_mode, sub_mode))
+
+            if mode_str:
+                telemetry_data['mode'] = mode_str
+            elif vehicle and hasattr(vehicle, 'flightmode') and vehicle.flightmode != 'UNKNOWN':
                 telemetry_data['mode'] = vehicle.flightmode
 
     elif msg_type == 'GLOBAL_POSITION_INT':
@@ -368,7 +443,7 @@ def handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
             if len(param_download_stats['received_indices']) >= msg.param_count and msg.param_count > 0:
                 param_download_stats['is_complete'] = True
 
-    elif msg_type in ['MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK']:
+    elif msg_type in ['MISSION_REQUEST', 'MISSION_REQUEST_INT', 'MISSION_ACK', 'MISSION_COUNT', 'MISSION_ITEM_INT', 'MISSION_ITEM']:
         mission_queue.put(msg)
 
     elif msg_type == 'COMMAND_ACK':
@@ -399,7 +474,8 @@ def read_telemetry(vehicle, session_id: Optional[str] = None):
                     'HEARTBEAT', 'STATUSTEXT', 'ATTITUDE', 'MISSION_REQUEST',
                     'MISSION_REQUEST_INT', 'MISSION_ACK', 'PARAM_VALUE',
                     'COMMAND_ACK', 'MISSION_CURRENT', 'EXTENDED_SYS_STATE',
-                    'HOME_POSITION', 'AUTOPILOT_VERSION', 'BATTERY_STATUS', 'VIBRATION'
+                    'HOME_POSITION', 'AUTOPILOT_VERSION', 'BATTERY_STATUS', 'VIBRATION',
+                    'MISSION_COUNT', 'MISSION_ITEM_INT', 'MISSION_ITEM'
                 ],
                 blocking=True,
                 timeout=2.0

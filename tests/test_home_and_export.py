@@ -1,6 +1,6 @@
 """
 Unit tests for home position stability, trajectory deduplication/outlier filtering,
-and GeoJSON/KML flight path export.
+and GeoJSON/KML flight path export with relativeToGround and absolute altitude modes.
 """
 import os
 import json
@@ -62,18 +62,20 @@ def test_trajectory_record_and_export():
     logger = TelemetryLogger()
     logger.clear_records()
 
-    # Add 3 trajectory points
+    # Add 3 trajectory points with both rel alt and AMSL alt
     now = time.time()
     logger.records.extend([
-        {'timestamp': '2026-09-27T10:00:00', 'time_epoch': now, 'lat': 47.3977, 'lon': 8.5455, 'alt': 0.0},
-        {'timestamp': '2026-09-27T10:00:05', 'time_epoch': now + 5, 'lat': 47.3980, 'lon': 8.5458, 'alt': 10.5},
-        {'timestamp': '2026-09-27T10:00:10', 'time_epoch': now + 10, 'lat': 47.3985, 'lon': 8.5462, 'alt': 15.2},
+        {'timestamp': '2026-09-27T10:00:00', 'time_epoch': now, 'lat': 47.3977, 'lon': 8.5455, 'alt': 0.0, 'alt_amsl': 488.0},
+        {'timestamp': '2026-09-27T10:00:05', 'time_epoch': now + 5, 'lat': 47.3980, 'lon': 8.5458, 'alt': 10.5, 'alt_amsl': 498.5},
+        {'timestamp': '2026-09-27T10:00:10', 'time_epoch': now + 10, 'lat': 47.3985, 'lon': 8.5462, 'alt': 15.2, 'alt_amsl': 503.2},
     ])
 
     with tempfile.NamedTemporaryFile(suffix=".geojson", delete=False) as tf:
         geojson_path = tf.name
     with tempfile.NamedTemporaryFile(suffix=".kml", delete=False) as tf:
-        kml_path = tf.name
+        kml_rel_path = tf.name
+    with tempfile.NamedTemporaryFile(suffix=".kml", delete=False) as tf:
+        kml_abs_path = tf.name
 
     try:
         # GeoJSON export test
@@ -94,21 +96,29 @@ def test_trajectory_record_and_export():
         assert feature["properties"]["point_count"] == 3
         assert "relative_to_launch_home" in feature["properties"]["altitude_reference"]
 
-        # KML export test
-        ok = logger.export_kml(kml_path)
+        # KML relativeToGround export test
+        ok = logger.export_kml(kml_rel_path, altitude_mode='relativeToGround')
         assert ok is True
 
-        with open(kml_path, 'r', encoding='utf-8') as f:
+        with open(kml_rel_path, 'r', encoding='utf-8') as f:
             kml_text = f.read()
 
         assert '<?xml version="1.0" encoding="UTF-8"?>' in kml_text
-        assert '<kml xmlns="http://www.opengis.net/kml/2.2">' in kml_text
-        assert '<LineString>' in kml_text
+        assert '<altitudeMode>relativeToGround</altitudeMode>' in kml_text
         assert '8.5455000,47.3977000,0.00' in kml_text
         assert '8.5462000,47.3985000,15.20' in kml_text
-        assert '<altitudeMode>relativeToGround</altitudeMode>' in kml_text
+
+        # KML absolute export test
+        ok = logger.export_kml(kml_abs_path, altitude_mode='absolute')
+        assert ok is True
+
+        with open(kml_abs_path, 'r', encoding='utf-8') as f:
+            kml_abs_text = f.read()
+
+        assert '<altitudeMode>absolute</altitudeMode>' in kml_abs_text
+        assert '8.5455000,47.3977000,488.00' in kml_abs_text
+        assert '8.5462000,47.3985000,503.20' in kml_abs_text
     finally:
-        if os.path.exists(geojson_path):
-            os.remove(geojson_path)
-        if os.path.exists(kml_path):
-            os.remove(kml_path)
+        for p in [geojson_path, kml_rel_path, kml_abs_path]:
+            if os.path.exists(p):
+                os.remove(p)

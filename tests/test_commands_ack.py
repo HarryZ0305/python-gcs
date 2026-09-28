@@ -1,7 +1,7 @@
 import pytest
 import time
 from unittest.mock import MagicMock
-from gcs.command_manager import CommandManager, ACK_RESULT_NAMES
+from gcs.command_manager import CommandManager, ACK_RESULT_NAMES, CommandAlreadyPendingError
 from gcs.commands import disarm
 from gcs.telemetry import telemetry_data
 
@@ -72,6 +72,33 @@ def test_command_ack_timeout():
     assert ok is False
     assert "TIMEOUT" in res_str
     assert code is None
+
+def test_command_ack_wrong_system_or_component():
+    mgr = CommandManager()
+    pending = mgr.register(command_id=400, target_system=1, target_component=1, timeout=0.3)
+    
+    # ACK from system 2 should NOT match
+    ack_wrong_sys = FakeAckMessage(command=400, result=0, src_sys=2, src_comp=1)
+    routed = mgr.handle_ack(ack_wrong_sys)
+    assert routed is None # Must not route to pending
+    
+    # ACK from component 200 should NOT match
+    ack_wrong_comp = FakeAckMessage(command=400, result=0, src_sys=1, src_comp=200)
+    routed = mgr.handle_ack(ack_wrong_comp)
+    assert routed is None # Must not route to pending
+    
+    # Pending must remain unfulfilled and time out
+    ok, res_str, code = pending.wait()
+    assert ok is False
+    assert "TIMEOUT" in res_str
+
+def test_concurrent_identical_command_rejected():
+    mgr = CommandManager()
+    p1 = mgr.register(command_id=400, target_system=1, target_component=1, timeout=1.0)
+    
+    # Registering duplicate identical active command must be rejected
+    with pytest.raises(CommandAlreadyPendingError):
+        mgr.register(command_id=400, target_system=1, target_component=1, timeout=1.0)
 
 def test_airborne_disarm_guard():
     fake_vehicle = MagicMock()

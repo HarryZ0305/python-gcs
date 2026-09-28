@@ -180,26 +180,35 @@ class TelemetryLogger:
             json.dump(geojson_data, f, indent=2)
         return True
 
-    def export_kml(self, filename: str) -> bool:
+    def export_kml(self, filename: str, altitude_mode: str = 'relativeToGround') -> bool:
         records = self.get_records_snapshot()
         if not records:
             if telemetry_data.get('lat', 0.0) != 0.0:
                 records = [{
                     'lon': telemetry_data['lon'],
                     'lat': telemetry_data['lat'],
-                    'alt': telemetry_data.get('alt', 0.0)
+                    'alt': telemetry_data.get('alt', 0.0),
+                    'alt_amsl': telemetry_data.get('alt_amsl', 0.0)
                 }]
             else:
                 return False
 
-        coord_strings = [f"{r['lon']:.7f},{r['lat']:.7f},{r.get('alt', 0.0):.2f}" for r in records]
+        if altitude_mode == 'absolute':
+            coord_strings = [f"{r['lon']:.7f},{r['lat']:.7f},{r.get('alt_amsl', r.get('alt', 0.0)):.2f}" for r in records]
+            kml_mode = 'absolute'
+            desc = "Recorded flight path. Altitude values are AMSL (Above Mean Sea Level)."
+        else:
+            coord_strings = [f"{r['lon']:.7f},{r['lat']:.7f},{r.get('alt', 0.0):.2f}" for r in records]
+            kml_mode = 'relativeToGround'
+            desc = "Recorded flight path. Altitude values are relative to launch point elevation."
+
         coord_block = " ".join(coord_strings)
 
         kml_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>PythonGCS Flight Trail</name>
-    <description>Recorded flight path. Altitude values are relative to launch point elevation.</description>
+    <description>{desc}</description>
     <Style id="flightPathStyle">
       <LineStyle>
         <color>ff0055ff</color>
@@ -215,7 +224,7 @@ class TelemetryLogger:
       <LineString>
         <extrude>1</extrude>
         <tessellate>1</tessellate>
-        <altitudeMode>relativeToGround</altitudeMode>
+        <altitudeMode>{kml_mode}</altitudeMode>
         <coordinates>
           {coord_block}
         </coordinates>

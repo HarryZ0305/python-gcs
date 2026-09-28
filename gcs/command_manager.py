@@ -13,6 +13,10 @@ ACK_RESULT_NAMES = {
     6: 'CANCELLED'
 }
 
+class CommandAlreadyPendingError(RuntimeError):
+    """Raised when an identical command is already pending for the target vehicle."""
+    pass
+
 class PendingCommand:
     def __init__(self, command_id: int, target_system: int = 1, target_component: int = 1, timeout: float = 3.0):
         self.command_id = command_id
@@ -25,6 +29,11 @@ class PendingCommand:
         self.result_str: str = 'TIMEOUT'
         self.progress: int = 0
         self.result_param2: int = 0
+
+    def is_active(self) -> bool:
+        if self.event.is_set():
+            return False
+        return (time.monotonic() - self.start_time) < self.timeout
 
     def wait(self) -> Tuple[bool, str, Optional[int]]:
         remaining = max(0.1, self.timeout - (time.monotonic() - self.start_time))
@@ -41,21 +50,36 @@ class CommandManager:
     def __init__(self):
         self._lock = threading.Lock()
         self._pending: Dict[Tuple[int, int, int], PendingCommand] = {}
-        self._last_acks: Dict[int, dict] = {}
+        self._last_acks: Dict[Tuple[int, int, int], dict] = {}
 
     def register(self, command_id: int, target_system: int = 1, target_component: int = 1, timeout: float = 3.0) -> PendingCommand:
+        """
+        Registers a pending command for the exact (command_id, target_system, target_component).
+        Rejects concurrent identical commands if one is already active.
+        """
         key = (command_id, target_system, target_component)
-        pending = PendingCommand(command_id, target_system, target_component, timeout)
         with self._lock:
-            # Clean up expired pending commands
             now = time.monotonic()
-            expired = [k for k, v in self._pending.items() if (now - v.start_time) > v.timeout + 2.0]
+            # Clean up expired pending commands
+            expired = [k for k, v in self._pending.items() if (now - v.start_time) > v.timeout + 1.0]
             for k in expired:
                 del self._pending[k]
+
+            existing = self._pending.get(key)
+            if existing is not None and existing.is_active():
+                raise CommandAlreadyPendingError(
+                    f"Command {command_id} already active for target {target_system}:{target_component}"
+                )
+
+            pending = PendingCommand(command_id, target_system, target_component, timeout)
             self._pending[key] = pending
-        return pending
+            return pending
 
     def handle_ack(self, msg) -> Optional[PendingCommand]:
+        """
+        Routes COMMAND_ACK strictly to the exact (cmd_id, src_sys, src_comp) pending command.
+        Does NOT accept ACKs from wrong systems or components.
+        """
         cmd_id = getattr(msg, 'command', 0)
         result = getattr(msg, 'result', -1)
         src_sys = msg.get_srcSystem()
@@ -67,26 +91,17 @@ class CommandManager:
         log(f'COMMAND_ACK: Command {cmd_id} from sys {src_sys}:{src_comp} -> {result_name} (progress={progress})')
 
         key = (cmd_id, src_sys, src_comp)
-        fallback_key = (cmd_id, 1, 1)
 
-        target_pending = None
         with self._lock:
-            self._last_acks[cmd_id] = {
+            self._last_acks[key] = {
                 'result': result,
                 'result_str': result_name,
                 'progress': progress,
                 'time': time.monotonic()
             }
-            if key in self._pending:
-                target_pending = self._pending[key]
-            elif fallback_key in self._pending:
-                target_pending = self._pending[fallback_key]
-            else:
-                # Find any pending with matching cmd_id
-                for k, v in self._pending.items():
-                    if k[0] == cmd_id:
-                        target_pending = v
-                        break
+
+            # Exact match ONLY: No fallback to default system or loose cmd_id
+            target_pending = self._pending.get(key)
 
             if target_pending:
                 target_pending.progress = progress
@@ -98,12 +113,9 @@ class CommandManager:
                     target_pending.result_code = result
                     target_pending.result_str = result_name
                     target_pending.event.set()
-                    # Remove from pending dictionary
-                    keys_to_del = [k for k, v in self._pending.items() if v is target_pending]
-                    for k in keys_to_del:
-                        del self._pending[k]
+                    self._pending.pop(key, None)
 
-        return target_pending
+            return target_pending
 
     def clear(self):
         with self._lock:

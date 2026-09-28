@@ -14,22 +14,47 @@ def connect(connection_string=None, timeout=None):
     
     start_t = time.monotonic()
     msg = None
+
+    autopilot_comps = (mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1, 1)
+    autopilot_types = (
+        getattr(mavutil.mavlink, 'MAV_TYPE_QUADROTOR', 2),
+        getattr(mavutil.mavlink, 'MAV_TYPE_HEXAROTOR', 13),
+        getattr(mavutil.mavlink, 'MAV_TYPE_OCTOROTOR', 14),
+        getattr(mavutil.mavlink, 'MAV_TYPE_GENERIC', 0),
+        getattr(mavutil.mavlink, 'MAV_TYPE_FIXED_WING', 1),
+        getattr(mavutil.mavlink, 'MAV_TYPE_VTOL_TAILSITTER_DUOROTOR', 19),
+        getattr(mavutil.mavlink, 'MAV_TYPE_VTOL_TAILSITTER_QUADROTOR', 20),
+        getattr(mavutil.mavlink, 'MAV_TYPE_VTOL_TILTROTOR', 21)
+    )
+
     if timeout is not None:
         while time.monotonic() - start_t < timeout:
             msg = vehicle.wait_heartbeat(timeout=min(1.0, max(0.1, timeout - (time.monotonic() - start_t))))
             if msg is not None:
-                # Check that this is an autopilot system, not a ground station or peripheral
-                if msg.type != mavutil.mavlink.MAV_TYPE_GCS:
+                is_ap = (
+                    (msg.get_srcComponent() in autopilot_comps or getattr(msg, 'autopilot', 0) == mavutil.mavlink.MAV_AUTOPILOT_PX4)
+                    and (msg.type in autopilot_types or msg.type != mavutil.mavlink.MAV_TYPE_GCS)
+                )
+                if is_ap:
                     break
                 msg = None
         if msg is None:
-            log("Connection timeout: No autopilot heartbeat received.")
+            log("Connection timeout: No autopilot heartbeat received. Closing connection.")
+            try:
+                vehicle.close()
+            except Exception:
+                pass
             return None
     else:
         while True:
             msg = vehicle.wait_heartbeat()
-            if msg is not None and msg.type != mavutil.mavlink.MAV_TYPE_GCS:
-                break
+            if msg is not None:
+                is_ap = (
+                    (msg.get_srcComponent() in autopilot_comps or getattr(msg, 'autopilot', 0) == mavutil.mavlink.MAV_AUTOPILOT_PX4)
+                    and (msg.type in autopilot_types or msg.type != mavutil.mavlink.MAV_TYPE_GCS)
+                )
+                if is_ap:
+                    break
 
     vehicle.target_system = msg.get_srcSystem()
     vehicle.target_component = msg.get_srcComponent()
