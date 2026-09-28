@@ -73,3 +73,25 @@ def test_parameter_backup_and_restore_comparison():
     assert actions['MPC_XY_VEL_MAX'] == 'UPDATE'
     assert actions['UNKNOWN_PARAM'] == 'UNKNOWN_SKIP'
     assert actions['COM_ARM_WO_GPS'] == 'TYPE_MISMATCH_SKIP'
+
+
+def test_request_parameter_by_index_and_name():
+    from unittest.mock import MagicMock
+    from gcs.commands import request_parameter
+
+    mock_vehicle = MagicMock()
+    mock_vehicle.target_system = 1
+    mock_vehicle.target_component = 1
+
+    # Request by integer index
+    request_parameter(mock_vehicle, 42)
+    mock_vehicle.mav.param_request_read_send.assert_called_with(
+        1, 1, b'', 42
+    )
+
+    # Request by string name
+    request_parameter(mock_vehicle, 'SYS_AUTOSTART')
+    expected_bytes = 'SYS_AUTOSTART'.encode('utf-8')[:16].ljust(16, b'\x00')
+    mock_vehicle.mav.param_request_read_send.assert_called_with(
+        1, 1, expected_bytes, -1
+    )

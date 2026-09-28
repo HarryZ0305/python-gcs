@@ -564,20 +564,25 @@ def request_all_parameters(vehicle):
             vehicle.target_component
         )
 
-def request_parameter(vehicle, param_name: str):
+def request_parameter(vehicle, param_id_or_index):
     _ensure_streamer(vehicle)
-    if isinstance(param_name, str):
-        param_bytes = param_name.encode('utf-8')
-    else:
-        param_bytes = param_name
-    log(f"Requesting parameter {param_name}...")
+    log(f"Requesting parameter {param_id_or_index}...")
     with mav_lock:
-        vehicle.mav.param_request_read_send(
-            vehicle.target_system,
-            vehicle.target_component,
-            param_bytes,
-            -1
-        )
+        if isinstance(param_id_or_index, int):
+            vehicle.mav.param_request_read_send(
+                vehicle.target_system,
+                vehicle.target_component,
+                b'',
+                int(param_id_or_index)
+            )
+        else:
+            name_bytes = str(param_id_or_index).encode('utf-8')[:16].ljust(16, b'\x00')
+            vehicle.mav.param_request_read_send(
+                vehicle.target_system,
+                vehicle.target_component,
+                name_bytes,
+                -1
+            )
 
 def download_mission(vehicle, timeout: float = 5.0) -> Tuple[bool, List[dict], str]:
     """
