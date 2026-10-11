@@ -84,7 +84,13 @@ telemetry_data = {
     'message_rate_hz': 0.0,
     'packets_received': 0,
     'packets_lost': 0,
-    'autopilot_version': 'Unknown'
+    'autopilot_version': 'Unknown',
+    'climb_rate': 0.0,
+    'last_gps_monotonic': 0.0,
+    'last_attitude_monotonic': 0.0,
+    'last_battery_monotonic': 0.0,
+    'last_vfr_monotonic': 0.0,
+    'last_extended_sys_state_monotonic': 0.0
 }
 
 # Link statistics tracking
@@ -100,6 +106,53 @@ link_stats = {
 
 # Per-source sequence tracking: (sys_id, comp_id) -> stats
 _source_seq_trackers: Dict[Tuple[int, int], dict] = {}
+
+def get_stream_freshness(now_mono: Optional[float] = None) -> dict:
+    """
+    Evaluates freshness per telemetry stream independently of heartbeat.
+    Prevents frozen GPS, attitude, or power data from appearing current.
+    """
+    if now_mono is None:
+        now_mono = time.monotonic()
+    
+    last_hb = telemetry_data.get('last_heartbeat_monotonic', 0.0)
+    last_gps = telemetry_data.get('last_gps_monotonic', 0.0)
+    last_att = telemetry_data.get('last_attitude_monotonic', 0.0)
+    last_batt = telemetry_data.get('last_battery_monotonic', 0.0)
+    last_vfr = telemetry_data.get('last_vfr_monotonic', 0.0)
+
+    hb_age = (now_mono - last_hb) if last_hb > 0.0 else 999.0
+    gps_age = (now_mono - last_gps) if last_gps > 0.0 else 999.0
+    att_age = (now_mono - last_att) if last_att > 0.0 else 999.0
+    batt_age = (now_mono - last_batt) if last_batt > 0.0 else 999.0
+    vfr_age = (now_mono - last_vfr) if last_vfr > 0.0 else 999.0
+
+    gps_valid = (last_gps > 0.0 and gps_age <= 3.0 and telemetry_data.get('fix_type', 0) >= 3 and telemetry_data.get('satellites', 0) >= 6)
+    attitude_valid = (last_att > 0.0 and att_age <= 2.0)
+    battery_valid = (last_batt > 0.0 and batt_age <= 4.0 and (telemetry_data.get('voltage', 0.0) > 0.0 or telemetry_data.get('battery', -1) >= 0))
+    vfr_valid = (last_vfr > 0.0 and vfr_age <= 3.0)
+
+    if last_hb == 0.0:
+        link_state = 'DISCONNECTED'
+    elif hb_age > 4.0:
+        link_state = 'LOST'
+    elif hb_age > 2.5 or telemetry_data.get('packet_loss_pct', 0.0) > 5.0 or telemetry_data.get('message_rate_hz', 0.0) < 1.0:
+        link_state = 'DEGRADED'
+    else:
+        link_state = 'HEALTHY'
+
+    return {
+        'hb_age': hb_age,
+        'gps_age': gps_age,
+        'att_age': att_age,
+        'batt_age': batt_age,
+        'vfr_age': vfr_age,
+        'gps_valid': gps_valid,
+        'attitude_valid': attitude_valid,
+        'battery_valid': battery_valid,
+        'vfr_valid': vfr_valid,
+        'link_state': link_state
+    }
 
 def start_telemetry_session() -> TelemetrySession:
     global _active_session_obj, _active_session_id
@@ -156,6 +209,12 @@ def reset_telemetry_data():
     telemetry_data['message_rate_hz'] = 0.0
     telemetry_data['packets_received'] = 0
     telemetry_data['packets_lost'] = 0
+    telemetry_data['climb_rate'] = 0.0
+    telemetry_data['last_gps_monotonic'] = 0.0
+    telemetry_data['last_attitude_monotonic'] = 0.0
+    telemetry_data['last_battery_monotonic'] = 0.0
+    telemetry_data['last_vfr_monotonic'] = 0.0
+    telemetry_data['last_extended_sys_state_monotonic'] = 0.0
 
     link_stats['last_seq'] = None
     link_stats['packets_received'] = 0
@@ -339,10 +398,13 @@ def handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
         telemetry_data['lon'] = msg.lon / 1e7
         telemetry_data['alt'] = msg.relative_alt / 1000.0   # Relative to home
         telemetry_data['alt_amsl'] = msg.alt / 1000.0      # AMSL
+        telemetry_data['last_gps_monotonic'] = now_mono
 
     elif msg_type == 'VFR_HUD':
         telemetry_data['groundspeed'] = msg.groundspeed
         telemetry_data['throttle'] = msg.throttle
+        telemetry_data['climb_rate'] = getattr(msg, 'climb', 0.0)
+        telemetry_data['last_vfr_monotonic'] = now_mono
 
     elif msg_type == 'SYS_STATUS':
         batt_rem = msg.battery_remaining
@@ -360,12 +422,14 @@ def handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
         telemetry_data['sensors_present'] = msg.onboard_control_sensors_present
         telemetry_data['sensors_enabled'] = msg.onboard_control_sensors_enabled
         telemetry_data['sensors_health'] = msg.onboard_control_sensors_health
+        telemetry_data['last_battery_monotonic'] = now_mono
 
     elif msg_type == 'BATTERY_STATUS':
         voltages = getattr(msg, 'voltages', [])
         valid_cells = [v / 1000.0 for v in voltages if v > 0 and v != 65535]
         if valid_cells:
             telemetry_data['battery_cells'] = valid_cells
+        telemetry_data['last_battery_monotonic'] = now_mono
 
     elif msg_type == 'VIBRATION':
         telemetry_data['vibration'] = (
@@ -390,14 +454,17 @@ def handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
         telemetry_data['satellites'] = msg.satellites_visible
         telemetry_data['fix_type'] = msg.fix_type
         telemetry_data['eph'] = msg.eph
+        telemetry_data['last_gps_monotonic'] = now_mono
 
     elif msg_type == 'ATTITUDE':
         telemetry_data['roll'] = msg.roll
         telemetry_data['pitch'] = msg.pitch
         telemetry_data['yaw'] = msg.yaw
+        telemetry_data['last_attitude_monotonic'] = now_mono
 
     elif msg_type == 'EXTENDED_SYS_STATE':
         telemetry_data['landed_state'] = getattr(msg, 'landed_state', 0)
+        telemetry_data['last_extended_sys_state_monotonic'] = now_mono
 
     elif msg_type == 'HOME_POSITION':
         telemetry_data['has_home'] = True

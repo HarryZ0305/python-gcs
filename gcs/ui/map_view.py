@@ -301,10 +301,13 @@ MAP_HTML = """
             var lon = e.latlng.lng;
             if (currentMode === 'takeoff') {
                 setTakeoff(lat, lon);
+                document.title = 'ACTION:TAKEOFF:' + lat + ':' + lon;
             } else if (currentMode === 'waypoint') {
                 addWaypoint(lat, lon);
+                document.title = 'ACTION:WAYPOINT:' + lat + ':' + lon;
             } else if (currentMode === 'landing') {
                 setLanding(lat, lon);
+                document.title = 'ACTION:LANDING:' + lat + ':' + lon;
             } else if (currentMode === 'goto') {
                 setGoToTarget(lat, lon);
             }
@@ -585,6 +588,9 @@ MAP_HTML = """
 
 class MapView(QWebEngineView):
     goto_requested = pyqtSignal(float, float)
+    waypoint_added = pyqtSignal(float, float)
+    takeoff_added = pyqtSignal(float, float)
+    landing_added = pyqtSignal(float, float)
 
     def __init__(self):
         super().__init__()
@@ -614,6 +620,36 @@ class MapView(QWebEngineView):
                     self.goto_requested.emit(lat, lon)
                 except ValueError:
                     pass
+        elif title.startswith("ACTION:WAYPOINT:"):
+            parts = title.replace("ACTION:WAYPOINT:", "").split(":")
+            if len(parts) == 2:
+                try:
+                    lat = float(parts[0])
+                    lon = float(parts[1])
+                    self.waypoint_added.emit(lat, lon)
+                except ValueError:
+                    pass
+        elif title.startswith("ACTION:TAKEOFF:"):
+            parts = title.replace("ACTION:TAKEOFF:", "").split(":")
+            if len(parts) == 2:
+                try:
+                    lat = float(parts[0])
+                    lon = float(parts[1])
+                    self.takeoff_added.emit(lat, lon)
+                except ValueError:
+                    pass
+        elif title.startswith("ACTION:LANDING:"):
+            parts = title.replace("ACTION:LANDING:", "").split(":")
+            if len(parts) == 2:
+                try:
+                    lat = float(parts[0])
+                    lon = float(parts[1])
+                    self.landing_added.emit(lat, lon)
+                except ValueError:
+                    pass
+
+    def set_waypoints(self, waypoints, takeoff=None, landing=None):
+        self.import_mission(takeoff, waypoints, landing)
 
     def update_position(self, lat, lon, heading_deg=0.0, speed=0.0, alt=0.0):
         if (lat == 0.0 and lon == 0.0):

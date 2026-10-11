@@ -34,6 +34,14 @@ hiddenimports = [
     'pymavlink.dialects.v20.standard',
     'pymavlink.dialects.v20.px4',
     'pymavlink.dialects.v20.ardupilotmega',
+    'pyqtgraph',
+    'gcs.ui.theme',
+    'gcs.ui.flight_instruments',
+    'gcs.ui.pip_workspace',
+    'gcs.ui.plan_view',
+    'gcs.ui.analyze_view',
+    'gcs.ui.settings_view',
+    'gcs.ui.camera_view',
 ] + hiddenimports_we + hiddenimports_wew + hiddenimports_pm + hiddenimports_tts
 
 a = Analysis(

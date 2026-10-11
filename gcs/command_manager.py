@@ -24,6 +24,8 @@ class PendingCommand:
         self.target_component = target_component
         self.timeout = timeout
         self.start_time = time.monotonic()
+        self.last_activity_time = self.start_time
+        self.state = 'SENT'  # SENT -> IN_PROGRESS -> CONFIRMED / REJECTED / TIMEOUT / CANCELLED
         self.event = threading.Event()
         self.result_code: Optional[int] = None
         self.result_str: str = 'TIMEOUT'
@@ -33,17 +35,23 @@ class PendingCommand:
     def is_active(self) -> bool:
         if self.event.is_set():
             return False
-        return (time.monotonic() - self.start_time) < self.timeout
+        return (time.monotonic() - self.last_activity_time) < self.timeout
 
     def wait(self) -> Tuple[bool, str, Optional[int]]:
-        remaining = max(0.1, self.timeout - (time.monotonic() - self.start_time))
-        signaled = self.event.wait(timeout=remaining)
-        if not signaled:
-            self.result_str = f'TIMEOUT ({self.timeout}s)'
-            self.result_code = None
-            return False, self.result_str, None
-        success = (self.result_code == 0)
-        return success, self.result_str, self.result_code
+        while True:
+            elapsed = time.monotonic() - self.last_activity_time
+            remaining = self.timeout - elapsed
+            if remaining <= 0:
+                self.result_str = f'TIMEOUT ({self.timeout}s)'
+                self.result_code = None
+                self.state = 'TIMEOUT'
+                return False, self.result_str, None
+
+            signaled = self.event.wait(timeout=max(0.05, remaining))
+            if signaled:
+                success = (self.result_code == 0)
+                self.state = 'CONFIRMED' if success else 'REJECTED'
+                return success, self.result_str, self.result_code
 
 
 class CommandManager:
@@ -61,7 +69,7 @@ class CommandManager:
         with self._lock:
             now = time.monotonic()
             # Clean up expired pending commands
-            expired = [k for k, v in self._pending.items() if (now - v.start_time) > v.timeout + 1.0]
+            expired = [k for k, v in self._pending.items() if (now - v.last_activity_time) > v.timeout + 1.0]
             for k in expired:
                 del self._pending[k]
 
@@ -79,6 +87,7 @@ class CommandManager:
         """
         Routes COMMAND_ACK strictly to the exact (cmd_id, src_sys, src_comp) pending command.
         Does NOT accept ACKs from wrong systems or components.
+        Resets timeout countdown when IN_PROGRESS acknowledgment is received.
         """
         cmd_id = getattr(msg, 'command', 0)
         result = getattr(msg, 'result', -1)
@@ -106,9 +115,9 @@ class CommandManager:
             if target_pending:
                 target_pending.progress = progress
                 target_pending.result_param2 = result_param2
-                if result == 5: # IN_PROGRESS
-                    # Keep waiting, do not complete yet
-                    pass
+                if result == 5:  # IN_PROGRESS
+                    target_pending.state = 'IN_PROGRESS'
+                    target_pending.last_activity_time = time.monotonic()  # Reset timeout window
                 else:
                     target_pending.result_code = result
                     target_pending.result_str = result_name

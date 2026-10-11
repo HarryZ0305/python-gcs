@@ -131,6 +131,7 @@ def import_plan_file(filename: str) -> Tuple[bool, List[List[float]], Optional[L
         landing = None
         detected_alt = 10.0
 
+        unsupported_cmds = []
         for item in raw_items:
             cmd = item.get("command")
             params = item.get("params", [])
@@ -154,8 +155,14 @@ def import_plan_file(filename: str) -> Tuple[bool, List[List[float]], Optional[L
                     landing = [float(lat), float(lon), float(alt)]
                 elif cmd in (MAV_CMD_NAV_WAYPOINT, MAV_CMD_NAV_TAKEOFF):
                     wps.append([float(lat), float(lon), float(alt)])
+                else:
+                    unsupported_cmds.append(cmd)
 
-        return True, wps, takeoff, landing, detected_alt, f"Imported QGC Plan ({len(wps)} waypoints)"
+        msg = f"Imported QGC Plan ({len(wps)} waypoints)"
+        if unsupported_cmds:
+            msg += f". Note: {len(unsupported_cmds)} unsupported command(s) skipped: {set(unsupported_cmds)}"
+
+        return True, wps, takeoff, landing, detected_alt, msg
 
     # Format 2: Legacy PythonGCS {takeoff, waypoints, landing}
     if isinstance(data, dict) and "waypoints" in data:
@@ -168,3 +175,58 @@ def import_plan_file(filename: str) -> Tuple[bool, List[List[float]], Optional[L
         return True, wps, takeoff, landing, float(alt), f"Imported Legacy Plan ({len(wps)} waypoints)"
 
     return False, [], None, None, 10.0, "Unrecognized plan file schema"
+
+
+def calculate_mission_stats(
+    waypoints: List[List[float]],
+    takeoff_point: Optional[List[float]] = None,
+    landing_point: Optional[List[float]] = None,
+    cruise_speed: float = 5.0
+) -> Dict[str, Any]:
+    """
+    Calculates 3D distance, estimated flight time, and energy requirements.
+    Explicitly provides the estimation assumptions to avoid operator confusion.
+    """
+    import math
+    from gcs.telemetry_logger import haversine_distance
+
+    coords = []
+    if takeoff_point:
+        coords.append(takeoff_point)
+    coords.extend(waypoints)
+    if landing_point:
+        coords.append(landing_point)
+
+    if not coords:
+        return {
+            'item_count': 0,
+            'total_distance_m': 0.0,
+            'est_flight_time_s': 0.0,
+            'est_energy_wh': 0.0,
+            'max_altitude_m': 0.0,
+            'assumptions': "No mission items"
+        }
+
+    total_dist = 0.0
+    for i in range(len(coords) - 1):
+        c1, c2 = coords[i], coords[i + 1]
+        h_dist = haversine_distance(c1[0], c1[1], c2[0], c2[1])
+        alt1 = c1[2] if len(c1) > 2 else 10.0
+        alt2 = c2[2] if len(c2) > 2 else 10.0
+        v_dist = abs(alt2 - alt1)
+        total_dist += math.sqrt(h_dist ** 2 + v_dist ** 2)
+
+    cruise_speed = max(1.0, float(cruise_speed))
+    est_flight_time = total_dist / cruise_speed
+    # Estimate energy (150 W nominal draw for standard 4S multirotor)
+    est_energy_wh = (est_flight_time / 3600.0) * 150.0
+    max_alt = max([c[2] if len(c) > 2 else 10.0 for c in coords])
+
+    return {
+        'item_count': len(coords),
+        'total_distance_m': total_dist,
+        'est_flight_time_s': est_flight_time,
+        'est_energy_wh': est_energy_wh,
+        'max_altitude_m': max_alt,
+        'assumptions': f"Assumes {cruise_speed:.1f} m/s cruise and 150W avg electrical draw"
+    }

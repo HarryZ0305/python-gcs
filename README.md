@@ -1,48 +1,47 @@
 # Python GCS — Professional Autonomous Ground Control Station for PX4
 
-A modern, high-performance desktop Ground Control Station (GCS) engineered natively for **PX4 Autopilot** and MAVLink multirotors. Built with **Python 3**, **PyQt6**, and raw **pymavlink**, PythonGCS provides a responsive, flight-safety-first pilot interface targeting PX4 SITL (`gz_x500`) and Holybro S500 / Pixhawk 6C platforms.
-
-![PythonGCS Screenshot](design/GCS%20Prototype%201.png)
+A modern, high-performance desktop Ground Control Station (GCS) engineered natively for **PX4 Autopilot** and MAVLink multirotors. Built with **Python 3**, **PyQt6**, **pyqtgraph**, and raw **pymavlink**, PythonGCS provides a responsive, flight-safety-first pilot interface targeting PX4 SITL (`gz_x500`) and Holybro S500 / Pixhawk 6C platforms.
 
 ---
 
-## Key Capabilities
+## Architecture & Workspaces
 
-### 1. FLY — Tactical Operations & Manual/Offboard Flight
-- **Connection Profiles**: Instant switching between PX4 SITL UDP (`udpin:0.0.0.0:14540`), QGroundControl UDP (`udpin:0.0.0.0:14550`), TCP (`tcp:127.0.0.1:5760`), and Serial Radio (`com3:57600`).
-- **Interactive Leaflet Tactical Map**: Real-time GPS positioning, heading orientation, home position marker, deduplicated trajectory trail, and follow-drone mode.
-- **Guided Fly-To (Reposition)**: Click anywhere on the map to dispatch verified `MAV_CMD_DO_REPOSITION` commands with launch-relative altitude hold.
-- **Offboard & Keyboard Flying**: Rate-controlled 10 Hz setpoint streaming in `BODY_NED` with zero-velocity warmup, dead-man freshness timeout (0.5s auto-hover), and instant zeroing on focus loss or key release.
-- **Airborne Disarm Guard**: Ordinary disarm is blocked while the vehicle is in flight (`landed_state` check); deliberate two-step confirmation required for in-flight emergency cutoff.
-- **Emergency Abort / Hold**: One-click instant loiter (`AUTO.LOITER`) that immediately halts all velocity targets.
-- **3D Attitude Visualizer**: Real-time 3D quadcopter view powered by Three.js with roll, pitch, and yaw readouts.
-- **Evidence-Based Pre-Flight Checklist**: Strict verification of GNSS 3D fix, telemetry age/rate, `SYS_STATUS` sensor health bits (Gyro, Accel, Mag, Baro), power voltage thresholds, and confirmed home lock. Distinguishes PASS, FAIL, and UNKNOWN (UNKNOWN never yields "GO FOR FLIGHT").
-- **Flight Trail Export**: One-click export of recorded trajectories to standard Google Earth 3D `.kml` or GeoJSON `.geojson` with truthful launch-relative altitude references.
+PythonGCS organizes tactical workflows into five dedicated, purpose-built workspaces:
 
-### 2. PLAN — Autonomous Missions & Survey Grids
-- **Standard QGroundControl `.plan` Support**: Full bidirectional import and export compatibility with QGC `.plan` (v1.0 schema) and legacy JSON plans.
-- **Interactive Waypoint Editor**: Add, reorder (Move Up / Down), edit altitude per waypoint, or delete waypoints.
-- **Aerial Survey Grid Generator**: Auto-generates serpentine lawnmower photogrammetry flight lines from Width, Height, Lane Spacing, and Altitude parameters without duplicating takeoff/landing points.
-- **PX4 Mission Protocol Compliance**: Sequence index 0 represents the first actual mission item (no fake Home waypoint). Uses `MISSION_COUNT` transactions without premature clear, handling retransmissions and readback verification.
-- **Mission Statistics & Duration Estimator**: Real-time calculation of total flight trajectory length and estimated mission duration at nominal cruise speed.
+### 1. FLY — Tactical Operations & Picture-in-Picture Workspace
+- **Aviation-Grade Primary Flight Display (PFD)**: High-performance 2D PFD rendered at 30 Hz via native `QPainter` with artificial horizon, pitch ladder, roll bank pointer, rolling airspeed/altitude tapes, heading compass ribbon, vertical speed/climb rate indicator, and 1-click toggle to 3D CAD visualization.
+- **Picture-in-Picture (PiP) Workspace**: Dominant tactical map with floating live video feed. Supports instant 1-click swap (video primary / map inset), double-click maximize, and minimize.
+- **Off-Thread Video Pipeline**: Dedicated background capture worker (`VideoCaptureWorker`) keeping RTSP, UDP, HTTP, USB, and synthetic test streams off the Qt GUI thread. Includes honest stream states (`DISCONNECTED`, `CONNECTING`, `LIVE`, `STALE`, `FAILED`, `TEST_PATTERN`), watchdog freeze detection, and OSD telemetry HUD overlays.
+- **Per-Stream Telemetry Freshness**: Monotonic receipt timestamp tracking per stream (`GPS`, `ATTITUDE`, `BATTERY`, `VFR`). Stale or unavailable streams display explicit `--` or warning badges rather than deceptive zeroes. Active heartbeats never mask frozen sensor streams.
+- **Contextual Control Safeguards**: Dynamic per-action evaluation. Airborne disarm protection blocks ordinary motor cutoff while in flight; deliberate two-step confirmation required for in-flight emergency cutoff.
+- **Opt-In Keyboard Flying Safeguards**: Rate-controlled 10 Hz setpoint streaming in `BODY_NED` with zero-velocity warmup. Accidental input is blocked by comprehensive focus checks (typing in textboxes, spinboxes, or dialogs never commands motion), window deactivation zeroing, and dead-man timeout (0.5s auto-hover).
+- **Evidence-Based Pre-Flight Checklist**: Strict verification of GNSS 3D fix, telemetry freshness, sensor health bits (`SYS_STATUS`), battery voltage, and home lock. Distinguishes `PASS`, `FAIL`, and `UNKNOWN` (missing evidence never yields "GO FOR FLIGHT").
 
-### 3. ANALYTICS — Flight Telemetry & Diagnostics
-- **Real-Time Scrolling Strip Charts**: Live altitude and groundspeed waveforms plotted at high frequency.
-- **MAVLink Link Quality Diagnostics**: Downlink telemetry rate (Hz), measured packet loss percentage (tracked from MAVLink sequence counters), and total packets received/lost.
-- **Power Telemetry**: Total battery voltage, remaining percentage, throttle percentage, and individual cell balance readouts (when `BATTERY_STATUS` telemetry is broadcast by the vehicle).
-- **Sensor Health Readouts**: `SYS_STATUS` subsystem health and 3-axis vibration/clipping monitors (when `VIBRATION` telemetry is broadcast).
+### 2. PLAN — Synchronized Autonomous Mission Planner
+- **Synchronized Map & Table Editor**: Add, select, drag, reorder (Move Up / Down), and delete mission items with visual waypoint selection.
+- **Local Edit Undo / Redo**: 30-step historical undo/redo stack for local mission drafts.
+- **QGroundControl `.plan` Compatibility**: Bi-directional import and export adhering to published QGC schema (v1.0 schema / mission v2). Accurately reports and preserves unsupported commands without silent corruption.
+- **Mission Statistics & Energy Estimator**: Accurate 3D trajectory distance calculation, flight time estimation at nominal cruise speed, and battery energy draw (Wh) with explicit assumptions.
+- **Verifiable Vehicle Synchronization**: Differentiates `LOCAL DRAFT`, `UNSAVED CHANGES`, `UPLOADING TO FCU`, `FCU MISSION VERIFIED`, and `LOCAL / FCU MISMATCH`. Clearing a local draft is strictly separated from clearing the vehicle's onboard mission.
+- **Survey Grid Generator**: Auto-generates photogrammetry serpentine lawnmower flight lines from width, height, lane spacing, and altitude parameters.
 
-### 4. SETUP — Live PX4 Parameter Management
+### 3. VEHICLE SETUP — Live PX4 Parameter Management
 - **Type-Safe Wire Encoding**: Encodes and decodes PX4 `INT32` parameters using bit-wise packing in the 32-bit float wire field (`struct.unpack('<i', struct.pack('<f', wire_val))[0]`), preserving integer bits without float loss.
 - **Live Search & Filter**: Real-time parameter search across all onboard flight controller parameters.
 - **Readback Confirmation**: Edits are marked `PENDING` until confirmed by a matching `PARAM_VALUE` readback from the flight controller. Reverts on timeout or rejection.
 - **Backup & Restore with Difference Preview**: Save complete vehicle configurations to JSON or `.param` files. Restoring displays a visual difference preview (Current FCU vs File Target) before writing.
-- **Missing Parameter Recovery**: Identifies unreceived parameter indices and requests missing entries.
 
-### 5. CONSOLE — Decoded MAVLink Stream
-- **Decoded Command Acknowledgments**: Translates `COMMAND_ACK` into plain-English notifications (`ACCEPTED`, `TEMPORARILY_REJECTED`, `DENIED`, `FAILED`, `IN_PROGRESS`).
-- **Autopilot Notifications**: Captures and categorizes `STATUSTEXT` messages from the autopilot.
-- **Search & Categorization**: Filter logs by keyword or category buttons (**ALL**, **ERRORS**, **ACKS**).
+### 4. ANALYZE — Flight Telemetry & Diagnostics
+- **Multi-Signal Telemetry Plots**: High-frequency pyqtgraph waveforms with user-selectable signals (Altitude, Groundspeed, Climb Rate, Battery Voltage, Packet Loss).
+- **Synchronized Flight Event Timeline**: Flight mode transitions, arm/disarm actions, and MAVLink command outcomes timestamped and aligned with telemetry.
+- **Flight Data Export**: One-click export to CSV for post-flight analysis.
+- **Protected Flight Replay**: Log playback mode clearly badged as REPLAY with vehicle command dispatch strictly locked out for operator safety.
+
+### 5. SETTINGS — Ground Station Preferences
+- **Appearance & Themes**: Instant toggle between Cockpit Dark Mode (field-optimized) and Aviation Light Mode (direct sunlight).
+- **Video Stream Configuration**: Configurable RTSP, UDP, HTTP, USB camera index, or test pattern stream.
+- **Battery Chemistry Presets**: Configurable LiPo cell count (1S through 12S) and per-cell warning/critical voltage thresholds.
+- **Offline Maps & MBTiles**: Browse and mount offline `.mbtiles` raster packages or reset to cached OpenStreetMap.
 
 ---
 
@@ -51,10 +50,12 @@ A modern, high-performance desktop Ground Control Station (GCS) engineered nativ
 | Layer | Technology |
 |---|---|
 | **Language** | Python 3.9+ |
-| **GUI Framework** | PyQt6 (+ PyQt6-WebEngine) |
+| **GUI Framework** | PyQt6 (+ PyQt6-WebEngine for Tactical Leaflet Map) |
 | **Telemetry & Commands** | Raw `pymavlink` (thread-safe serialization with `mav_lock`) |
+| **Flight Instruments** | Native 2D `QPainter` (30 Hz PFD) + Three.js (Optional 3D CAD) |
+| **Video Stream Pipeline** | OpenCV (`cv2`) in background worker thread with OSD HUD |
 | **Tactical Map** | Leaflet / OpenStreetMap + Local Offline HTTP Tile Server / MBTiles |
-| **Attitude View** | Three.js (3D Quad) |
+| **Plotting & Analytics** | `pyqtgraph` |
 | **Packaging** | PyInstaller (Standalone Windows `.exe`) |
 | **Target Firmware** | PX4 Autopilot (v1.14+) |
 | **Simulation Airframe** | PX4 SITL Gazebo Harmonic (`gz_x500`) |
@@ -66,7 +67,7 @@ A modern, high-performance desktop Ground Control Station (GCS) engineered nativ
 
 ### 1. Prerequisites
 - Python 3.9+
-- PX4 Autopilot simulator (**PX4 SITL**) or a physical PX4 flight controller (**Pixhawk 6C**).
+- PX4 Autopilot simulator (**PX4 SITL**) or physical PX4 flight controller (**Pixhawk 6C**).
 
 ### 2. Installation
 ```bash
@@ -75,7 +76,7 @@ cd python-gcs
 pip install -r requirements.txt
 ```
 
-### 3. Launch the Simulator
+### 3. Launch PX4 SITL Simulator
 From a built [PX4-Autopilot](https://github.com/PX4/PX4-Autopilot) source tree:
 ```bash
 make px4_sitl gz_x500
@@ -84,48 +85,40 @@ Or run headless via Docker:
 ```bash
 docker run --rm -it -p 14540:14540/udp jonasvautherin/px4-gazebo-headless:1.16.1
 ```
-*PX4 exposes MAVLink on UDP **14540** (offboard/API port) and **14550** (QGroundControl).*
+*PX4 exposes MAVLink on UDP port **14540** (offboard/API port) and **14550** (QGroundControl).*
 
-### 4. Run the GCS
+### 4. Run PythonGCS
 ```bash
 python main.py
 ```
-Leave the connection profile at default (`PX4 SITL (UDP 14540)`) and click **CONNECT**. The ribbon pills, gauges, and tactical map will populate within seconds.
+Leave the connection profile at default (`PX4 SITL (UDP 14540)`) and click **CONNECT**. The ribbon status pills, cockpit PFD, and tactical map will populate immediately.
 
 ---
 
 ## Keyboard Flight Controls
 
-When **Enable Keyboard Flight** is checked on the FLY tab:
+When **Enable Keyboard Flight Control** is checked on the FLY tab:
 
 | Key | Action | Velocity Target |
 |---|---|---|
 | `W` / `S` | Move Forward / Backward | $v_x = \pm 2.0\text{ m/s}$ |
 | `A` / `D` | Move Left / Right | $v_y = \mp 2.0\text{ m/s}$ |
 | `Q` / `E` | Yaw Rotate Left / Right | $r = \mp 0.5\text{ rad/s}$ |
-| `I` / `K` | Climb Up / Descend Down | $v_z = \mp 1.5\text{ m/s}$ (NED: $-1.5$ is climb) |
+| `I` / `K` | Climb Up / Descend Down | $v_z = \mp 1.0\text{ m/s}$ (NED: $-1.0$ is climb) |
 | `Space` or `H` | Zero velocities and **HOVER** | $v_x = 0, v_y = 0, v_z = 0, r = 0$ |
 
-*Safety Dead-Man Timer: If key updates cease for >0.5 seconds, or if the window loses focus, velocities automatically reset to zero (hover).*
-
----
-
-## Offline Map Tile System & MBTiles
-
-- **On-Demand Caching**: As you pan and zoom while connected to the internet, map tiles are automatically cached on disk at `~/.python-gcs/tile_cache/`.
-- **Policy Compliance**: In adherence with the [OpenStreetMap Foundation Tile Usage Policy](https://operations.osmfoundation.org/policies/tiles/), automated bulk scraping/prefetching of OSM tile servers is disabled.
-- **MBTiles Support**: For 100% offline field deployments without internet access, click **LOAD OFFLINE MBTILES** to load pre-generated `.mbtiles` raster map packages (e.g. from OpenMapTiles, TileMill, or QGIS).
+*Safety Safeguards: Dead-man timer ceases velocity commands if key releases for >0.5s. Typing in input fields or dialogs never commands motion. Focus loss or window deactivation instantly commands zero velocity.*
 
 ---
 
 ## Standalone Windows Executable
 
-To compile a standalone zero-dependency Windows `.exe`:
+To compile a standalone zero-dependency Windows executable:
 ```bash
 pip install -r requirements-dev.txt
 pyinstaller PythonGCS.spec
 ```
-The compiled executable will be located in `dist/PythonGCS/PythonGCS.exe`.
+The compiled binary will be placed in `dist/PythonGCS/PythonGCS.exe`.
 
 ---
 
