@@ -39,6 +39,10 @@ class PendingCommand:
 
     def wait(self) -> Tuple[bool, str, Optional[int]]:
         while True:
+            # Cancellation is terminal and must not become REJECTED, including
+            # when a disconnect races the wait's deadline.
+            if self.event.is_set():
+                return self.result_code == 0, self.result_str, self.result_code
             elapsed = time.monotonic() - self.last_activity_time
             remaining = self.timeout - elapsed
             if remaining <= 0:
@@ -50,7 +54,8 @@ class PendingCommand:
             signaled = self.event.wait(timeout=max(0.05, remaining))
             if signaled:
                 success = (self.result_code == 0)
-                self.state = 'CONFIRMED' if success else 'REJECTED'
+                if self.state != 'CANCELLED':
+                    self.state = 'ACKNOWLEDGED' if success else 'REJECTED'
                 return success, self.result_str, self.result_code
 
 
@@ -119,6 +124,7 @@ class CommandManager:
                     target_pending.state = 'IN_PROGRESS'
                     target_pending.last_activity_time = time.monotonic()  # Reset timeout window
                 else:
+                    target_pending.state = 'ACKNOWLEDGED' if result == 0 else 'REJECTED'
                     target_pending.result_code = result
                     target_pending.result_str = result_name
                     target_pending.event.set()
@@ -130,6 +136,8 @@ class CommandManager:
         with self._lock:
             for pending in self._pending.values():
                 pending.result_str = 'CANCELLED'
+                pending.result_code = None
+                pending.state = 'CANCELLED'
                 pending.event.set()
             self._pending.clear()
             self._last_acks.clear()

@@ -534,7 +534,7 @@ def start_mission(vehicle) -> Tuple[bool, str]:
         log(err)
         return False, err
 
-    return True, "Mission started"
+    return True, "Mission start acknowledged. Monitor mode and mission progress to confirm execution."
 
 def set_parameter(vehicle, param_name: str, value: Any, param_type: int) -> Tuple[bool, str]:
     _ensure_streamer(vehicle)
@@ -660,6 +660,11 @@ def download_mission(vehicle, timeout: float = 5.0) -> Tuple[bool, List[dict], s
             'seq': item_msg.seq,
             'command': item_msg.command,
             'frame': item_msg.frame,
+            'param1': item_msg.param1,
+            'param2': item_msg.param2,
+            'param3': item_msg.param3,
+            'param4': item_msg.param4,
+            'autocontinue': item_msg.autocontinue,
             'lat': lat,
             'lon': lon,
             'alt': alt
@@ -695,13 +700,27 @@ def upload_mission(
         return False, "Validation error: No mission items provided"
 
     # Pre-upload validation
-    for i, wp in enumerate(waypoints):
-        lat, lon = wp[0], wp[1]
-        alt = wp[2] if len(wp) > 2 else target_alt
-        if not (-90.0 <= lat <= 90.0) or not (-180.0 <= lon <= 180.0):
-            return False, f"Validation error: Waypoint {i+1} coordinates out of range ({lat}, {lon})"
-        if alt < 1.0 or alt > 200.0:
-            return False, f"Validation error: Waypoint {i+1} altitude out of range ({alt}m)"
+    coords = [('takeoff', takeoff_point, target_alt)] if takeoff_point is not None else []
+    coords.extend((f'waypoint {i + 1}', wp, target_alt) for i, wp in enumerate(waypoints))
+    if landing_point is not None:
+        coords.append(('landing', landing_point, 0.0))
+    for name, coord, default_alt in coords:
+        try:
+            if not isinstance(coord, (list, tuple)) or len(coord) not in (2, 3):
+                raise ValueError('expected latitude, longitude and optional altitude')
+            lat, lon = float(coord[0]), float(coord[1])
+            alt = float(coord[2]) if len(coord) == 3 else float(default_alt)
+            if not all(math.isfinite(value) for value in (lat, lon, alt)):
+                raise ValueError('non-finite coordinate or altitude')
+            if not -90 <= lat <= 90 or not -180 <= lon <= 180:
+                raise ValueError('coordinates out of range')
+            if name == 'landing':
+                if alt != 0:
+                    raise ValueError('landing altitude must be zero relative to home')
+            elif not 1 <= alt <= 200:
+                raise ValueError(f'altitude out of range ({alt}m)')
+        except (ValueError, TypeError, OverflowError) as error:
+            return False, f'Validation error: {name}: {error}'
 
     if not upload_lock.acquire(blocking=False):
         return False, "Mission upload error: Another upload transaction is already in progress"
@@ -730,7 +749,7 @@ def upload_mission(
                 'param1': 0.0,
                 'param2': 0.0,
                 'param3': 0.0,
-                'param4': 0.0,
+                'param4': float('nan'),
                 'x': int(takeoff_point[0] * 1e7),
                 'y': int(takeoff_point[1] * 1e7),
                 'z': float(t_alt)
@@ -748,7 +767,7 @@ def upload_mission(
                 'param1': 0.0,
                 'param2': 2.0,
                 'param3': 0.0,
-                'param4': 0.0,
+                'param4': float('nan'),
                 'x': int(wp[0] * 1e7),
                 'y': int(wp[1] * 1e7),
                 'z': float(w_alt)
@@ -765,7 +784,7 @@ def upload_mission(
                 'param1': 0.0,
                 'param2': 0.0,
                 'param3': 0.0,
-                'param4': 0.0,
+                'param4': float('nan'),
                 'x': int(landing_point[0] * 1e7),
                 'y': int(landing_point[1] * 1e7),
                 'z': 0.0
@@ -857,16 +876,9 @@ def upload_mission(
             if len(dl_items) != total_count:
                 return False, f"Mission verification failed: count mismatch (uploaded {total_count}, vehicle has {len(dl_items)})"
 
-            for i, up_item in enumerate(items):
-                down = dl_items[i]
-                if down['command'] != up_item['command']:
-                    return False, f"Mission verification failed at seq {i}: command mismatch"
-                up_lat = up_item['x'] / 1e7
-                up_lon = up_item['y'] / 1e7
-                if abs(down['lat'] - up_lat) > 1e-4 or abs(down['lon'] - up_lon) > 1e-4:
-                    return False, f"Mission verification failed at seq {i}: coordinate mismatch"
-                if abs(down['alt'] - up_item['z']) > 1.0:
-                    return False, f"Mission verification failed at seq {i}: altitude mismatch"
+            verified, reason = verify_mission_readback(items, dl_items)
+            if not verified:
+                return False, reason
 
             log(f"Mission upload and readback verification SUCCESS: {total_count} items verified.")
             return True, f"Mission successfully uploaded and verified ({total_count} items)"
@@ -875,3 +887,33 @@ def upload_mission(
 
     finally:
         upload_lock.release()
+
+
+def verify_mission_readback(uploaded, downloaded):
+    """Compare command semantics as well as coordinates before declaring sync."""
+    import math
+    if len(uploaded) != len(downloaded):
+        return False, 'Mission verification failed: count mismatch'
+    for index, (up, down) in enumerate(zip(uploaded, downloaded)):
+        prefix = f'Mission verification failed at seq {index}: '
+        if down['command'] != up['command']:
+            return False, prefix + 'command mismatch'
+        # FLOAT and INT variants describe the same relative altitude frame.
+        if down['frame'] not in (3, 6):
+            return False, prefix + 'altitude frame mismatch'
+        if down.get('autocontinue') != up['autocontinue']:
+            return False, prefix + 'continuation mismatch'
+        for key, expected, tolerance in [('lat', up['x'] / 1e7, 1e-6),
+                                          ('lon', up['y'] / 1e7, 1e-6),
+                                          ('alt', up['z'], 0.05)]:
+            if not math.isfinite(down[key]) or abs(down[key] - expected) > tolerance:
+                return False, prefix + ('altitude mismatch' if key == 'alt' else 'coordinate mismatch')
+        for key in ('param1', 'param2', 'param3', 'param4'):
+            expected, actual = up[key], down.get(key, float('nan'))
+            if math.isnan(expected) and math.isnan(actual):
+                continue
+            if math.isnan(expected) != math.isnan(actual):
+                return False, prefix + key + ' mismatch'
+            if not math.isfinite(actual) or abs(actual - expected) > 1e-5:
+                return False, prefix + key + ' mismatch'
+    return True, 'Mission contents verified'

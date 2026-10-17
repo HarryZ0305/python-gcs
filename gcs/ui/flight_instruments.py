@@ -47,6 +47,8 @@ class PrimaryFlightDisplay(QWidget):
         self.mode = "DISCONNECTED"
         self.armed = False
         self.is_stale = True
+        self.position_valid = False
+        self.speed_valid = False
 
         # High-rate render timer (30 Hz for fluid cockpit instruments)
         self._render_timer = QTimer(self)
@@ -64,18 +66,25 @@ class PrimaryFlightDisplay(QWidget):
         mode: str = "UNKNOWN",
         armed: bool = False,
         is_stale: bool = False,
-        alt_amsl: float = 0.0
+        alt_amsl: float = 0.0,
+        position_valid: bool = True,
+        speed_valid: bool = True
     ):
-        self.roll = float(roll)
-        self.pitch = float(pitch)
-        self.yaw = float(yaw)
-        self.altitude = float(alt)
+        attitude_finite = all(math.isfinite(float(value)) for value in (roll, pitch, yaw))
+        altitude_finite = math.isfinite(float(alt))
+        speed_finite = all(math.isfinite(float(value)) for value in (groundspeed, climb_rate))
+        self.roll = float(roll) if attitude_finite else 0.0
+        self.pitch = float(pitch) if attitude_finite else 0.0
+        self.yaw = float(yaw) if attitude_finite else 0.0
+        self.altitude = float(alt) if altitude_finite else 0.0
         self.altitude_amsl = float(alt_amsl)
-        self.groundspeed = float(groundspeed)
-        self.climb_rate = float(climb_rate)
+        self.groundspeed = float(groundspeed) if speed_finite else 0.0
+        self.climb_rate = float(climb_rate) if speed_finite else 0.0
         self.mode = str(mode)
         self.armed = bool(armed)
-        self.is_stale = bool(is_stale)
+        self.is_stale = bool(is_stale) or not attitude_finite
+        self.position_valid = position_valid and altitude_finite
+        self.speed_valid = speed_valid and speed_finite
 
     def paintEvent(self, event):
         t = get_theme()
@@ -225,7 +234,7 @@ class PrimaryFlightDisplay(QWidget):
         p.setPen(QPen(QColor('#ffffff'), 1.5))
         p.drawRect(QRectF(0, cy - box_h / 2, tape_w + 4, box_h))
         p.setFont(QFont(FONT_FAMILY_MONO, 9, QFont.Weight.Bold))
-        spd_str = f"{self.groundspeed:.1f}" if not self.is_stale else "--"
+        spd_str = f"{self.groundspeed:.1f}" if self.speed_valid else "--"
         p.drawText(QRectF(2, cy - box_h / 2, tape_w, box_h), Qt.AlignmentFlag.AlignCenter, spd_str)
 
         # Label atop speed tape
@@ -259,7 +268,7 @@ class PrimaryFlightDisplay(QWidget):
         p.setPen(QPen(QColor('#ffffff'), 1.5))
         p.drawRect(QRectF(alt_tape_x - 4, cy - box_h / 2, tape_w + 4, box_h))
         p.setFont(QFont(FONT_FAMILY_MONO, 9, QFont.Weight.Bold))
-        alt_str = f"{self.altitude:.1f}" if not self.is_stale else "--"
+        alt_str = f"{self.altitude:.1f}" if self.position_valid else "--"
         p.drawText(QRectF(alt_tape_x, cy - box_h / 2, tape_w, box_h), Qt.AlignmentFlag.AlignCenter, alt_str)
 
         # Label atop altitude tape
@@ -276,9 +285,9 @@ class PrimaryFlightDisplay(QWidget):
         hdg_px_per_deg = w / 90.0
         cardinals = {0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW"}
 
-        for d in range(-60, 65, 5):
-            angle = (yaw_deg + d) % 360.0
-            hx = cx + (d * hdg_px_per_deg)
+        for tick in range(int(math.floor((yaw_deg - 60) / 5)) * 5, int(yaw_deg + 65), 5):
+            angle = tick % 360
+            hx = cx + ((tick - yaw_deg) * hdg_px_per_deg)
             if 0 <= hx <= w:
                 is_cardinal = int(angle) in cardinals and (angle % 45 == 0)
                 is_major = (angle % 15 == 0)
@@ -373,16 +382,18 @@ class InstrumentContainer(QFrame):
         # Stacked display (0: 2D PFD, 1: 3D CAD)
         self.stack = QStackedWidget()
         self.pfd = PrimaryFlightDisplay()
-        self.cad_view = AttitudeView()
+        self.cad_view = None
 
         self.stack.addWidget(self.pfd)
-        self.stack.addWidget(self.cad_view)
         layout.addWidget(self.stack, stretch=1)
 
         # Highlight default active view (2D PFD)
         self.switch_view(0)
 
     def switch_view(self, index: int):
+        if index == 1 and self.cad_view is None:
+            self.cad_view = AttitudeView()
+            self.stack.addWidget(self.cad_view)
         self.stack.setCurrentIndex(index)
         t = get_theme()
         active_style = f"background-color: {t['primary']}; color: #ffffff; border: 1px solid {t['primary']}; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 700;"
@@ -395,7 +406,7 @@ class InstrumentContainer(QFrame):
             self.btn_pfd.setStyleSheet(inactive_style)
             self.btn_3d.setStyleSheet(active_style)
 
-    def update_attitude(self, roll: float, pitch: float, yaw: float, alt: float, speed: float, climb: float = 0.0, mode: str = "UNKNOWN", armed: bool = False, is_stale: bool = False):
-        self.pfd.set_telemetry(roll, pitch, yaw, alt, speed, climb_rate=climb, mode=mode, armed=armed, is_stale=is_stale)
-        if self.stack.currentIndex() == 1:
+    def update_attitude(self, roll: float, pitch: float, yaw: float, alt: float, speed: float, climb: float = 0.0, mode: str = "UNKNOWN", armed: bool = False, is_stale: bool = False, position_valid: bool = True, speed_valid: bool = True):
+        self.pfd.set_telemetry(roll, pitch, yaw, alt, speed, climb_rate=climb, mode=mode, armed=armed, is_stale=is_stale, position_valid=position_valid, speed_valid=speed_valid)
+        if self.stack.currentIndex() == 1 and not is_stale:
             self.cad_view.update_attitude(roll, pitch, yaw, alt, speed)

@@ -7,8 +7,10 @@ and component style generators for field-grade ground control station operation.
 from typing import Dict, Any
 
 # Primary Font Stacks
-FONT_FAMILY_PRIMARY = "Segoe UI, -apple-system, BlinkMacSystemFont, 'Inter', 'Roboto', 'Oxygen', 'Ubuntu', 'Helvetica Neue', sans-serif"
-FONT_FAMILY_MONO = "Consolas, 'Cascadia Code', 'Roboto Mono', 'Courier New', monospace"
+# QFont expects a family name, not a CSS font stack. Passing the stack as one
+# family can select a symbol font and render every label as missing glyphs.
+FONT_FAMILY_PRIMARY = "Segoe UI"
+FONT_FAMILY_MONO = "Consolas"
 
 THEME_LIGHT: Dict[str, str] = {
     'name': 'light',
@@ -131,6 +133,8 @@ def get_app_stylesheet(t: Dict[str, str] = None) -> str:
         padding: 4px 8px;
         font-size: 11px;
     }}
+
+    QLabel {{ background: transparent; border: none; }}
     
     QScrollBar:vertical {{
         background: {t['surface']};
@@ -187,7 +191,7 @@ def get_app_stylesheet(t: Dict[str, str] = None) -> str:
     }}
     QTabBar::tab:selected {{
         background-color: {t['primary']};
-        color: #ffffff;
+        color: {t['text_inverse']};
         border-color: {t['primary']};
     }}
     QTabBar::tab:hover:!selected {{
@@ -274,22 +278,22 @@ def get_button_style(
     
     if variant == 'primary':
         bg = t['primary']
-        fg = '#ffffff'
+        fg = t['text_inverse']
         hover_bg = t['primary_hover']
         border = t['primary']
     elif variant == 'success':
         bg = t['success']
-        fg = '#ffffff'
+        fg = t['text_inverse']
         hover_bg = t['success_hover']
         border = t['success']
     elif variant == 'danger':
         bg = t['danger']
-        fg = '#ffffff'
+        fg = t['text_inverse']
         hover_bg = t['danger_hover']
         border = t['danger']
     elif variant == 'warning':
         bg = t['warning']
-        fg = '#ffffff'
+        fg = t['text_inverse']
         hover_bg = t['warning_hover']
         border = t['warning']
     elif variant == 'secondary':
@@ -349,7 +353,7 @@ def get_pill_style(
     
     if filled:
         bg = border_color
-        text_color = '#ffffff'
+        text_color = t['text_inverse']
     else:
         bg = bg_subtle
         text_color = border_color

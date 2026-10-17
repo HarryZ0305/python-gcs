@@ -1,5 +1,10 @@
 # Python GCS — Professional Autonomous Ground Control Station for PX4
 
+**Desktop reliability update:** Independent stream health, state-aware flight actions,
+and vehicle/draft-bound mission verification are now available. Read the
+[implementation and validation notes](docs/desktop-upgrade.md) for the supported
+mission subset and remaining simulator/hardware acceptance work.
+
 A modern, high-performance desktop Ground Control Station (GCS) engineered natively for **PX4 Autopilot** and MAVLink multirotors. Built with **Python 3**, **PyQt6**, **pyqtgraph**, and raw **pymavlink**, PythonGCS provides a responsive, flight-safety-first pilot interface targeting PX4 SITL (`gz_x500`) and Holybro S500 / Pixhawk 6C platforms.
 
 ---
@@ -20,7 +25,7 @@ PythonGCS organizes tactical workflows into five dedicated, purpose-built worksp
 ### 2. PLAN — Synchronized Autonomous Mission Planner
 - **Synchronized Map & Table Editor**: Add, select, drag, reorder (Move Up / Down), and delete mission items with visual waypoint selection.
 - **Local Edit Undo / Redo**: 30-step historical undo/redo stack for local mission drafts.
-- **QGroundControl `.plan` Compatibility**: Bi-directional import and export adhering to published QGC schema (v1.0 schema / mission v2). Accurately reports and preserves unsupported commands without silent corruption.
+- **QGroundControl `.plan` Subset**: Import/export of supported home-relative takeoff/waypoint/landing plans. Unsupported commands, complex items, frames, custom parameters, fences and rally points cancel import instead of silently changing mission semantics.
 - **Mission Statistics & Energy Estimator**: Accurate 3D trajectory distance calculation, flight time estimation at nominal cruise speed, and battery energy draw (Wh) with explicit assumptions.
 - **Verifiable Vehicle Synchronization**: Differentiates `LOCAL DRAFT`, `UNSAVED CHANGES`, `UPLOADING TO FCU`, `FCU MISSION VERIFIED`, and `LOCAL / FCU MISMATCH`. Clearing a local draft is strictly separated from clearing the vehicle's onboard mission.
 - **Survey Grid Generator**: Auto-generates photogrammetry serpentine lawnmower flight lines from width, height, lane spacing, and altitude parameters.
@@ -35,7 +40,7 @@ PythonGCS organizes tactical workflows into five dedicated, purpose-built worksp
 - **Multi-Signal Telemetry Plots**: High-frequency pyqtgraph waveforms with user-selectable signals (Altitude, Groundspeed, Climb Rate, Battery Voltage, Packet Loss).
 - **Synchronized Flight Event Timeline**: Flight mode transitions, arm/disarm actions, and MAVLink command outcomes timestamped and aligned with telemetry.
 - **Flight Data Export**: One-click export to CSV for post-flight analysis.
-- **Protected Flight Replay**: Log playback mode clearly badged as REPLAY with vehicle command dispatch strictly locked out for operator safety.
+- **Historical Log Review**: Imported CSV plots are explicitly labelled as historical review, separate from live telemetry and vehicle controls. Full flight replay is not implemented.
 
 ### 5. SETTINGS — Ground Station Preferences
 - **Appearance & Themes**: Instant toggle between Cockpit Dark Mode (field-optimized) and Aviation Light Mode (direct sunlight).

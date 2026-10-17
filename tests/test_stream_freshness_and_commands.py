@@ -36,6 +36,7 @@ def test_stream_freshness_isolation():
 
     # Now simulate fresh GPS arriving
     telemetry_data['last_gps_monotonic'] = now - 0.2
+    telemetry_data['last_gps_raw_monotonic'] = now - 0.2
     freshness2 = get_stream_freshness(now)
     assert freshness2['gps_valid'] is True
 
@@ -63,4 +64,4 @@ def test_in_progress_ack_extends_timeout():
     ok, res_str, code = pending.wait()
     assert ok is True
     assert res_str == 'ACCEPTED'
-    assert pending.state == 'CONFIRMED'
+    assert pending.state == 'ACKNOWLEDGED'
