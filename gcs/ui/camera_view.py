@@ -6,6 +6,7 @@ frame freshness tracking, honest stream states, and configurable OSD HUD overlay
 
 import time
 import math
+import threading
 from typing import Optional
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import Qt, QTimer, QRectF, QPointF, pyqtSignal, QThread
@@ -32,6 +33,7 @@ class VideoCaptureWorker(QThread):
         super().__init__()
         self.source_url = source_url
         self.running = True
+        self._stop_signal = threading.Event()
         self._is_test_stream = (source_url.lower() == "test" or source_url == "")
 
     def set_source(self, url: str):
@@ -56,11 +58,13 @@ class VideoCaptureWorker(QThread):
                 if self.source_url.isdigit():
                     cap = cv2.VideoCapture(int(self.source_url))
                 else:
-                    cap = cv2.VideoCapture(self.source_url)
+                    cap = cv2.VideoCapture(self.source_url, cv2.CAP_FFMPEG, [
+                        cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000,
+                        cv2.CAP_PROP_READ_TIMEOUT_MSEC, 1000])
 
                 if not cap.isOpened():
                     self.state_changed.emit("FAILED")
-                    time.sleep(2.0)
+                    self._stop_signal.wait(2.0)
                     continue
 
                 self.state_changed.emit("LIVE")
@@ -73,7 +77,7 @@ class VideoCaptureWorker(QThread):
                         if consecutive_failures > 15:
                             self.state_changed.emit("FAILED")
                             break
-                        time.sleep(0.05)
+                        self._stop_signal.wait(0.05)
                         continue
 
                     consecutive_failures = 0
@@ -83,11 +87,11 @@ class VideoCaptureWorker(QThread):
                     bytes_per_line = ch * w
                     qimg = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888).copy()
                     self.frame_ready.emit(qimg)
-                    time.sleep(0.033) # ~30 FPS
+                    self._stop_signal.wait(0.033) # ~30 FPS
 
             except Exception as e:
                 self.state_changed.emit(f"FAILED: {e}")
-                time.sleep(2.0)
+                self._stop_signal.wait(2.0)
             finally:
                 if cap is not None:
                     cap.release()
@@ -114,10 +118,11 @@ class VideoCaptureWorker(QThread):
 
         while self.running and self._is_test_stream:
             self.frame_ready.emit(img)
-            time.sleep(0.1) # 10 Hz test pattern
+            self._stop_signal.wait(0.1) # 10 Hz test pattern
 
     def stop(self):
         self.running = False
+        self._stop_signal.set()
 
 
 class CameraView(QWidget):
@@ -142,6 +147,8 @@ class CameraView(QWidget):
         self.show_osd = True
 
         self.worker: Optional[VideoCaptureWorker] = None
+        self._workers = []
+        self._source_generation = 0
 
         # Watchdog timer to detect frozen/stale stream (5 Hz)
         self.watchdog = QTimer(self)
@@ -150,10 +157,13 @@ class CameraView(QWidget):
 
     def set_stream_source(self, source_url: str):
         """Starts or changes the video stream source."""
+        self._source_generation += 1
+        generation = self._source_generation
         if self.worker is not None:
             self.worker.stop()
-            self.worker.wait(1000)
             self.worker = None
+        self.current_frame = None
+        self.last_frame_time = 0.0
 
         if not source_url:
             self.stream_state = "DISCONNECTED"
@@ -162,9 +172,28 @@ class CameraView(QWidget):
             return
 
         self.worker = VideoCaptureWorker(source_url)
-        self.worker.frame_ready.connect(self.on_frame_received)
-        self.worker.state_changed.connect(self.on_state_changed)
+        self._workers.append(self.worker)
+        self.stream_state = 'CONNECTING'
+        self.worker.frame_ready.connect(lambda frame, gen=generation: self._accept_frame(gen, frame))
+        self.worker.state_changed.connect(lambda state, gen=generation: self._accept_state(gen, state))
+        worker = self.worker
+        worker.finished.connect(lambda worker=worker: self._worker_finished(worker))
         self.worker.start()
+
+    def _worker_finished(self, worker):
+        if worker in self._workers:
+            self._workers.remove(worker)
+        if self.worker is worker:
+            self.worker = None
+        worker.deleteLater()
+
+    def _accept_frame(self, generation, frame):
+        if generation == self._source_generation:
+            self.on_frame_received(frame)
+
+    def _accept_state(self, generation, state):
+        if generation == self._source_generation:
+            self.on_state_changed(state)
 
     def on_frame_received(self, image: QImage):
         self.current_frame = image
@@ -272,13 +301,21 @@ class CameraView(QWidget):
             batt_str = f"{batt}%" if batt >= 0 else "---%"
 
     def stop_stream(self):
+        self._source_generation += 1
         if self.worker is not None:
             self.worker.stop()
-            self.worker.wait(500)
             self.worker = None
+        self.current_frame = None
         self.stream_state = "DISCONNECTED"
         self.update()
 
-    def closeEvent(self, event):
+    def shutdown(self):
         self.stop_stream()
+        deadline = time.monotonic() + 4.0
+        for worker in list(self._workers):
+            worker.stop()
+            worker.wait(max(0, int((deadline - time.monotonic()) * 1000)))
+
+    def closeEvent(self, event):
+        self.shutdown()
         super().closeEvent(event)

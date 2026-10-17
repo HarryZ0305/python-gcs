@@ -17,6 +17,11 @@ from gcs.telemetry import mission_queue
 class FakeMissionMsg:
     def __init__(self, msg_type, **kwargs):
         self._type = msg_type
+        self.param1 = 0
+        self.param2 = 2 if kwargs.get('command') == 16 else 0
+        self.param3 = 0
+        self.param4 = float('nan')
+        self.autocontinue = 1
         for k, v in kwargs.items():
             setattr(self, k, v)
 

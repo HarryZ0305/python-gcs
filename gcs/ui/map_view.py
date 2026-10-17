@@ -1,6 +1,9 @@
 import json
 import math
-from PyQt6.QtCore import pyqtSignal
+from pathlib import Path
+from gcs.paths import resource_path
+from PyQt6.QtCore import pyqtSignal, QUrl
+from PyQt6.QtGui import QColor
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 MAP_HTML = """
@@ -15,7 +18,12 @@ MAP_HTML = """
         }
         * { box-sizing: border-box; }
         body { margin: 0; padding: 0; background: #f5f7fa; font-family: 'Google Sans Code', monospace; }
-        #map { width: 100%; height: 100vh; background: #f5f7fa; }
+        #map { width: 100%; height: 100vh; background-color: #152033;
+            background-image: linear-gradient(#243147 1px, transparent 1px), linear-gradient(90deg, #243147 1px, transparent 1px);
+            background-size: 48px 48px; }
+        #map-status { position: absolute; bottom: 30px; left: 12px; z-index: 1000;
+            padding: 8px 12px; background: #111827e8; color: #cbd5e1; border-radius: 6px; font-size: 11px; }
+        #map-hud { display: none !important; }
 
         /* Floating Mission Controls (Top Right) */
         #mode-controls {
@@ -182,6 +190,7 @@ MAP_HTML = """
 </head>
 <body>
     <div id="map"></div>
+    <div id="map-status">BASEMAP LOADING · Vehicle position is unconfirmed</div>
 
     <!-- Map Tools (Left / Top-Left) -->
     <div id="map-tools">
@@ -229,11 +238,17 @@ MAP_HTML = """
     <script>
         var map = L.map('map', { zoomControl: true }).setView([32.7157, -117.1611], 16);
 
-        L.tileLayer('http://localhost:PORT_PLACEHOLDER/tiles/{z}/{x}/{y}.png', {
+        var basemap = L.tileLayer('http://localhost:PORT_PLACEHOLDER/tiles/{z}/{x}/{y}.png', {
             attribution: 'OpenStreetMap contributors',
             maxZoom: 19
         }).addTo(map);
 
+        basemap.on('tileerror', function() {
+            document.getElementById('map-status').textContent = 'BASEMAP UNAVAILABLE · Load an offline MBTiles package in Settings';
+        });
+        basemap.on('tileload', function() {
+            document.getElementById('map-status').style.display = 'none';
+        });
         // Drone Icon with Directional Quadcopter SVG
         function createDroneIcon(headingDeg) {
             return L.divIcon({
@@ -255,7 +270,7 @@ MAP_HTML = """
         }
 
         var currentHeading = 0.0;
-        var marker = L.marker([32.7157, -117.1611], { icon: createDroneIcon(0) }).addTo(map);
+        var marker = L.marker([32.7157, -117.1611], { icon: createDroneIcon(0), opacity: 0 }).addTo(map);
         var path = L.polyline([], { color: '#0b57d0', weight: 2.5, opacity: 0.85 }).addTo(map);
         var positions = [];
         var followDrone = true;
@@ -402,6 +417,7 @@ MAP_HTML = """
         function updateDrone(lat, lon, headingDeg, speed, alt) {
             var pos = [lat, lon];
             marker.setLatLng(pos);
+            marker.setOpacity(1);
 
             // Rotate drone icon
             if (headingDeg !== undefined && headingDeg !== null) {
@@ -592,23 +608,44 @@ class MapView(QWebEngineView):
     takeoff_added = pyqtSignal(float, float)
     landing_added = pyqtSignal(float, float)
 
-    def __init__(self):
+    def __init__(self, planning=True):
         super().__init__()
         from gcs.ui.tile_server import start_server
         port = start_server()
-        local_html = MAP_HTML.replace("PORT_PLACEHOLDER", str(port))
-        self.setHtml(local_html)
-        self._last_pos = (0.0, 0.0)
+        self._last_pos = None
+        self._pending_home = None
+        self._pending_mission = (None, [], None)
+        self._planning = planning
         self._is_loaded = False
         self.loadFinished.connect(self._on_load_finished)
         self.titleChanged.connect(self._on_title_changed)
+        local_html = MAP_HTML.replace('PORT_PLACEHOLDER', str(port))
+        # Essential map code is bundled inline. Loading it must not depend on
+        # DNS, system proxy settings, or loopback subresource requests.
+        static = Path(resource_path('gcs/ui/static'))
+        script = (static / 'leaflet.js').read_text(encoding='utf-8')
+        css = (static / 'leaflet.css').read_text(encoding='utf-8')
+        local_html = local_html.replace(f'<script src="http://localhost:{port}/static/leaflet.js"></script>', '<script>' + script + '</script>')
+        local_html = local_html.replace(f'<link rel="stylesheet" href="http://localhost:{port}/static/leaflet.css"/>', '<style>' + css + '</style>')
+        local_html = local_html.replace('http://localhost:', 'http://127.0.0.1:')
+        self.page().setBackgroundColor(QColor('#152033'))
+        self.setHtml(local_html, QUrl(f'http://127.0.0.1:{port}/static/'))
 
     def _on_load_finished(self, ok):
-        if ok:
-            self._is_loaded = True
-            if self._last_pos != (0.0, 0.0):
-                lat, lon = self._last_pos
-                self.page().runJavaScript(f"if (typeof updateDrone === 'function') updateDrone({lat}, {lon}, 0, 0, 0);")
+        self._is_loaded = bool(ok)
+        if not ok:
+            return
+        self.page().runJavaScript("""
+            document.querySelectorAll('#btn-takeoff, #btn-waypoint, #btn-landing').forEach(function(el) { el.style.display = PLANNING ? '' : 'none'; });
+            document.getElementById('btn-goto').style.display = PLANNING ? 'none' : '';
+            document.querySelectorAll('#mode-controls .panel-label').forEach(function(el) { el.style.display = 'none'; });
+            if (typeof setMode === 'function') setMode(PLANNING ? 'waypoint' : 'goto');
+        """.replace('PLANNING', 'true' if self._planning else 'false'))
+        self.import_mission(*self._pending_mission)
+        if self._pending_home:
+            self.set_home(*self._pending_home)
+        if self._last_pos:
+            self.update_position(*self._last_pos)
 
     def _on_title_changed(self, title):
         if title.startswith("ACTION:GOTO:"):
@@ -652,9 +689,9 @@ class MapView(QWebEngineView):
         self.import_mission(takeoff, waypoints, landing)
 
     def update_position(self, lat, lon, heading_deg=0.0, speed=0.0, alt=0.0):
-        if (lat == 0.0 and lon == 0.0):
+        if not all(math.isfinite(value) for value in (lat, lon, heading_deg, speed, alt)):
             return
-        self._last_pos = (lat, lon)
+        self._last_pos = (lat, lon, heading_deg, speed, alt)
         if self._is_loaded:
             self.page().runJavaScript(f"if (typeof updateDrone === 'function') updateDrone({lat}, {lon}, {heading_deg:.1f}, {speed:.1f}, {alt:.1f});")
 
@@ -663,7 +700,8 @@ class MapView(QWebEngineView):
             self.page().runJavaScript(f"if (typeof setMode === 'function') setMode('{mode_name}');")
 
     def set_home(self, lat, lon):
-        if self._is_loaded and (lat != 0.0 or lon != 0.0):
+        self._pending_home = (lat, lon)
+        if self._is_loaded:
             self.page().runJavaScript(f"if (typeof setHome === 'function') setHome({lat}, {lon});")
 
     def center_drone(self):
@@ -681,6 +719,10 @@ class MapView(QWebEngineView):
         self.page().runJavaScript("if (typeof clearWaypoints === 'function') clearWaypoints();")
 
     def import_mission(self, takeoff, waypoints, landing):
+        import copy
+        self._pending_mission = copy.deepcopy((takeoff, waypoints, landing))
+        if not self._is_loaded:
+            return
         t_json = json.dumps(takeoff)
         w_json = json.dumps(waypoints)
         l_json = json.dumps(landing)
@@ -688,3 +730,18 @@ class MapView(QWebEngineView):
 
     def get_map_bounds(self, callback):
         self.page().runJavaScript("if (typeof map !== 'undefined') JSON.stringify(map.getBounds()); else '';", callback)
+
+    def reset_vehicle(self):
+        self._last_pos = None
+        self._pending_home = None
+        if self._is_loaded:
+            self.page().runJavaScript("""
+                if (typeof marker !== 'undefined') {
+                    marker.setOpacity(0);
+                    if (homeMarker) { map.removeLayer(homeMarker); homeMarker = null; }
+                    homePoint = null;
+                    homeLine.setLatLngs([]);
+                    clearTrail();
+                    if (gotoMarker) { map.removeLayer(gotoMarker); gotoMarker = null; }
+                }
+            """)

@@ -1,4 +1,5 @@
 import json
+import math
 from typing import List, Optional, Tuple, Dict, Any
 
 MAV_CMD_NAV_WAYPOINT = 16
@@ -122,59 +123,80 @@ def import_plan_file(filename: str) -> Tuple[bool, List[List[float]], Optional[L
     except Exception as e:
         return False, [], None, None, 10.0, f"Failed to parse file: {e}"
 
-    # Format 1: QGroundControl .plan
-    if isinstance(data, dict) and data.get("fileType") == "Plan":
-        mission = data.get("mission", {})
-        raw_items = mission.get("items", [])
-        wps = []
-        takeoff = None
-        landing = None
-        detected_alt = 10.0
+    try:
+        if isinstance(data, dict) and data.get('fileType') == 'Plan':
+            if data.get('version', 1) != 1 or data.get('mission', {}).get('version', 2) != 2:
+                raise ValueError('Unsupported QGC plan/mission version.')
+            fence = data.get('geoFence', {})
+            if fence.get('circles') or fence.get('polygons') or data.get('rallyPoints', {}).get('points'):
+                raise ValueError('This editor cannot preserve geofences or rally points. Import cancelled.')
+            wps, takeoff, landing, alt = decode_supported_items(data.get('mission', {}).get('items', []))
+            return True, wps, takeoff, landing, alt, f'Imported supported QGC mission ({len(wps)} waypoints).'
+        if isinstance(data, dict) and 'waypoints' in data:
+            wps = [validate_coordinates(wp) for wp in data['waypoints']]
+            takeoff = validate_coordinates(data['takeoff']) if data.get('takeoff') else None
+            landing = validate_coordinates(data['landing']) if data.get('landing') else None
+            if landing and landing[2] != 0:
+                raise ValueError('Landing altitude must be zero relative to home in this editor.')
+            return True, wps, takeoff, landing, wps[0][2] if wps else 10.0, f'Imported Legacy Plan ({len(wps)} waypoints)'
+        raise ValueError('Unrecognized plan file schema.')
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError) as error:
+        return False, [], None, None, 10.0, f'Import cancelled: {error}'
 
-        unsupported_cmds = []
-        for item in raw_items:
-            cmd = item.get("command")
-            params = item.get("params", [])
-            item_alt = item.get("Altitude")
-            if len(params) >= 7:
-                lat = params[4]
-                lon = params[5]
-                alt = params[6] if params[6] is not None else item_alt
 
-                if lat is None or lon is None:
-                    continue
+def validate_coordinates(coord):
+    if not isinstance(coord, (list, tuple)) or len(coord) not in (2, 3):
+        raise ValueError('Each mission coordinate must contain latitude, longitude and optional altitude.')
+    if any(isinstance(value, bool) for value in coord):
+        raise ValueError('Coordinates must be numeric, not boolean.')
+    lat, lon = float(coord[0]), float(coord[1])
+    alt = float(coord[2]) if len(coord) == 3 else 10.0
+    if not all(math.isfinite(value) for value in (lat, lon, alt)):
+        raise ValueError('Mission coordinates and altitude must be finite.')
+    if not -90 <= lat <= 90 or not -180 <= lon <= 180 or not 0 <= alt <= 150:
+        raise ValueError('Latitude/longitude out of range or altitude outside the editor limit (0–150 m relative to home).')
+    return [lat, lon, alt]
 
-                if alt is not None:
-                    detected_alt = float(alt)
-                else:
-                    alt = detected_alt
 
-                if cmd == MAV_CMD_NAV_TAKEOFF and takeoff is None and not wps:
-                    takeoff = [float(lat), float(lon), float(alt)]
-                elif cmd == MAV_CMD_NAV_LAND:
-                    landing = [float(lat), float(lon), float(alt)]
-                elif cmd in (MAV_CMD_NAV_WAYPOINT, MAV_CMD_NAV_TAKEOFF):
-                    wps.append([float(lat), float(lon), float(alt)])
-                else:
-                    unsupported_cmds.append(cmd)
-
-        msg = f"Imported QGC Plan ({len(wps)} waypoints)"
-        if unsupported_cmds:
-            msg += f". Note: {len(unsupported_cmds)} unsupported command(s) skipped: {set(unsupported_cmds)}"
-
-        return True, wps, takeoff, landing, detected_alt, msg
-
-    # Format 2: Legacy PythonGCS {takeoff, waypoints, landing}
-    if isinstance(data, dict) and "waypoints" in data:
-        wps = data.get("waypoints", [])
-        takeoff = data.get("takeoff")
-        landing = data.get("landing")
-        alt = 10.0
-        if wps and len(wps[0]) > 2:
-            alt = wps[0][2]
-        return True, wps, takeoff, landing, float(alt), f"Imported Legacy Plan ({len(wps)} waypoints)"
-
-    return False, [], None, None, 10.0, "Unrecognized plan file schema"
+def decode_supported_items(items):
+    """Reject missions whose meaning the simple editor cannot preserve."""
+    if not isinstance(items, list):
+        raise ValueError('Mission items must be a list.')
+    wps, takeoff, landing, default_alt = [], None, None, 10.0
+    for index, item in enumerate(items):
+        if not isinstance(item, dict) or item.get('type', 'SimpleItem') != 'SimpleItem':
+            raise ValueError(f'Item {index + 1}: complex items are unsupported; no items were imported.')
+        command = item.get('command')
+        if command not in (16, 21, 22):
+            raise ValueError(f'Item {index + 1}: unsupported command {command}; no items were skipped.')
+        if item.get('frame') not in (3, 6):
+            raise ValueError(f'Item {index + 1}: only home-relative altitude frames are supported.')
+        params = item.get('params', [])
+        if not isinstance(params, list) or len(params) != 7:
+            raise ValueError(f'Item {index + 1}: expected seven MAVLink parameters.')
+        if item.get('autoContinue', True) is not True and item.get('autoContinue') != 1:
+            raise ValueError(f'Item {index + 1}: manual continuation is unsupported.')
+        # Holding, custom yaw, acceptance/turn radii and pitch cannot be edited
+        # losslessly by the coordinate-only mission model.
+        if any(float(params[i] or 0) != 0 for i in (0, 2)):
+            raise ValueError(f'Item {index + 1}: custom hold/pitch/turn parameters are unsupported.')
+        if float(params[1] or 0) not in ((0, 2) if command == 16 else (0,)):
+            raise ValueError(f'Item {index + 1}: custom acceptance radius is unsupported.')
+        if params[3] is not None and not math.isnan(float(params[3])):
+            raise ValueError(f'Item {index + 1}: explicit yaw cannot be preserved by this editor.')
+        coord = validate_coordinates(params[4:7])
+        if command == 22:
+            if index != 0:
+                raise ValueError('Takeoff is supported only as the first mission item.')
+            takeoff = coord
+        elif command == 21:
+            if index != len(items) - 1 or coord[2] != 0:
+                raise ValueError('Landing must be the final item at zero home-relative altitude.')
+            landing = coord
+        else:
+            wps.append(coord)
+            default_alt = coord[2]
+    return wps, takeoff, landing, default_alt
 
 
 def calculate_mission_stats(

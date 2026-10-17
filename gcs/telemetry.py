@@ -1,4 +1,6 @@
 import time
+import copy
+import math
 import queue
 import threading
 import uuid
@@ -87,11 +89,16 @@ telemetry_data = {
     'autopilot_version': 'Unknown',
     'climb_rate': 0.0,
     'last_gps_monotonic': 0.0,
+    'last_gps_raw_monotonic': 0.0,
     'last_attitude_monotonic': 0.0,
     'last_battery_monotonic': 0.0,
     'last_vfr_monotonic': 0.0,
     'last_extended_sys_state_monotonic': 0.0
 }
+
+# Restore every field between vehicles, including coordinates, sensor bits,
+# battery cells and identity. A partial reset leaks the previous vehicle's data.
+_TELEMETRY_DEFAULTS = copy.deepcopy(telemetry_data)
 
 # Link statistics tracking
 link_stats = {
@@ -107,19 +114,21 @@ link_stats = {
 # Per-source sequence tracking: (sys_id, comp_id) -> stats
 _source_seq_trackers: Dict[Tuple[int, int], dict] = {}
 
-def get_stream_freshness(now_mono: Optional[float] = None) -> dict:
+def get_stream_freshness(now_mono: Optional[float] = None, data: Optional[dict] = None) -> dict:
     """
     Evaluates freshness per telemetry stream independently of heartbeat.
     Prevents frozen GPS, attitude, or power data from appearing current.
     """
     if now_mono is None:
         now_mono = time.monotonic()
+    data = get_telemetry_snapshot() if data is None else data
     
-    last_hb = telemetry_data.get('last_heartbeat_monotonic', 0.0)
-    last_gps = telemetry_data.get('last_gps_monotonic', 0.0)
-    last_att = telemetry_data.get('last_attitude_monotonic', 0.0)
-    last_batt = telemetry_data.get('last_battery_monotonic', 0.0)
-    last_vfr = telemetry_data.get('last_vfr_monotonic', 0.0)
+    last_hb = data.get('last_heartbeat_monotonic', 0.0)
+    last_gps = data.get('last_gps_monotonic', 0.0)
+    last_raw = data.get('last_gps_raw_monotonic', 0.0)
+    last_att = data.get('last_attitude_monotonic', 0.0)
+    last_batt = data.get('last_battery_monotonic', 0.0)
+    last_vfr = data.get('last_vfr_monotonic', 0.0)
 
     hb_age = (now_mono - last_hb) if last_hb > 0.0 else 999.0
     gps_age = (now_mono - last_gps) if last_gps > 0.0 else 999.0
@@ -127,16 +136,26 @@ def get_stream_freshness(now_mono: Optional[float] = None) -> dict:
     batt_age = (now_mono - last_batt) if last_batt > 0.0 else 999.0
     vfr_age = (now_mono - last_vfr) if last_vfr > 0.0 else 999.0
 
-    gps_valid = (last_gps > 0.0 and gps_age <= 3.0 and telemetry_data.get('fix_type', 0) >= 3 and telemetry_data.get('satellites', 0) >= 6)
-    attitude_valid = (last_att > 0.0 and att_age <= 2.0)
-    battery_valid = (last_batt > 0.0 and batt_age <= 4.0 and (telemetry_data.get('voltage', 0.0) > 0.0 or telemetry_data.get('battery', -1) >= 0))
-    vfr_valid = (last_vfr > 0.0 and vfr_age <= 3.0)
+    raw_age = (now_mono - last_raw) if last_raw > 0.0 else 999.0
+    position_valid = (last_gps > 0.0 and 0 <= gps_age <= 3.0
+                      and math.isfinite(data.get('lat', 0.0))
+                      and math.isfinite(data.get('lon', 0.0))
+                      and math.isfinite(data.get('alt', 0.0))
+                      and -90 <= data.get('lat', 0.0) <= 90
+                      and -180 <= data.get('lon', 0.0) <= 180)
+    gps_valid = (position_valid and last_raw > 0 and 0 <= raw_age <= 3.0
+                 and data.get('fix_type', 0) >= 3 and 6 <= data.get('satellites', 0) < 255)
+    attitude_valid = (last_att > 0.0 and 0 <= att_age <= 2.0
+                      and all(math.isfinite(data.get(k, 0.0)) for k in ('roll', 'pitch', 'yaw')))
+    battery_valid = (last_batt > 0.0 and 0 <= batt_age <= 4.0 and (data.get('voltage', 0.0) > 0.0 or 0 <= data.get('battery', -1) <= 100))
+    vfr_valid = (last_vfr > 0.0 and 0 <= vfr_age <= 3.0
+                 and all(math.isfinite(data.get(key, 0.0)) for key in ('groundspeed', 'climb_rate')))
 
     if last_hb == 0.0:
         link_state = 'DISCONNECTED'
     elif hb_age > 4.0:
         link_state = 'LOST'
-    elif hb_age > 2.5 or telemetry_data.get('packet_loss_pct', 0.0) > 5.0 or telemetry_data.get('message_rate_hz', 0.0) < 1.0:
+    elif hb_age > 2.5 or data.get('packet_loss_pct', 0.0) > 5.0 or data.get('message_rate_hz', 0.0) < 1.0:
         link_state = 'DEGRADED'
     else:
         link_state = 'HEALTHY'
@@ -144,6 +163,8 @@ def get_stream_freshness(now_mono: Optional[float] = None) -> dict:
     return {
         'hb_age': hb_age,
         'gps_age': gps_age,
+        'gps_raw_age': raw_age,
+        'position_valid': position_valid,
         'att_age': att_age,
         'batt_age': batt_age,
         'vfr_age': vfr_age,
@@ -151,6 +172,8 @@ def get_stream_freshness(now_mono: Optional[float] = None) -> dict:
         'attitude_valid': attitude_valid,
         'battery_valid': battery_valid,
         'vfr_valid': vfr_valid,
+        'landed_valid': (data.get('last_extended_sys_state_monotonic', 0.0) > 0
+                         and 0 <= now_mono - data['last_extended_sys_state_monotonic'] <= 3.0),
         'link_state': link_state
     }
 
@@ -190,6 +213,8 @@ def is_heartbeat_stale(timeout_sec: float = HEARTBEAT_TIMEOUT_SEC) -> bool:
     return (time.monotonic() - last_mono) > timeout_sec
 
 def reset_telemetry_data():
+    telemetry_data.clear()
+    telemetry_data.update(copy.deepcopy(_TELEMETRY_DEFAULTS))
     telemetry_data['armed'] = False
     telemetry_data['mode'] = 'DISCONNECTED'
     telemetry_data['last_heartbeat_time'] = 0.0
@@ -252,7 +277,22 @@ def is_vehicle_airborne() -> bool:
         return True
     return False
 
-def handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
+def get_telemetry_snapshot() -> dict:
+    with _session_lock:
+        return copy.deepcopy(telemetry_data)
+
+
+def handle_mavlink_message(msg, vehicle=None, target_system: int = 1, session_id=None):
+    # Session validation and mutation share a lock with session replacement.
+    # A cancelled receive thread cannot slip a packet into the next vehicle.
+    with _session_lock:
+        if session_id is not None and (session_id != _active_session_id or
+                                       _active_session_obj is None or not _active_session_obj.is_active):
+            return False
+        return _handle_mavlink_message(msg, vehicle, target_system)
+
+
+def _handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
     """
     Process a single MAVLink message, updating telemetry_data, parameters, command acks, etc.
     Calculates packet loss per source (src_sys, src_comp) to prevent multi-source sequence corruption.
@@ -425,10 +465,14 @@ def handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
         telemetry_data['last_battery_monotonic'] = now_mono
 
     elif msg_type == 'BATTERY_STATUS':
+        if getattr(msg, 'id', 0) != 0:
+            return True  # An auxiliary battery must not refresh primary power.
         voltages = getattr(msg, 'voltages', [])
         valid_cells = [v / 1000.0 for v in voltages if v > 0 and v != 65535]
-        if valid_cells:
-            telemetry_data['battery_cells'] = valid_cells
+        telemetry_data['battery_cells'] = valid_cells
+        telemetry_data['voltage'] = sum(valid_cells) if valid_cells else 0.0
+        remaining = getattr(msg, 'battery_remaining', -1)
+        telemetry_data['battery'] = remaining if 0 <= remaining <= 100 else -1
         telemetry_data['last_battery_monotonic'] = now_mono
 
     elif msg_type == 'VIBRATION':
@@ -454,7 +498,8 @@ def handle_mavlink_message(msg, vehicle=None, target_system: int = 1):
         telemetry_data['satellites'] = msg.satellites_visible
         telemetry_data['fix_type'] = msg.fix_type
         telemetry_data['eph'] = msg.eph
-        telemetry_data['last_gps_monotonic'] = now_mono
+        # GPS receiver health does not refresh the fused vehicle position.
+        telemetry_data['last_gps_raw_monotonic'] = now_mono
 
     elif msg_type == 'ATTITUDE':
         telemetry_data['roll'] = msg.roll
@@ -530,11 +575,21 @@ def read_telemetry(vehicle, session_id: Optional[str] = None):
 
     target_system = getattr(vehicle, 'target_system', 1)
     target_component = getattr(vehicle, 'target_component', 1)
+    with _session_lock:
+        if session_id != _active_session_id:
+            return
+        telemetry_data['sysid'] = target_system
+        telemetry_data['compid'] = target_component
+    last_gcs_heartbeat = 0.0
 
     log(f"Telemetry reader started for session {session_id[:8]} (Target Sys: {target_system}, Comp: {target_component})")
 
     while is_session_active(session_id):
         try:
+            if time.monotonic() - last_gcs_heartbeat >= 1.0:
+                from gcs.commands import send_gcs_heartbeat
+                send_gcs_heartbeat(vehicle)
+                last_gcs_heartbeat = time.monotonic()
             msg = vehicle.recv_match(
                 type=[
                     'GLOBAL_POSITION_INT', 'VFR_HUD', 'SYS_STATUS', 'GPS_RAW_INT',
@@ -545,7 +600,7 @@ def read_telemetry(vehicle, session_id: Optional[str] = None):
                     'MISSION_COUNT', 'MISSION_ITEM_INT', 'MISSION_ITEM'
                 ],
                 blocking=True,
-                timeout=2.0
+                timeout=0.25
             )
 
             if not is_session_active(session_id):
@@ -557,7 +612,7 @@ def read_telemetry(vehicle, session_id: Optional[str] = None):
                         log("Warning: Heartbeat timeout (>3s). Link degraded.")
                 continue
 
-            handle_mavlink_message(msg, vehicle=vehicle, target_system=target_system)
+            handle_mavlink_message(msg, vehicle=vehicle, target_system=target_system, session_id=session_id)
 
         except Exception as e:
             if not is_session_active(session_id):

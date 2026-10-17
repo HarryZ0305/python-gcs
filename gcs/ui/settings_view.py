@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QSpinBox, QDoubleSpinBox, QFrame, QFileDialog,
     QMessageBox, QScrollArea
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QSettings
 from gcs.ui.theme import get_theme, set_active_theme, FONT_FAMILY_PRIMARY, FONT_FAMILY_MONO, get_button_style
 from gcs.telemetry import battery_config
 from gcs.ui.tile_server import set_mbtiles_file
@@ -23,9 +23,14 @@ class SettingsView(QWidget):
     """
     theme_changed = pyqtSignal(bool) # is_dark
     video_source_changed = pyqtSignal(str) # new url
+    settings_changed = pyqtSignal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, settings=None):
         super().__init__(parent)
+        self.settings = settings if settings is not None else QSettings('PythonGCS', 'Desktop')
+        for key in battery_config:
+            value = self.settings.value('battery/' + key, battery_config[key], type=type(battery_config[key]))
+            battery_config[key] = value
         self._build_ui()
 
     def _build_ui(self):
@@ -50,6 +55,7 @@ class SettingsView(QWidget):
         self.theme_combo = QComboBox()
         self.theme_combo.addItem("Cockpit Dark Mode (Field Optimized)", True)
         self.theme_combo.addItem("Aviation Light Mode (Direct Sunlight)", False)
+        self.theme_combo.setCurrentIndex(0 if self.settings.value('appearance/dark', True, type=bool) else 1)
         self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         theme_row.addWidget(self.theme_combo)
         theme_row.addStretch(1)
@@ -66,7 +72,7 @@ class SettingsView(QWidget):
 
         self.video_src_input = QLineEdit()
         self.video_src_input.setPlaceholderText("rtsp://192.168.1.100:8554/live, udp://0.0.0.0:5600, or 'test'")
-        self.video_src_input.setText("test")
+        self.video_src_input.setText(self.settings.value('video/source', ''))
         src_row.addWidget(self.video_src_input, stretch=1)
 
         self.btn_apply_video = QPushButton("APPLY STREAM")
@@ -91,7 +97,7 @@ class SettingsView(QWidget):
         self.cell_combo = QComboBox()
         for s in [1, 2, 3, 4, 5, 6, 8, 12]:
             self.cell_combo.addItem(f"{s}S LiPo ({s * 3.7:.1f}V nom, {s * 4.2:.1f}V full)", s)
-        self.cell_combo.setCurrentIndex(3) # 4S default
+        self.cell_combo.setCurrentIndex(self.cell_combo.findData(battery_config['cells']))
         self.cell_combo.currentIndexChanged.connect(self._on_cells_changed)
         cell_row.addWidget(self.cell_combo)
         cell_row.addStretch(1)
@@ -115,6 +121,28 @@ class SettingsView(QWidget):
         thresh_row.addWidget(self.crit_spin)
         thresh_row.addStretch(1)
         bc_layout.addLayout(thresh_row)
+        pct_row = QHBoxLayout()
+        pct_row.addWidget(QLabel('Warning remaining:'))
+        self.warn_pct_spin = QSpinBox()
+        self.warn_pct_spin.setRange(1, 99)
+        self.warn_pct_spin.setSuffix(' %')
+        self.warn_pct_spin.setValue(battery_config['warn_pct'])
+        pct_row.addWidget(self.warn_pct_spin)
+        pct_row.addWidget(QLabel('Critical remaining:'))
+        self.crit_pct_spin = QSpinBox()
+        self.crit_pct_spin.setRange(0, 98)
+        self.crit_pct_spin.setSuffix(' %')
+        self.crit_pct_spin.setValue(battery_config['crit_pct'])
+        pct_row.addWidget(self.crit_pct_spin)
+        self.save_battery_btn = QPushButton('SAVE BATTERY LIMITS')
+        self.save_battery_btn.setStyleSheet(get_button_style('primary', 'sm'))
+        self.save_battery_btn.clicked.connect(self._save_battery_limits)
+        pct_row.addWidget(self.save_battery_btn)
+        pct_row.addStretch(1)
+        bc_layout.addLayout(pct_row)
+        self.battery_status = QLabel('These are GCS alerts. Autopilot failsafe parameters are configured separately.')
+        self.battery_status.setWordWrap(True)
+        bc_layout.addWidget(self.battery_status)
         layout.addWidget(batt_card)
 
         # 4. Offline Maps & MBTiles Card
@@ -171,18 +199,32 @@ class SettingsView(QWidget):
 
     def _on_theme_changed(self):
         is_dark = self.theme_combo.currentData()
+        self.settings.setValue('appearance/dark', is_dark)
         set_active_theme(is_dark)
         self.theme_changed.emit(is_dark)
 
     def _on_apply_video(self):
         url = self.video_src_input.text().strip()
+        self.settings.setValue('video/source', url)
         self.video_source_changed.emit(url)
-        QMessageBox.information(self, "Video Source Updated", f"Applied stream source: {url}")
 
     def _on_cells_changed(self):
         cells = self.cell_combo.currentData()
         if cells:
             battery_config['cells'] = int(cells)
+            self.settings.setValue('battery/cells', int(cells))
+            self.settings_changed.emit()
+
+    def _save_battery_limits(self):
+        if self.crit_spin.value() >= self.warn_spin.value() or self.crit_pct_spin.value() >= self.warn_pct_spin.value():
+            self.battery_status.setText('Not saved: critical thresholds must be lower than warning thresholds.')
+            return
+        for key, spin in [('warn_volt_per_cell', self.warn_spin), ('crit_volt_per_cell', self.crit_spin),
+                          ('warn_pct', self.warn_pct_spin), ('crit_pct', self.crit_pct_spin)]:
+            battery_config[key] = spin.value()
+            self.settings.setValue('battery/' + key, spin.value())
+        self.battery_status.setText('Battery alert limits saved. Autopilot failsafe parameters remain separate.')
+        self.settings_changed.emit()
 
     def _on_browse_mbtiles(self):
         fname, _ = QFileDialog.getOpenFileName(self, "Select MBTiles Offline Package", "", "MBTiles Files (*.mbtiles *.db)")

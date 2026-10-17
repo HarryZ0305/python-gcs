@@ -134,6 +134,7 @@ class PipWorkspace(QWidget):
 
         # Floating PiP overlay
         self.pip_frame = PipOverlayFrame(self)
+        self.pip_frame.resize(self.pip_frame.default_size)
         self.pip_frame.swap_requested.connect(self.swap_views)
         self.pip_frame.toggle_requested.connect(self._reposition_pip)
 
@@ -141,6 +142,13 @@ class PipWorkspace(QWidget):
         self._apply_layout()
 
     def _apply_layout(self):
+        # Detach both views before assigning either to its new container.
+        # Otherwise clearing the old PiP can detach the newly dominant widget.
+        for layout in (self.dominant_layout, self.pip_frame.content_layout):
+            while layout.count():
+                item = layout.takeAt(0)
+                if item.widget():
+                    item.widget().setParent(None)
         # Clear dominant layout
         while self.dominant_layout.count():
             item = self.dominant_layout.takeAt(0)
@@ -155,6 +163,8 @@ class PipWorkspace(QWidget):
             self.pip_frame.set_content_widget(self.map_widget, "TACTICAL MAP")
 
         self.pip_frame.raise_()
+        self.map_widget.show()
+        self.video_widget.show()
         self._reposition_pip()
 
     def swap_views(self):

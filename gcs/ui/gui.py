@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QFrame, QMessageBox,
     QPushButton, QComboBox, QSpinBox, QListWidget, QTabWidget,
     QLineEdit, QCheckBox, QProgressDialog, QGridLayout,
-    QGraphicsDropShadowEffect, QInputDialog, QFileDialog, QSplitter
+    QGraphicsDropShadowEffect, QInputDialog, QFileDialog, QSplitter, QScrollArea
 )
 try:
     from PyQt6.QtTextToSpeech import QTextToSpeech
@@ -19,14 +19,14 @@ try:
 except ImportError:
     TTS_AVAILABLE = False
 
-from PyQt6.QtCore import QObject, QTimer, Qt, QThread, pyqtSignal, QEvent
+from PyQt6.QtCore import QObject, QTimer, Qt, QThread, pyqtSignal, QEvent, QSettings
 from PyQt6.QtGui import QFont, QColor
 
 import gcs.telemetry as telemetry
 from gcs.telemetry import (
     telemetry_data, is_vehicle_airborne, create_new_session,
     cancel_current_session, reset_telemetry_data, read_telemetry,
-    get_stream_freshness
+    get_stream_freshness, get_telemetry_snapshot
 )
 from gcs.commands import (
     arm, disarm, emergency_motor_stop, set_mode, takeoff, goto, emergency_hold,
@@ -57,6 +57,8 @@ from gcs.ui.pip_workspace import PipWorkspace
 from gcs.ui.plan_view import PlanView
 from gcs.ui.analyze_view import AnalyzeView
 from gcs.ui.settings_view import SettingsView
+from gcs.ui.status_widgets import TelemetryStrip, StreamHealthPanel
+from gcs.flight_state import flight_status
 
 THEME = {
     'bg':           '#090d16',
@@ -91,13 +93,18 @@ class ConnectionWorker(QThread):
 
     def run(self):
         try:
-            while self.running:
+            deadline = time.monotonic() + 15.0
+            while self.running and time.monotonic() < deadline:
                 vehicle = connect(self.connection_string, timeout=1.0)
                 if vehicle is not None:
                     if self.running:
                         self.connected.emit(vehicle)
+                    else:
+                        vehicle.close()
                     return
-                self.msleep(400)
+                self.msleep(100)
+            if self.running:
+                self.failed.emit("No autopilot heartbeat received within 15 seconds.")
         except Exception as e:
             if self.running:
                 self.failed.emit(str(e))
@@ -246,6 +253,13 @@ class GCSWindow(QMainWindow):
         self.armed_start_time = None
         self.total_flight_dist = 0.0
         self.last_flight_coord = None
+        self._closing = False
+        self._connection_generation = 0
+        self._connection_workers = []
+        self._connecting = False
+        self.settings = QSettings('PythonGCS', 'Desktop')
+        set_active_theme(self.settings.value('appearance/dark', True, type=bool))
+        self._current_theme = get_theme()
 
         self.setWindowTitle("PythonGCS — Autonomous Ground Control Station for PX4")
         self.resize(1440, 920)
@@ -274,6 +288,8 @@ class GCSWindow(QMainWindow):
         self.worker_bridge.mission_uploaded.connect(self._on_worker_mission_uploaded)
 
         self._build_ui()
+        QApplication.instance().focusChanged.connect(self._on_focus_changed)
+        self.refresh()
 
         # Fast Timer for 30 FPS Instrument Rendering
         self.fast_timer = QTimer(self)
@@ -324,7 +340,10 @@ class GCSWindow(QMainWindow):
         ribbon_frame = QFrame()
         ribbon_frame.setObjectName("RibbonFrame")
         ribbon_frame.setStyleSheet(f"#RibbonFrame {{ background-color: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; }}")
-        rf_layout = QHBoxLayout(ribbon_frame)
+        ribbon_layout = QVBoxLayout(ribbon_frame)
+        ribbon_layout.setContentsMargins(12, 10, 12, 10)
+        rf_layout = QHBoxLayout()
+        ribbon_layout.addLayout(rf_layout)
         rf_layout.setContentsMargins(8, 4, 8, 4)
         rf_layout.setSpacing(6)
 
@@ -334,7 +353,7 @@ class GCSWindow(QMainWindow):
         rf_layout.addWidget(brand_lbl)
 
         # Vehicle Identity Badge
-        self.vehicle_id_badge = QLabel("SYS 1 PX4")
+        self.vehicle_id_badge = QLabel("NO VEHICLE")
         self.vehicle_id_badge.setStyleSheet(get_pill_style('primary'))
         rf_layout.addWidget(self.vehicle_id_badge)
 
@@ -347,7 +366,8 @@ class GCSWindow(QMainWindow):
 
         # Connection input
         self.conn_input = QLineEdit("udpin:0.0.0.0:14540")
-        self.conn_input.setFixedWidth(135)
+        self.conn_input.setMinimumWidth(170)
+        self.conn_input.setMaximumWidth(280)
         rf_layout.addWidget(self.conn_input)
 
         self.conn_btn = QPushButton("CONNECT")
@@ -361,53 +381,60 @@ class GCSWindow(QMainWindow):
         rf_layout.addWidget(self.conn_status)
 
         rf_layout.addStretch(1)
+        status_row = QHBoxLayout()
+        status_row.setSpacing(8)
+        ribbon_layout.addLayout(status_row)
 
         # Highest Priority Alert Banner (prominently visible)
         self.alert_banner = QLabel("SYSTEM NOMINAL")
         self.alert_banner.setStyleSheet(get_pill_style('neutral'))
-        rf_layout.addWidget(self.alert_banner)
+        self.alert_banner.setWordWrap(True)
 
         # Status Pills
         self.ribbon_fw_pill = QLabel("PX4 AUTOPILOT")
         self.ribbon_fw_pill.setStyleSheet(get_pill_style('neutral'))
-        rf_layout.addWidget(self.ribbon_fw_pill)
+        status_row.addWidget(self.ribbon_fw_pill)
 
         self.ribbon_arm_pill = QLabel("DISARMED")
         self.ribbon_arm_pill.setStyleSheet(get_pill_style('danger', filled=True))
-        rf_layout.addWidget(self.ribbon_arm_pill)
+        status_row.addWidget(self.ribbon_arm_pill)
 
         self.ribbon_mode_pill = QLabel("MODE: UNKNOWN")
         self.ribbon_mode_pill.setStyleSheet(get_pill_style('primary'))
-        rf_layout.addWidget(self.ribbon_mode_pill)
+        status_row.addWidget(self.ribbon_mode_pill)
 
         self.ribbon_gps_pill = QLabel("GPS: NO FIX (0s)")
         self.ribbon_gps_pill.setStyleSheet(get_pill_style('neutral'))
-        rf_layout.addWidget(self.ribbon_gps_pill)
+        status_row.addWidget(self.ribbon_gps_pill)
 
         self.ribbon_batt_pill = QLabel("BATT: ---% | --.-V")
         self.ribbon_batt_pill.setStyleSheet(get_pill_style('neutral'))
-        rf_layout.addWidget(self.ribbon_batt_pill)
+        status_row.addWidget(self.ribbon_batt_pill)
 
         self.ribbon_timer_pill = QLabel("TIME: 00:00")
         self.ribbon_timer_pill.setStyleSheet(get_pill_style('neutral'))
-        rf_layout.addWidget(self.ribbon_timer_pill)
+        status_row.addWidget(self.ribbon_timer_pill)
 
         self.ribbon_dist_pill = QLabel("HOME: --- m")
         self.ribbon_dist_pill.setStyleSheet(get_pill_style('neutral'))
-        rf_layout.addWidget(self.ribbon_dist_pill)
+        status_row.addWidget(self.ribbon_dist_pill)
+        status_row.addStretch(1)
 
         main_layout.addWidget(ribbon_frame)
+        main_layout.addWidget(self.alert_banner)
 
         # 2. Main Workspaces Navigation (FLY, PLAN, VEHICLE SETUP, ANALYZE, SETTINGS)
         self.tabs = QTabWidget()
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         self._build_fly_tab()
+        rf_layout.addWidget(self.preflight_btn)
 
         # Dedicated Plan Workspace
         self.plan_view = PlanView(self.vehicle)
         self.plan_map_view = self.plan_view.map_view
-        self.plan_view.mission_uploaded.connect(lambda ok, msg: self._on_worker_mission_uploaded(self.current_session_id, ok, msg))
+        self.plan_view.mission_uploaded.connect(self._on_plan_transfer_result)
+        self.plan_view.draft_changed.connect(self._update_action_states)
         self.tabs.addTab(self.plan_view, "PLAN")
 
         # Vehicle Setup Workspace
@@ -419,21 +446,47 @@ class GCSWindow(QMainWindow):
         self.tabs.addTab(self.analyze_view, "ANALYZE")
 
         # Settings Workspace
-        self.settings_view = SettingsView()
+        self.settings_view = SettingsView(settings=self.settings)
         self.settings_view.theme_changed.connect(self._on_theme_toggled)
+        self.settings_view.settings_changed.connect(self.refresh)
         self.settings_view.video_source_changed.connect(self.camera_view.set_stream_source)
         self.tabs.addTab(self.settings_view, "SETTINGS")
+
+        self.profile_combo.setCurrentIndex(self.settings.value('connection/profile', 0, type=int))
+        self.conn_input.setText(self.settings.value('connection/address', self.conn_input.text()))
+        self.statusBar().showMessage('Disconnected · Flight actions inhibited')
 
         main_layout.addWidget(self.tabs, stretch=1)
 
     def _on_theme_toggled(self, is_dark: bool):
+        old = self._current_theme
+        new = get_theme()
+        # Retheme widget-local styles as well as the root stylesheet.
+        import re
+        substitutions = {old[key]: new[key] for key in old if key != 'name' and old[key] != new[key]}
+        pattern = re.compile('|'.join(re.escape(color) for color in sorted(substitutions, key=len, reverse=True)))
+        for widget in self.findChildren(QWidget):
+            sheet = widget.styleSheet()
+            if sheet:
+                widget.setStyleSheet(pattern.sub(lambda match: substitutions[match.group(0)], sheet))
+        self._current_theme = new
         self.setStyleSheet(get_app_stylesheet())
+        self.plot_panel.plot_widget.setBackground(new['plot_bg'])
+        self.instrument_container.pfd.update()
+        self.refresh()
 
     def _on_tab_changed(self, idx: int):
         # Safety: whenever leaving Fly tab, clear keyboard held keys and offboard targets
         if idx != 0 and hasattr(self, 'held_keys') and self.held_keys:
             self.held_keys.clear()
             self.update_keyboard_offboard()
+        if idx != 0 and hasattr(self, 'kb_checkbox'):
+            self.kb_checkbox.setChecked(False)
+
+    def _on_focus_changed(self, previous, current):
+        if self.held_keys:
+            self.held_keys.clear()
+            reset_offboard_targets()
 
     def _on_profile_changed(self, idx):
         uri = self.profile_combo.currentData()
@@ -448,7 +501,8 @@ class GCSWindow(QMainWindow):
         fly_layout.setSpacing(6)
 
         # Main Flight Splitter: Left Instrument & Action Rail + Center Dominant PiP Workspace
-        fly_splitter = QSplitter(Qt.Orientation.Horizontal)
+        fly_splitter = self.fly_splitter = QSplitter(Qt.Orientation.Horizontal)
+        fly_splitter.setChildrenCollapsible(False)
 
         # --- LEFT RAIL: Flight Instruments & Contextual Action Controls ---
         self.left_col_widget = QWidget()
@@ -458,7 +512,7 @@ class GCSWindow(QMainWindow):
 
         # Cockpit Primary Flight Display (PFD) / 3D CAD toggle container
         self.instrument_container = InstrumentContainer()
-        self.attitude_view = self.instrument_container.cad_view
+        self.attitude_view = None  # 3D WebEngine view is created only on request.
         left_col.addWidget(self.instrument_container)
 
         # Action Card: Flight Commands
@@ -473,7 +527,7 @@ class GCSWindow(QMainWindow):
         mode_row = QHBoxLayout()
         self.mode_combo = QComboBox()
         self.mode_combo.addItems([
-            "HOLD", "POSCTL", "ALTCTL", "STABILIZED", "MANUAL",
+            "AUTO.LOITER", "POSCTL", "ALTCTL", "STABILIZED", "MANUAL",
             "OFFBOARD", "AUTO.TAKEOFF", "AUTO.LOITER", "AUTO.RTL",
             "AUTO.LAND", "AUTO.MISSION"
         ])
@@ -576,27 +630,36 @@ class GCSWindow(QMainWindow):
         ac_layout.addLayout(pre_row)
 
         self.status_label = QLabel("System ready.")
+        self.status_label.setWordWrap(True)
         self.status_label.setStyleSheet(f"color: {t['text_secondary']}; font-size: 11px;")
         ac_layout.addWidget(self.status_label)
 
         left_col.addWidget(action_card)
+        self.stream_health = StreamHealthPanel()
+        left_col.addWidget(self.stream_health)
         left_col.addStretch(1)
 
-        self.left_col_widget.setMinimumWidth(320)
-        self.left_col_widget.setMaximumWidth(380)
-        fly_splitter.addWidget(self.left_col_widget)
+        rail_scroll = QScrollArea()
+        rail_scroll.setWidgetResizable(True)
+        rail_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        rail_scroll.setMinimumWidth(330)
+        rail_scroll.setMaximumWidth(400)
+        rail_scroll.setWidget(self.left_col_widget)
+        fly_splitter.addWidget(rail_scroll)
 
         # --- CENTER / DOMINANT AREA: Tactical Map & Picture-in-Picture Video ---
         center_container = QWidget()
         center_layout = QVBoxLayout(center_container)
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(4)
+        self.telemetry_strip = TelemetryStrip()
+        center_layout.addWidget(self.telemetry_strip)
 
-        self.map_view = MapView()
+        self.map_view = MapView(planning=False)
         self.map_view.goto_requested.connect(self.on_map_goto_requested)
 
         self.camera_view = CameraView()
-        self.camera_view.set_stream_source("test") # Test pattern by default
+        # A test feed is available explicitly in Settings; never auto-start it.
 
         self.pip_workspace = PipWorkspace(self.map_view, self.camera_view)
         center_layout.addWidget(self.pip_workspace, stretch=1)
@@ -620,10 +683,11 @@ class GCSWindow(QMainWindow):
         dd_layout.addWidget(self.console_view, stretch=1)
 
         center_layout.addWidget(self.diag_drawer)
+        self.diag_drawer.hide()
 
         # Drawer Collapse / Expand Button
         drawer_bar = QHBoxLayout()
-        self.btn_toggle_drawer = QPushButton("▲ HIDE DIAGNOSTICS & CONSOLE")
+        self.btn_toggle_drawer = QPushButton("SHOW DIAGNOSTICS & CONSOLE")
         self.btn_toggle_drawer.setFixedHeight(22)
         self.btn_toggle_drawer.setStyleSheet(get_button_style('secondary', 'sm'))
         self.btn_toggle_drawer.clicked.connect(self._toggle_diagnostics_drawer)
@@ -649,6 +713,7 @@ class GCSWindow(QMainWindow):
 
         fly_layout.addWidget(fly_splitter)
         self.tabs.addTab(fly_widget, "FLY")
+        self.fly_splitter.setSizes([350, 1000])
 
         # Fallback gauges for test compatibility
         self.gauge_spd = ArcGauge("SPEED", "m/s", 0, 25, THEME['primary'])
@@ -669,8 +734,8 @@ class GCSWindow(QMainWindow):
 
     def _fast_instrument_update(self):
         """High-rate 30 Hz flight attitude & PFD instrument refresh."""
-        d = telemetry_data
-        freshness = get_stream_freshness()
+        d = get_telemetry_snapshot()
+        freshness = get_stream_freshness(data=d)
         is_stale = not freshness['attitude_valid']
 
         self.instrument_container.update_attitude(
@@ -682,74 +747,108 @@ class GCSWindow(QMainWindow):
             climb=d.get('climb_rate', 0.0),
             mode=d.get('mode', 'UNKNOWN'),
             armed=d.get('armed', False),
-            is_stale=is_stale
+            is_stale=is_stale or self.vehicle is None,
+            position_valid=self.vehicle is not None and freshness['position_valid'],
+            speed_valid=self.vehicle is not None and freshness['vfr_valid']
         )
 
     def on_connect_toggle(self):
-        if self.vehicle:
+        if self.vehicle or any(w.isRunning() for w in self._connection_workers):
             self.disconnect_vehicle()
-        else:
-            conn_str = self.conn_input.text().strip()
-            if not conn_str:
-                self.set_status("Please specify a valid connection string.")
-                return
-            self.conn_btn.setEnabled(False)
-            self.conn_btn.setText("CONNECTING...")
-            self.conn_status.setText("CONNECTING...")
-            t = get_theme()
-            self.conn_status.setStyleSheet(f"color: {t['warning']}; font-weight: bold;")
-            self.set_status(f"Opening MAVLink connection to {conn_str}...")
+            return
+        conn_str = self.conn_input.text().strip()
+        if not conn_str:
+            self.set_status('Enter a MAVLink connection address.')
+            return
+        self._connection_generation += 1
+        generation = self._connection_generation
+        self._connecting = True
+        self.settings.setValue('connection/profile', self.profile_combo.currentIndex())
+        self.settings.setValue('connection/address', conn_str)
+        self.conn_btn.setText('CANCEL')
+        self.profile_combo.setEnabled(False)
+        self.conn_input.setEnabled(False)
+        self.set_status(f'Waiting for an autopilot heartbeat on {conn_str}…')
+        worker = self.conn_worker = ConnectionWorker(conn_str)
+        self._connection_workers.append(worker)
+        worker.connected.connect(lambda vehicle, gen=generation: self._accept_connection(gen, vehicle))
+        worker.failed.connect(lambda error, gen=generation: self._connection_failed(gen, error))
+        worker.finished.connect(lambda worker=worker: self._connection_finished(worker))
+        worker.start()
 
-            self.conn_worker = ConnectionWorker(conn_str)
-            self.conn_worker.connected.connect(self.on_connected)
-            self.conn_worker.failed.connect(self.on_connection_failed)
-            self.conn_worker.start()
+    def _connection_finished(self, worker):
+        if worker in self._connection_workers:
+            self._connection_workers.remove(worker)
+        worker.deleteLater()
+
+    def _accept_connection(self, generation, vehicle):
+        if self._closing or generation != self._connection_generation:
+            vehicle.close()
+            return
+        self.on_connected(vehicle)
+
+    def _connection_failed(self, generation, message):
+        if generation == self._connection_generation and not self._closing:
+            self.on_connection_failed(message)
 
     def on_connected(self, vehicle):
+        self._connecting = False
         self.vehicle = vehicle
+        self._home_set_on_map = False
+        self.was_armed = False
         self._telemetry_session_id = create_new_session()
+        telemetry_data['sysid'] = vehicle.target_system
+        telemetry_data['compid'] = vehicle.target_component
         self.conn_btn.setEnabled(True)
-        self.conn_btn.setText("DISCONNECT")
-        t = get_theme()
-        self.conn_btn.setStyleSheet(get_button_style('danger', 'sm'))
-        self.conn_status.setText("CONNECTED")
-        self.conn_status.setStyleSheet(f"color: {t['success']}; font-weight: bold;")
-        self.set_status("Connected to flight controller.")
-
-        # Update sub-views
+        self.conn_btn.setText('DISCONNECT')
+        self.conn_btn.setStyleSheet(get_button_style('secondary', 'sm'))
+        self.set_status('Transport open. Waiting for fresh vehicle telemetry.')
         self.setup_view.set_vehicle(vehicle)
         self.plan_view.set_vehicle(vehicle)
-
-        # Start telemetry reader thread
-        threading.Thread(
-            target=read_telemetry,
-            args=(vehicle, self._telemetry_session_id),
-            daemon=True
-        ).start()
+        self._telemetry_thread = threading.Thread(target=read_telemetry,
+            args=(vehicle, self._telemetry_session_id), daemon=True)
+        self._telemetry_thread.start()
+        threading.Thread(target=request_telemetry, args=(vehicle,), daemon=True).start()
+        self.refresh()
 
     def on_connection_failed(self, error_msg):
+        self._connecting = False
+        self.conn_btn.setText('CONNECT')
         self.conn_btn.setEnabled(True)
-        self.conn_btn.setText("CONNECT")
-        t = get_theme()
-        self.conn_btn.setStyleSheet(get_button_style('primary', 'sm'))
-        self.conn_status.setText("FAILED")
-        self.conn_status.setStyleSheet(f"color: {t['danger']}; font-weight: bold;")
-        self.set_status(f"Connection failed: {error_msg}")
+        self.profile_combo.setEnabled(True)
+        self.conn_input.setEnabled(True)
+        self.set_status(f'Connection failed: {error_msg}')
 
     def disconnect_vehicle(self):
-        cancel_current_session()
+        self._connecting = False
+        self._connection_generation += 1
+        for worker in self._connection_workers:
+            worker.stop()
+        previous_vehicle = self.vehicle
+        self.held_keys.clear()
+        self.kb_checkbox.setChecked(False)
         stop_streamer()
+        cancel_current_session()
         self.vehicle = None
         self._telemetry_session_id = None
-        self.conn_btn.setText("CONNECT")
-        t = get_theme()
+        self._home_set_on_map = False
+        self.was_armed = False
+        self.armed_start_time = None
+        self.history_time.clear()
+        self.history_alt.clear()
+        self.history_speed.clear()
+        for view in (self.map_view, self.plan_map_view):
+            view.reset_vehicle()
+        if previous_vehicle is not None and hasattr(previous_vehicle, 'close'):
+            previous_vehicle.close()
+        self.conn_btn.setEnabled(True)
+        self.conn_btn.setText('CONNECT')
         self.conn_btn.setStyleSheet(get_button_style('primary', 'sm'))
-        self.conn_status.setText("DISCONNECTED")
-        self.conn_status.setStyleSheet(f"color: {t['danger']}; font-weight: bold;")
-        self.set_status("Disconnected from vehicle.")
-
+        self.profile_combo.setEnabled(True)
+        self.conn_input.setEnabled(True)
         self.setup_view.set_vehicle(None)
         self.plan_view.set_vehicle(None)
+        self.set_status('Disconnected. Flight actions inhibited.')
         self.refresh()
 
     def set_controls_enabled(self, enabled: bool):
@@ -781,13 +880,13 @@ class GCSWindow(QMainWindow):
     def _on_worker_mission_uploaded(self, session_id: str, ok: bool, msg: str):
         if session_id != self.current_session_id:
             return
-        self.start_btn.setEnabled(ok)
         self.plan_view.on_upload_completed(ok, msg)
+        self._update_action_states()
         self.set_status(f"Mission Transfer: {'VERIFIED' if ok else 'FAILED'} — {msg}")
         self.analyze_view.log_event("MISSION_UPLOAD", "VERIFIED" if ok else f"FAILED: {msg}")
 
     def on_arm_disarm(self):
-        if not self.vehicle:
+        if not self.vehicle or not self._allow_action('arm'):
             return
         is_currently_armed = telemetry_data.get('armed', False)
         session_id = self.current_session_id
@@ -821,7 +920,7 @@ class GCSWindow(QMainWindow):
             threading.Thread(target=_arm_worker, daemon=True).start()
 
     def on_emergency_motor_stop(self):
-        if not self.vehicle:
+        if not self.vehicle or not self._allow_action('cutoff'):
             return
         reply = QMessageBox.critical(
             self,
@@ -842,7 +941,7 @@ class GCSWindow(QMainWindow):
             threading.Thread(target=_emer_worker, daemon=True).start()
 
     def on_set_mode(self):
-        if not self.vehicle:
+        if not self.vehicle or not self._allow_action('mode'):
             return
         mode = self.mode_combo.currentText()
         session_id = self.current_session_id
@@ -854,7 +953,7 @@ class GCSWindow(QMainWindow):
         threading.Thread(target=_mode_worker, daemon=True).start()
 
     def on_takeoff(self):
-        if not self.vehicle:
+        if not self.vehicle or not self._allow_action('takeoff'):
             return
         alt = self.alt_spin.value()
         session_id = self.current_session_id
@@ -868,7 +967,7 @@ class GCSWindow(QMainWindow):
         threading.Thread(target=_takeoff_worker, daemon=True).start()
 
     def on_rtl(self):
-        if not self.vehicle:
+        if not self.vehicle or not self._allow_action('rtl'):
             return
         session_id = self.current_session_id
         vehicle = self.vehicle
@@ -879,7 +978,7 @@ class GCSWindow(QMainWindow):
         threading.Thread(target=_rtl_worker, daemon=True).start()
 
     def on_land(self):
-        if not self.vehicle:
+        if not self.vehicle or not self._allow_action('land'):
             return
         session_id = self.current_session_id
         vehicle = self.vehicle
@@ -890,7 +989,7 @@ class GCSWindow(QMainWindow):
         threading.Thread(target=_land_worker, daemon=True).start()
 
     def on_emergency_hold(self):
-        if not self.vehicle:
+        if not self.vehicle or not self._allow_action('hold'):
             return
         session_id = self.current_session_id
         vehicle = self.vehicle
@@ -902,7 +1001,7 @@ class GCSWindow(QMainWindow):
         threading.Thread(target=_hold_worker, daemon=True).start()
 
     def on_start_mission(self):
-        if not self.vehicle:
+        if not self.vehicle or not self._allow_action('start'):
             return
         from gcs.commands import start_mission
         session_id = self.current_session_id
@@ -974,7 +1073,14 @@ class GCSWindow(QMainWindow):
             self.update_keyboard_offboard()
 
     def on_map_goto_requested(self, lat: float, lon: float):
-        if not self.vehicle:
+        if not self.vehicle or not self._allow_action('goto'):
+            return
+        reply = QMessageBox.question(self, 'Confirm reposition',
+            f'Reposition vehicle SYS {telemetry_data.get("sysid")} to {lat:.6f}, {lon:.6f} '
+            f'at {self.alt_spin.value():.1f} m relative to home?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel)
+        if reply != QMessageBox.StandardButton.Yes or not self._allow_action('goto'):
             return
         alt = self.alt_spin.value()
         session_id = self.current_session_id
@@ -987,6 +1093,7 @@ class GCSWindow(QMainWindow):
 
     def set_status(self, msg: str):
         self.status_label.setText(msg)
+        self.statusBar().showMessage(msg)
         log(f"GUI: {msg}")
 
     def on_open_preflight_dialog(self):
@@ -1079,7 +1186,10 @@ class GCSWindow(QMainWindow):
         super().changeEvent(event)
 
     def update_keyboard_offboard(self):
-        if not hasattr(self, 'kb_checkbox') or not self.kb_checkbox.isChecked() or not self.vehicle:
+        if (not hasattr(self, 'kb_checkbox') or not self.kb_checkbox.isChecked() or not self.vehicle
+                or not flight_status(dict(telemetry_data), True)['actions']['keyboard'].enabled
+                or self.tabs.currentIndex() != 0 or QApplication.activeModalWidget() is not None):
+            self.held_keys.clear()
             reset_offboard_targets()
             return
 
@@ -1114,168 +1224,113 @@ class GCSWindow(QMainWindow):
             reset_offboard_targets()
 
     # ---- Main Refresh Loop (2-5 Hz) ----
+    def _update_action_states(self):
+        state = flight_status(get_telemetry_snapshot(), self.vehicle is not None,
+                              self.plan_view.is_verified_for(self.vehicle))
+        controls = {'arm': self.arm_btn, 'takeoff': self.takeoff_btn,
+                    'hold': self.hold_btn, 'rtl': self.rtl_btn, 'land': self.land_btn,
+                    'mode': self.mode_btn, 'start': self.start_btn,
+                    'keyboard': self.kb_checkbox, 'cutoff': self.emer_stop_btn}
+        for name, widget in controls.items():
+            availability = state['actions'][name]
+            widget.setEnabled(availability.enabled)
+            widget.setToolTip(availability.reason)
+        if not state['actions']['keyboard'].enabled and self.kb_checkbox.isChecked():
+            self.kb_checkbox.setChecked(False)
+            self.held_keys.clear()
+            reset_offboard_targets()
+        self.plan_view.set_link_available(state['live'])
+        return state
+
+    def _allow_action(self, action):
+        availability = self._update_action_states()['actions'][action]
+        if not availability.enabled:
+            self.set_status(availability.reason)
+        return availability.enabled
+
+    def _on_plan_transfer_result(self, ok, msg):
+        self._update_action_states()
+        self.set_status(f"Mission transfer: {msg}")
+        self.analyze_view.log_event('MISSION_TRANSFER', msg)
+
     def refresh(self):
-        d = telemetry_data
+        d = get_telemetry_snapshot()
         t = get_theme()
+        connected = self.vehicle is not None
+        state = self._update_action_states()
+        fresh = state['freshness']
+        live = state['live']
+        armed = bool(d.get('armed'))
+        first_alert = state['alerts'][0]
+        extra = len(state['alerts']) - 1
+        self.alert_banner.setText(f"{first_alert.title}  /  {first_alert.detail}" + (f"  (+{extra} more)" if extra else ''))
+        self.alert_banner.setToolTip('\n'.join(f'{a.title}: {a.detail}' for a in state['alerts']))
+        self.alert_banner.setStyleSheet(get_pill_style(first_alert.severity))
+        self.stream_health.update_health(fresh, connected)
 
-        if not self.vehicle:
-            self.conn_status.setText("DISCONNECTED")
-            self.conn_status.setStyleSheet(f"color: {t['danger']}; font-weight: bold;")
-            self.ribbon_gps_pill.setText("GPS: NO FIX (0s)")
-            self.ribbon_batt_pill.setText("BATT: ---% | --.-V")
-            self.ribbon_dist_pill.setText("HOME: --- m")
-            self.ribbon_timer_pill.setText("TIME: 00:00")
-            self.alert_banner.setText("NO VEHICLE CONNECTED")
-            self.alert_banner.setStyleSheet(get_pill_style('neutral'))
-            self.set_controls_enabled(False)
-            self.console_view.refresh_logs()
-            return
+        connecting = self._connecting
+        self.conn_status.setText('CONNECTING' if connecting and not connected else fresh['link_state'] if connected else 'DISCONNECTED')
+        self.conn_status.setStyleSheet(f"color: {t['success'] if live and fresh['link_state'] == 'HEALTHY' else t['warning'] if connected or connecting else t['text_muted']}; font-weight: 600;")
+        self.vehicle_id_badge.setText(f"SYS {d.get('sysid', '?')} / COMP {d.get('compid', '?')}" if connected else 'NO VEHICLE')
+        self.ribbon_fw_pill.setText(f"PX4 {d.get('autopilot_version', 'Unknown')}" if connected else 'PX4')
+        self.ribbon_mode_pill.setText(f"MODE: {d.get('mode', 'UNKNOWN')}" if live else 'MODE: UNCONFIRMED')
+        arm_text = ('ARMED / AIRBORNE' if state['airborne'] else 'ARMED / GROUND' if state['grounded'] else 'ARMED / POSITION UNKNOWN') if armed else 'DISARMED'
+        self.ribbon_arm_pill.setText(arm_text if live else 'ARM STATE UNKNOWN')
+        self.ribbon_arm_pill.setStyleSheet(get_pill_style('warning' if armed and live else 'neutral'))
+        self.arm_btn.setText('DISARM' if live and armed else 'ARM')
+        self.arm_btn.setStyleSheet(get_button_style('secondary' if armed else 'primary', 'sm'))
 
-        freshness = get_stream_freshness()
-        link_state = freshness['link_state']
-
-        if link_state == 'LOST':
-            self.conn_status.setText("LINK LOST")
-            self.conn_status.setStyleSheet(f"color: {t['danger']}; font-weight: bold;")
-            self.set_controls_enabled(False)
-        elif link_state == 'DEGRADED':
-            self.conn_status.setText("LINK DEGRADED")
-            self.conn_status.setStyleSheet(f"color: {t['warning']}; font-weight: bold;")
-            self.set_controls_enabled(True)
+        fix_names = {3: '3D', 4: 'DGPS', 5: 'RTK FLOAT', 6: 'RTK FIXED', 7: 'STATIC', 8: 'PPP'}
+        self.ribbon_gps_pill.setText(f"GNSS: {fix_names.get(d.get('fix_type'), 'FIX')} / {d.get('satellites', 0)} SAT" if connected and fresh['gps_valid'] else 'GNSS: UNCONFIRMED')
+        self.ribbon_gps_pill.setStyleSheet(get_pill_style('success' if connected and fresh['gps_valid'] else 'neutral'))
+        if connected and fresh['battery_valid']:
+            remaining = f"{d['battery']}%" if d.get('battery', -1) >= 0 else 'UNKNOWN %'
+            volts = f"{d['voltage']:.1f} V" if d.get('voltage', 0) > 0 else 'UNKNOWN V'
+            self.ribbon_batt_pill.setText(f"BATTERY: {remaining} / {volts}")
         else:
-            self.conn_status.setText("CONNECTED")
-            self.conn_status.setStyleSheet(f"color: {t['success']}; font-weight: bold;")
-            self.set_controls_enabled(True)
+            self.ribbon_batt_pill.setText('BATTERY: UNAVAILABLE')
+        self.ribbon_batt_pill.setStyleSheet(get_pill_style('neutral'))
 
-        # Contextual Control Safeguards (evaluate per action)
-        is_airborne = is_vehicle_airborne()
-        is_armed = d.get('armed', False)
-
-        if is_armed:
-            self.arm_btn.setText("DISARM")
-            self.arm_btn.setStyleSheet(get_button_style('danger', 'sm'))
-            if is_airborne:
-                self.ribbon_arm_pill.setText("ARMED (AIRBORNE)")
-                self.ribbon_arm_pill.setStyleSheet(get_pill_style('success', filled=True))
-                # Protect airborne disarm
-                self.arm_btn.setToolTip("Disarm blocked while airborne. Use LAND, RTL, or Emergency Cutoff.")
-                self.takeoff_btn.setEnabled(False)
-                self.rtl_btn.setEnabled(True)
-                self.land_btn.setEnabled(True)
-            else:
-                self.ribbon_arm_pill.setText("ARMED (GROUND)")
-                self.ribbon_arm_pill.setStyleSheet(get_pill_style('success', filled=True))
-                self.arm_btn.setToolTip("Grounded disarm available.")
-                self.takeoff_btn.setEnabled(True)
-        else:
-            self.ribbon_arm_pill.setText("DISARMED")
-            self.ribbon_arm_pill.setStyleSheet(get_pill_style('danger', filled=True))
-            self.arm_btn.setText("ARM")
-            self.arm_btn.setStyleSheet(get_button_style('success', 'sm'))
-            self.arm_btn.setToolTip("Arm flight motors.")
-            self.takeoff_btn.setEnabled(True)
-            self.rtl_btn.setEnabled(False)
-            self.land_btn.setEnabled(False)
-
-        self.ribbon_mode_pill.setText(f"MODE: {d.get('mode', 'UNKNOWN')}")
-        self.ribbon_fw_pill.setText(d.get('autopilot_version', 'PX4 AUTOPILOT'))
-
-        # GPS Readout
-        if freshness['gps_valid']:
-            sats = d.get('satellites', 0)
-            fix = d.get('fix_type', 0)
-            self.ribbon_gps_pill.setText(f"GPS: {fix}D ({sats}s)")
-            self.ribbon_gps_pill.setStyleSheet(get_pill_style('success'))
-        else:
-            self.ribbon_gps_pill.setText("GPS: UNCONFIRMED")
-            self.ribbon_gps_pill.setStyleSheet(get_pill_style('warning'))
-
-        # Battery Readout
-        if freshness['battery_valid']:
-            batt = d.get('battery', -1)
-            volt = d.get('voltage', 0.0)
-            batt_str = f"{batt}%" if batt >= 0 else "---%"
-            self.ribbon_batt_pill.setText(f"BATT: {batt_str} | {volt:.1f}V")
-            self.ribbon_batt_pill.setStyleSheet(get_pill_style('success' if (batt < 0 or batt > 25) else 'danger'))
-        else:
-            self.ribbon_batt_pill.setText("BATT: STALE")
-            self.ribbon_batt_pill.setStyleSheet(get_pill_style('danger'))
-
-        # Alert Banner: evaluate highest priority notification
-        prearm = d.get('prearm_fail', '')
-        if prearm:
-            self.alert_banner.setText(f"PREARM: {prearm[:25]}")
-            self.alert_banner.setStyleSheet(get_pill_style('danger', filled=True))
-        elif link_state in ('LOST', 'DEGRADED'):
-            self.alert_banner.setText(f"LINK {link_state}")
-            self.alert_banner.setStyleSheet(get_pill_style('warning', filled=True))
-        elif not freshness['gps_valid'] and is_armed:
-            self.alert_banner.setText("WARN: GPS UNCONFIRMED")
-            self.alert_banner.setStyleSheet(get_pill_style('warning', filled=True))
-        else:
-            self.alert_banner.setText("ALL SYSTEMS NOMINAL")
-            self.alert_banner.setStyleSheet(get_pill_style('success'))
-
-        # Flight duration timer & distance calculation
-        if is_armed:
+        home_dist = None
+        if connected and fresh['position_valid'] and d.get('has_home'):
+            from gcs.telemetry_logger import haversine_distance
+            home_dist = haversine_distance(d['lat'], d['lon'], d['home_lat'], d['home_lon'])
+        self.telemetry_strip.update_values(d, fresh, connected, home_dist)
+        self.ribbon_dist_pill.setText(f"HOME: {home_dist:.0f} m" if home_dist is not None else 'HOME: UNCONFIRMED')
+        if live and armed:
             if not self.was_armed:
                 self.armed_start_time = time.monotonic()
-                self.total_flight_dist = 0.0
-                self.last_flight_coord = (d['lat'], d['lon'])
+            elapsed = time.monotonic() - self.armed_start_time
+            self.ribbon_timer_pill.setText(f"ARMED: {int(elapsed // 60):02d}:{int(elapsed % 60):02d}")
+        elif not connected:
+            self.ribbon_timer_pill.setText('ARMED: --:--')
+        self.was_armed = armed if live else self.was_armed
 
-            if self.armed_start_time:
-                elapsed_flight = time.monotonic() - self.armed_start_time
-                mins = int(elapsed_flight // 60)
-                secs = int(elapsed_flight % 60)
-                self.ribbon_timer_pill.setText(f"TIME: {mins:02d}:{secs:02d}")
-
-            if self.last_flight_coord and d.get('lat') != 0.0 and d.get('lon') != 0.0:
-                from gcs.telemetry_logger import haversine_distance
-                step_dist = haversine_distance(self.last_flight_coord[0], self.last_flight_coord[1], d['lat'], d['lon'])
-                if 0.05 < step_dist < 50.0:
-                    self.total_flight_dist += step_dist
-                    self.last_flight_coord = (d['lat'], d['lon'])
-                self.ribbon_dist_pill.setText(f"DIST: {self.total_flight_dist:.0f} m")
-
-        self.was_armed = is_armed
-
-        # Tactical Map Position Update
-        yaw_deg = math.degrees(d.get('yaw', 0.0)) % 360
-        if freshness['gps_valid']:
-            self.map_view.update_position(d.get('lat', 0.0), d.get('lon', 0.0), yaw_deg, d.get('groundspeed', 0.0), d.get('alt', 0.0))
-            self.plan_map_view.update_position(d.get('lat', 0.0), d.get('lon', 0.0), yaw_deg, d.get('groundspeed', 0.0), d.get('alt', 0.0))
-
-        # Set Home ONCE on confirmed HOME_POSITION or initial arming
-        if not self._home_set_on_map:
-            if d.get('has_home', False) and (d.get('home_lat', 0.0) != 0.0 or d.get('home_lon', 0.0) != 0.0):
-                self.map_view.set_home(d['home_lat'], d['home_lon'])
-                self.plan_map_view.set_home(d['home_lat'], d['home_lon'])
-                self._home_set_on_map = True
-            elif is_armed and d.get('lat', 0.0) != 0.0 and d.get('lon', 0.0) != 0.0:
-                self.map_view.set_home(d['lat'], d['lon'])
-                self.plan_map_view.set_home(d['lat'], d['lon'])
-                self._home_set_on_map = True
-
-        # Append to plots and analytics
-        elapsed = time.monotonic() - self.start_time
-        self.history_time.append(elapsed)
-        self.history_alt.append(d.get('alt', 0.0))
-        self.history_speed.append(d.get('groundspeed', 0.0))
-        if len(self.history_time) > 200:
-            self.history_time.pop(0)
-            self.history_alt.pop(0)
-            self.history_speed.pop(0)
-
-        self.plot_panel.update_plots(self.history_time, self.history_alt, self.history_speed)
-        self.analyze_view.update_telemetry(
-            elapsed,
-            d.get('alt', 0.0),
-            d.get('groundspeed', 0.0),
-            climb=d.get('climb_rate', 0.0),
-            volt=d.get('voltage', 0.0),
-            loss=d.get('packet_loss_pct', 0.0)
-        )
-
+        if connected and fresh['gps_valid']:
+            yaw_deg = math.degrees(d.get('yaw', 0)) % 360
+            for map_view in (self.map_view, self.plan_map_view):
+                map_view.update_position(d['lat'], d['lon'], yaw_deg, d.get('groundspeed', 0), d.get('alt', 0))
+        if connected and d.get('has_home'):
+            home = (d['home_lat'], d['home_lon'])
+            if self._home_set_on_map != home:
+                self.map_view.set_home(*home)
+                self.plan_map_view.set_home(*home)
+                self._home_set_on_map = home
+        if connected:
+            elapsed = time.monotonic() - self.start_time
+            alt = d.get('alt', 0) if fresh['position_valid'] else float('nan')
+            speed = d.get('groundspeed', 0) if fresh['vfr_valid'] else float('nan')
+            self.history_time.append(elapsed)
+            self.history_alt.append(alt)
+            self.history_speed.append(speed)
+            self.history_time[:] = self.history_time[-200:]
+            self.history_alt[:] = self.history_alt[-200:]
+            self.history_speed[:] = self.history_speed[-200:]
+            self.plot_panel.update_plots(self.history_time, self.history_alt, self.history_speed)
+            self.analyze_view.update_telemetry(elapsed, alt, speed,
+                climb=d.get('climb_rate', 0) if fresh['vfr_valid'] else float('nan'),
+                volt=d.get('voltage', 0) if fresh['battery_valid'] else float('nan'),
+                loss=d.get('packet_loss_pct', 0))
         self.console_view.refresh_logs()
 
     def closeEvent(self, event):
@@ -1289,7 +1344,13 @@ class GCSWindow(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             event.ignore()
         else:
+            self._closing = True
+            self.fast_timer.stop()
+            self.timer.stop()
             self.disconnect_vehicle()
+            for worker in list(self._connection_workers):
+                worker.wait(1500)
+            self.camera_view.shutdown()
             event.accept()
 
 

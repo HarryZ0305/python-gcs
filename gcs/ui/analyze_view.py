@@ -59,7 +59,7 @@ class AnalyzeView(QWidget):
         rb_layout = QHBoxLayout(self.replay_banner)
         rb_layout.setContentsMargins(12, 4, 12, 4)
         
-        self.replay_label = QLabel("⚠️ FLIGHT REPLAY MODE ACTIVE — ALL VEHICLE COMMAND TRANSMISSION INHIBITED")
+        self.replay_label = QLabel("LOG REVIEW — historical plots only; live vehicle telemetry and controls are separate")
         self.replay_label.setStyleSheet("color: #ffffff; font-family: 'Segoe UI'; font-weight: bold; font-size: 11px;")
         rb_layout.addWidget(self.replay_label)
         rb_layout.addStretch(1)
@@ -179,6 +179,9 @@ class AnalyzeView(QWidget):
         """Records a timestamped flight event in the synchronized timeline."""
         ts = time.strftime("%H:%M:%S")
         self.events.append((time.monotonic(), event_type, details))
+        if len(self.events) > 1000:
+            self.events.pop(0)
+            self.event_table.removeRow(0)
         row = self.event_table.rowCount()
         self.event_table.insertRow(row)
         self.event_table.setItem(row, 0, QTableWidgetItem(ts))
@@ -196,6 +199,10 @@ class AnalyzeView(QWidget):
         self.series['climb'].append(climb)
         self.series['voltage'].append(volt)
         self.series['loss'].append(loss)
+        # Fields without a source stay explicitly unavailable, but every
+        # series must have the same length (including after buffer rollover).
+        for key in ('alt_amsl', 'battery', 'rate'):
+            self.series[key].append(float('nan'))
 
         # Cap memory buffer to 1200 points (~10 mins at 2Hz)
         if len(self.timestamps) > 1200:
@@ -207,6 +214,8 @@ class AnalyzeView(QWidget):
 
     def _refresh_plot_curves(self):
         if not self.timestamps:
+            for curve in (self.curve_alt, self.curve_speed, self.curve_climb, self.curve_volt, self.curve_loss):
+                curve.clear()
             return
 
         ts = self.timestamps
@@ -280,19 +289,20 @@ class AnalyzeView(QWidget):
         import csv
         try:
             new_ts = []
-            new_alts = []
-            new_spds = []
+            new_series = {key: [] for key in self.series}
+            columns = {'alt': 'Alt_Rel_m', 'speed': 'Groundspeed_ms', 'climb': 'Climb_ms',
+                       'voltage': 'Voltage_V', 'loss': 'Packet_Loss_pct'}
             with open(filename, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    new_ts.append(float(row.get('Time_Sec', 0)))
-                    new_alts.append(float(row.get('Alt_Rel_m', 0)))
-                    new_spds.append(float(row.get('Groundspeed_ms', 0)))
+                    new_ts.append(float(row['Time_Sec']))
+                    for key in new_series:
+                        raw = row.get(columns.get(key, ''), '')
+                        new_series[key].append(float(raw) if raw else float('nan'))
 
             self.clear_data()
             self.timestamps = new_ts
-            self.series['alt'] = new_alts
-            self.series['speed'] = new_spds
+            self.series = new_series
             self._refresh_plot_curves()
 
             self.is_replay_mode = True

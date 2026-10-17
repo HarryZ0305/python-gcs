@@ -60,9 +60,10 @@ def test_plan_unsupported_commands_detection():
 
     try:
         ok, wps, takeoff, landing, alt, msg = import_plan_file(temp_path)
-        assert ok is True
-        assert len(wps) >= 1
-        # The message must explicitly warn the operator about unsupported command 999
+        assert ok is False
+        assert wps == []
+        assert takeoff is None
+        # Unsupported items reject the entire import instead of altering its meaning.
         assert "unsupported command" in msg.lower()
         assert "999" in msg
     finally:

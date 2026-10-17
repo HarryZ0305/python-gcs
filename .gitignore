@@ -219,3 +219,6 @@ __marimo__/
 
 # Offline Map tile cache
 tile_cache/
+
+# Generated desktop layout previews and test artifacts
+artifacts/

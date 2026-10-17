@@ -66,9 +66,9 @@ def test_mission_upload_verification_controls_start_mission(qapp, monkeypatch):
     win._on_worker_mission_uploaded("session_active_002", False, "Readback mismatch")
     assert win.start_btn.isEnabled() is False
 
-    # Successful upload verification: start button becomes enabled
+    # An upload callback cannot enable mission start while disconnected.
     win._on_worker_mission_uploaded("session_active_002", True, "Verified 3 items")
-    assert win.start_btn.isEnabled() is True
+    assert win.start_btn.isEnabled() is False
 
 
 def test_preflight_unknown_prearm_readiness(qapp):

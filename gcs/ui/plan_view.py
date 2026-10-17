@@ -28,11 +28,19 @@ class PlanView(QWidget):
     Synchronizes local draft state, undo/redo history, and vehicle mission readback.
     """
     mission_uploaded = pyqtSignal(bool, str)
+    draft_changed = pyqtSignal()
+    _transfer_finished = pyqtSignal(int, object, object, bool, object, str)
 
     def __init__(self, vehicle=None, map_view=None, parent=None):
         super().__init__(parent)
         self.vehicle = vehicle
         self._external_map_view = map_view
+        self._vehicle_generation = 0
+        self._verified_signature = None
+        self._verified_vehicle = None
+        self._busy = False
+        self._link_available = False
+        self._transfer_finished.connect(self._on_transfer_finished)
 
         # Mission Model
         self.waypoints: List[List[float]] = [] # [[lat, lon, alt], ...]
@@ -67,7 +75,10 @@ class PlanView(QWidget):
                 border-radius: 8px;
             }}
         """)
-        tb_layout = QHBoxLayout(top_bar)
+        top_layout = QVBoxLayout(top_bar)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+        tb_layout = QHBoxLayout()
+        top_layout.addLayout(tb_layout)
         tb_layout.setContentsMargins(10, 6, 10, 6)
         tb_layout.setSpacing(8)
 
@@ -83,6 +94,10 @@ class PlanView(QWidget):
 
         tb_layout.addStretch(1)
 
+        # File/transfer actions get their own row to avoid header clipping.
+        tb_layout = QHBoxLayout()
+        tb_layout.setContentsMargins(10, 4, 10, 6)
+        top_layout.addLayout(tb_layout)
         # Undo / Redo
         self.btn_undo = QPushButton("UNDO")
         self.btn_undo.setFixedHeight(28)
@@ -179,6 +194,9 @@ class PlanView(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.table.itemSelectionChanged.connect(self._on_table_selection_changed)
         rp_layout.addWidget(self.table, stretch=1)
 
@@ -217,7 +235,7 @@ class PlanView(QWidget):
         alt_row.addWidget(alt_lbl)
 
         self.alt_edit = QDoubleSpinBox()
-        self.alt_edit.setRange(1.0, 150.0)
+        self.alt_edit.setRange(0.0, 150.0)
         self.alt_edit.setValue(self.default_alt)
         self.alt_edit.setSingleStep(1.0)
         self.alt_edit.valueChanged.connect(self._on_selected_alt_changed)
@@ -225,7 +243,7 @@ class PlanView(QWidget):
 
         self.frame_combo = QComboBox()
         self.frame_combo.addItem("Alt (Rel Home)", 3)
-        self.frame_combo.addItem("Alt AMSL", 0)
+        self.frame_combo.setToolTip('This editor supports home-relative altitude only. Other frames are rejected during import.')
         alt_row.addWidget(self.frame_combo)
         prop_layout.addLayout(alt_row)
 
@@ -238,8 +256,34 @@ class PlanView(QWidget):
 
         self._update_ui_state()
 
+    def _signature(self):
+        return (tuple(tuple(wp) for wp in self.waypoints),
+                tuple(self.takeoff_point or []), tuple(self.landing_point or []), self.default_alt)
+
+    def is_verified_for(self, vehicle):
+        return (vehicle is not None and vehicle is self.vehicle and vehicle is self._verified_vehicle
+                and bool(self.waypoints or self.takeoff_point or self.landing_point)
+                and self.sync_state == 'VERIFIED' and self._signature() == self._verified_signature)
+
     def set_vehicle(self, vehicle):
+        self._vehicle_generation += 1
         self.vehicle = vehicle
+        self._verified_vehicle = None
+        self._verified_signature = None
+        self._busy = False
+        self._link_available = False
+        self.sync_state = 'DRAFT'
+        self._update_ui_state()
+        self.draft_changed.emit()
+
+    def set_link_available(self, available):
+        self._link_available = available
+        enabled = self.vehicle is not None and available and not self._busy
+        self.btn_upload.setEnabled(enabled)
+        self.btn_download.setEnabled(enabled)
+        reason = 'Connect a vehicle with a fresh heartbeat first.' if not available else 'A mission transfer is already running.'
+        self.btn_upload.setToolTip('Upload and read back this draft.' if enabled else reason)
+        self.btn_download.setToolTip('Read the vehicle mission into the local draft.' if enabled else reason)
 
     def _save_state_to_undo(self, record_initial=False):
         state = {
@@ -315,6 +359,7 @@ class PlanView(QWidget):
 
     def _sync_all(self):
         """Synchronizes map markers, table rows, and mission stats."""
+        selected_row = self.table.currentRow()
         # Update Table
         self.table.blockSignals(True)
         items = []
@@ -334,7 +379,8 @@ class PlanView(QWidget):
             alt_val = coord[2] if len(coord) > 2 else self.default_alt
             self.table.setItem(row, 4, QTableWidgetItem(f"{alt_val:.1f}"))
         self.table.blockSignals(False)
-
+        if 0 <= selected_row < len(items):
+            self.table.selectRow(selected_row)
         # Update Map
         self.map_view.set_waypoints(self.waypoints, self.takeoff_point, self.landing_point)
 
@@ -345,15 +391,18 @@ class PlanView(QWidget):
         mins = int(dur_s // 60)
         secs = int(dur_s % 60)
         wh = stats['est_energy_wh']
+        self.stats_label.setToolTip(stats['assumptions'] + '; excludes wind, takeoff, landing, delays and reserves. Not an endurance guarantee.')
         self.stats_label.setText(f"{stats['item_count']} Items | {dist_m:.0f} m | {mins:02d}:{secs:02d} Est (~{wh:.1f} Wh)")
 
         self._update_ui_state()
+        self.draft_changed.emit()
 
     def _update_ui_state(self):
         state_map = {
             'DRAFT': ('LOCAL DRAFT', 'neutral'),
             'UNSAVED': ('UNSAVED CHANGES', 'warning'),
             'UPLOADING': ('UPLOADING TO FCU...', 'primary'),
+            'DOWNLOADING': ('READING FROM FCU...', 'primary'),
             'VERIFIED': (f'FCU MISSION VERIFIED ({self.verified_vehicle_items} items)', 'success'),
             'MISMATCH': ('LOCAL / FCU MISMATCH', 'danger')
         }
@@ -363,12 +412,16 @@ class PlanView(QWidget):
 
         self.btn_undo.setEnabled(len(self._undo_stack) > 0)
         self.btn_redo.setEnabled(len(self._redo_stack) > 0)
+        self.set_link_available(self._link_available)
 
     def _on_table_selection_changed(self):
         selected = self.table.selectedItems()
         if not selected:
             return
         row = selected[0].row()
+        is_landing = self.landing_point is not None and row == self.table.rowCount() - 1
+        self.alt_edit.setEnabled(not is_landing)
+        self.alt_edit.setToolTip('Landing uses zero home-relative altitude.' if is_landing else 'Altitude relative to home (metres).')
         alt_item = self.table.item(row, 4)
         if alt_item:
             try:
@@ -497,71 +550,94 @@ class PlanView(QWidget):
             QMessageBox.warning(self, "Import Failed", msg)
 
     def upload_to_vehicle(self):
-        if not self.vehicle:
-            QMessageBox.warning(self, "No Vehicle", "Connect to a vehicle before uploading missions.")
+        if self._busy or not self.vehicle or not self._link_available:
             return
-
         if not self.waypoints and not self.takeoff_point and not self.landing_point:
-            QMessageBox.warning(self, "Empty Plan", "Add waypoints or takeoff before uploading.")
+            QMessageBox.warning(self, 'Empty Plan', 'Add mission items before uploading.')
             return
-
+        from gcs.plan_format import validate_coordinates
+        try:
+            for coord in [self.takeoff_point, *self.waypoints, self.landing_point]:
+                if coord is not None:
+                    validate_coordinates(coord)
+        except ValueError as error:
+            QMessageBox.warning(self, 'Invalid mission', str(error))
+            return
+        import threading
+        vehicle, generation, signature = self.vehicle, self._vehicle_generation, self._signature()
+        wps, takeoff, landing = copy.deepcopy((self.waypoints, self.takeoff_point, self.landing_point))
+        target_alt = self.default_alt
+        self._busy = True
         self.sync_state = 'UPLOADING'
         self._update_ui_state()
 
-        import threading
-        v = self.vehicle
-        wps = copy.deepcopy(self.waypoints)
-        takeoff = copy.deepcopy(self.takeoff_point)
-        landing = copy.deepcopy(self.landing_point)
-        target_alt = self.default_alt
-
-        def _upload_worker():
-            ok, msg = upload_mission(v, wps, takeoff, landing, target_alt=target_alt, verify_after_upload=True)
-            self.mission_uploaded.emit(ok, msg)
-
-        threading.Thread(target=_upload_worker, daemon=True).start()
+        def work():
+            try:
+                ok, msg = upload_mission(vehicle, wps, takeoff, landing, target_alt=target_alt, verify_after_upload=True)
+            except Exception as error:
+                ok, msg = False, str(error)
+            self._transfer_finished.emit(generation, vehicle, signature, ok, None, msg)
+        threading.Thread(target=work, daemon=True).start()
 
     def download_from_vehicle(self):
-        if not self.vehicle:
-            QMessageBox.warning(self, "No Vehicle", "Connect to a vehicle before downloading missions.")
+        if self._busy or not self.vehicle or not self._link_available:
             return
-
+        if self.waypoints or self.takeoff_point or self.landing_point:
+            reply = QMessageBox.question(self, 'Replace local draft?',
+                'A successful download replaces the local draft. Continue?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel)
+            if reply != QMessageBox.StandardButton.Yes:
+                return
         import threading
-        v = self.vehicle
+        vehicle, generation, signature = self.vehicle, self._vehicle_generation, self._signature()
+        self._busy = True
+        self.sync_state = 'DOWNLOADING'
+        self._update_ui_state()
 
-        def _download_worker():
-            ok, items, msg = download_mission(v)
-            if ok:
-                new_wps = []
-                new_to = None
-                new_land = None
-                for it in items:
-                    cmd = it.get('command')
-                    coord = [it['lat'], it['lon'], it['alt']]
-                    if cmd == 22 and new_to is None and not new_wps: # TAKEOFF
-                        new_to = coord
-                    elif cmd == 21: # LAND
-                        new_land = coord
-                    elif cmd in (16, 22): # WAYPOINT
-                        new_wps.append(coord)
+        def work():
+            try:
+                ok, items, msg = download_mission(vehicle)
+            except Exception as error:
+                ok, items, msg = False, [], str(error)
+            self._transfer_finished.emit(generation, vehicle, signature, ok, items, msg)
+        threading.Thread(target=work, daemon=True).start()
 
-                self.waypoints = new_wps
-                self.takeoff_point = new_to
-                self.landing_point = new_land
-                self.sync_state = 'VERIFIED'
-                self.verified_vehicle_items = len(items)
+    def _on_transfer_finished(self, generation, vehicle, signature, ok, items, msg):
+        # Runs on the Qt thread. Discard old-session results before any UI mutation.
+        if generation != self._vehicle_generation or vehicle is not self.vehicle:
+            return
+        self._busy = False
+        if signature != self._signature():
+            ok, msg = False, 'Draft changed during transfer. Verify the current draft again.'
+        if ok and items is not None:
+            from gcs.plan_format import decode_supported_items
+            try:
+                converted = []
+                for item in items:
+                    converted.append({'type': 'SimpleItem', 'command': item['command'],
+                        'frame': item['frame'], 'autoContinue': item.get('autocontinue', True),
+                        'params': [item.get('param1', 0), item.get('param2', 0), item.get('param3', 0),
+                                   item.get('param4'), item['lat'], item['lon'], item['alt']]})
+                wps, takeoff, landing, altitude = decode_supported_items(converted)
+                self._save_state_to_undo()
+                self.waypoints, self.takeoff_point, self.landing_point = wps, takeoff, landing
+                self.default_alt = altitude
                 self._sync_all()
-                self.mission_uploaded.emit(True, f"Downloaded and verified {len(items)} items from vehicle")
-            else:
-                self.mission_uploaded.emit(False, msg)
-
-        threading.Thread(target=_download_worker, daemon=True).start()
+            except (ValueError, TypeError, KeyError) as error:
+                ok, msg = False, f'Unsupported vehicle mission; local draft preserved: {error}'
+        self.on_upload_completed(ok, msg)
+        self.mission_uploaded.emit(ok, msg)
 
     def on_upload_completed(self, ok: bool, msg: str):
-        if ok:
-            total = len(self.waypoints) + (1 if self.takeoff_point else 0) + (1 if self.landing_point else 0)
+        if ok and self.vehicle is not None:
+            self._verified_signature = self._signature()
+            self._verified_vehicle = self.vehicle
             self.sync_state = 'VERIFIED'
-            self.verified_vehicle_items = total
+            self.verified_vehicle_items = len(self.waypoints) + bool(self.takeoff_point) + bool(self.landing_point)
         else:
+            self._verified_signature = None
+            self._verified_vehicle = None
             self.sync_state = 'MISMATCH'
         self._update_ui_state()
+        self.draft_changed.emit()
