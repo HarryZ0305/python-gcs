@@ -270,8 +270,11 @@ class CameraView(QWidget):
             "DISCONNECTED": QColor(100, 116, 139, 220)# Gray
         }.get(self.stream_state, QColor(100, 116, 139, 220))
 
-        p.fillRect(QRectF(10, 10, 120, 22), badge_color)
-        p.setPen(QPen(QColor('#ffffff'), 1.0))
+        if self.stream_state == "DISCONNECTED":
+            p.setPen(QPen(QColor(t['text_muted']), 1.0))
+        else:
+            p.fillRect(QRectF(10, 10, 120, 22), badge_color)
+            p.setPen(QPen(QColor('#ffffff'), 1.0))
         p.setFont(QFont(FONT_FAMILY_PRIMARY, 9, QFont.Weight.Bold))
         label_text = f"CAM: {self.stream_state}"
         p.drawText(QRectF(10, 10, 120, 22), Qt.AlignmentFlag.AlignCenter, label_text)

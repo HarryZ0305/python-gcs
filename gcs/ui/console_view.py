@@ -7,17 +7,19 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QFont, QColor
 from PyQt6.QtCore import Qt
 from gcs.logs import log_messages
+from gcs.ui.theme import get_theme, FONT_FAMILY_MONO
 
 class ConsoleView(QFrame):
     def __init__(self):
         super().__init__()
+        t = get_theme()
         self.setObjectName("ConsoleViewContainer")
-        self.setStyleSheet("""
-            #ConsoleViewContainer {
-                background-color: #ffffff;
-                border: 1px solid #cbd5e1;
+        self.setStyleSheet(f"""
+            #ConsoleViewContainer {{
+                background-color: {t['surface']};
+                border: 1px solid {t['border']};
                 border-radius: 10px;
-            }
+            }}
         """)
 
         shadow = QGraphicsDropShadowEffect(self)
@@ -35,19 +37,19 @@ class ConsoleView(QFrame):
         top_bar.setSpacing(6)
 
         title = QLabel("MAVLINK CONSOLE & ACK LOG")
-        title.setStyleSheet("color: #0b57d0; font-family: Google Sans Code; font-size: 11px; font-weight: bold; border: none; background: transparent;")
+        title.setStyleSheet(f"color: {t['primary']}; font-family: Segoe UI; font-size: 11px; font-weight: bold; border: none; background: transparent;")
         top_bar.addWidget(title)
 
         # Filter Input
         self.filter_input = QLineEdit()
         self.filter_input.setPlaceholderText("Filter logs...")
         self.filter_input.setFixedWidth(140)
-        self.filter_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #f8fafc; color: #0f172a;
-                border: 1px solid #cbd5e1; border-radius: 4px;
-                padding: 2px 6px; font-family: Google Sans Code; font-size: 10px;
-            }
+        self.filter_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {t['surface_elevated']}; color: {t['text']};
+                border: 1px solid {t['border']}; border-radius: 4px;
+                padding: 2px 6px; font-family: Segoe UI; font-size: 10px;
+            }}
         """)
         self.filter_input.textChanged.connect(self._reapply_filter)
         top_bar.addWidget(self.filter_input)
@@ -69,23 +71,23 @@ class ConsoleView(QFrame):
         # Auto-scroll Checkbox
         self.autoscroll_cb = QCheckBox("Auto-scroll")
         self.autoscroll_cb.setChecked(True)
-        self.autoscroll_cb.setStyleSheet("""
-            QCheckBox {
-                color: #5f6368; font-family: Google Sans Code; font-size: 10px; border: none; background: transparent;
-            }
+        self.autoscroll_cb.setStyleSheet(f"""
+            QCheckBox {{
+                color: {t['text_muted']}; font-family: Segoe UI; font-size: 10px; border: none; background: transparent;
+            }}
         """)
         top_bar.addWidget(self.autoscroll_cb)
 
         # Clear Button
         clear_btn = QPushButton("CLEAR")
         clear_btn.setFixedHeight(22)
-        clear_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent; color: #5f6368;
-                border: 1px solid #cbd5e1; border-radius: 4px;
-                padding: 2px 8px; font-family: Google Sans Code; font-size: 10px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #fee2e2; color: #d93025; border-color: #fca5a5; }
+        clear_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent; color: {t['text_muted']};
+                border: 1px solid {t['border']}; border-radius: 4px;
+                padding: 2px 8px; font-family: Segoe UI; font-size: 10px; font-weight: bold;
+            }}
+            QPushButton:hover {{ background-color: {t['danger_subtle']}; color: {t['danger']}; border-color: {t['danger']}; }}
         """)
         clear_btn.clicked.connect(self.clear_logs)
         top_bar.addWidget(clear_btn)
@@ -95,13 +97,13 @@ class ConsoleView(QFrame):
         # Log Text Box
         self.text_edit = QTextEdit()
         self.text_edit.setReadOnly(True)
-        self.text_edit.setFont(QFont("Google Sans Code", 9))
-        self.text_edit.setStyleSheet("""
-            QTextEdit {
-                background-color: #f8fafc; color: #0f172a;
-                border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 6px;
-                font-family: Google Sans Code;
-            }
+        self.text_edit.setFont(QFont(FONT_FAMILY_MONO, 9))
+        self.text_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {t['surface_elevated']}; color: {t['text']};
+                border: 1px solid {t['border']}; border-radius: 6px; padding: 4px 6px;
+                font-family: Segoe UI;
+            }}
         """)
         layout.addWidget(self.text_edit)
 
@@ -109,22 +111,23 @@ class ConsoleView(QFrame):
         self._all_entries = [] # List of tuples: (raw_str, formatted_html, category)
 
     def _btn_style(self, active):
+        t = get_theme()
         if active:
-            return """
-                QPushButton {
-                    background-color: #0b57d0; color: #ffffff;
-                    border: 1px solid #0b57d0; border-radius: 4px;
-                    padding: 2px 8px; font-family: Google Sans Code; font-size: 10px; font-weight: bold;
-                }
+            return f"""
+                QPushButton {{
+                    background-color: {t['primary']}; color: {t['text_inverse']};
+                    border: 1px solid {t['primary']}; border-radius: 4px;
+                    padding: 2px 8px; font-family: Segoe UI; font-size: 10px; font-weight: bold;
+                }}
             """
         else:
-            return """
-                QPushButton {
-                    background-color: transparent; color: #5f6368;
-                    border: 1px solid #cbd5e1; border-radius: 4px;
-                    padding: 2px 8px; font-family: Google Sans Code; font-size: 10px;
-                }
-                QPushButton:hover { background-color: #f1f5f9; color: #0f172a; }
+            return f"""
+                QPushButton {{
+                    background-color: transparent; color: {t['text_muted']};
+                    border: 1px solid {t['border']}; border-radius: 4px;
+                    padding: 2px 8px; font-family: Segoe UI; font-size: 10px;
+                }}
+                QPushButton:hover {{ background-color: {t['primary_subtle']}; color: {t['text']}; }}
             """
 
     def _set_category(self, cat):
@@ -135,26 +138,27 @@ class ConsoleView(QFrame):
         self._reapply_filter()
 
     def _format_entry(self, raw_msg):
+        t = get_theme()
         escaped = html.escape(raw_msg)
         up = raw_msg.upper()
         
         category = "GENERAL"
-        color = "#334155" # Default dark slate
+        color = t['text_secondary']
 
         if "FAIL" in up or "DENIED" in up or "ERROR" in up or "REJECTED" in up:
-            color = "#d93025" # Red
+            color = t['danger']
             category = "ERRORS"
         elif "ACCEPTED" in up or "SUCCESS" in up:
-            color = "#0f9d58" # Green
+            color = t['success']
             category = "ACKS"
         elif "ACK:" in up:
-            color = "#0b57d0" # Blue
+            color = t['primary']
             category = "ACKS"
         elif "FCU:" in up:
-            color = "#0284c7" # Sky blue
+            color = t['info']
             category = "FCU"
         elif "ARM" in up or "DISARM" in up or "TAKEOFF" in up or "HOLD" in up:
-            color = "#7c3aed" # Purple
+            color = t['warning']
             category = "COMMANDS"
 
         styled_html = f"<div style='color: {color}; margin-bottom: 2px;'>{escaped}</div>"

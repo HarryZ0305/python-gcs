@@ -29,7 +29,7 @@ class PipOverlayFrame(QFrame):
         self.setStyleSheet(f"""
             #PipFloatingFrame {{
                 background-color: {t['surface']};
-                border: 2px solid {t['primary']};
+                border: 1px solid {t['border_strong']};
                 border-radius: 8px;
             }}
         """)

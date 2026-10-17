@@ -14,48 +14,48 @@ FONT_FAMILY_MONO = "Consolas"
 
 THEME_LIGHT: Dict[str, str] = {
     'name': 'light',
-    'bg': '#f4f5f7',              # Soft neutral gray around white panels
-    'surface': '#ffffff',         # Pure white cards
-    'surface_elevated': '#f9fafb',
-    'surface_sunken': '#e5e7eb',
-    'border': '#dfe3e8',
-    'border_strong': '#9ca3af',
-    'text': '#111827',
-    'text_secondary': '#4b5563',
-    'text_muted': '#6b7280',
-    'text_inverse': '#ffffff',
+    'bg': '#eeede7',              # Warm stone canvas
+    'surface': '#faf9f5',         # Ivory cards
+    'surface_elevated': '#f3f2ec',
+    'surface_sunken': '#e5e5dc',
+    'border': '#dcded3',
+    'border_strong': '#a1a798',
+    'text': '#343d35',
+    'text_secondary': '#596153',
+    'text_muted': '#707769',
+    'text_inverse': '#faf9f5',
     
     # Semantic Colors
-    'primary': '#2563eb',
-    'primary_hover': '#1d4ed8',
-    'primary_subtle': '#eff6ff',
+    'primary': '#536b57',
+    'primary_hover': '#445b48',
+    'primary_subtle': '#e1e7da',
     
-    'success': '#059669',         # Emerald 600: Confirmed safe state
-    'success_hover': '#047857',
-    'success_subtle': '#d1fae5',
+    'success': '#526e52',
+    'success_hover': '#425d43',
+    'success_subtle': '#e1e9da',
     
-    'warning': '#d97706',         # Amber 600: Caution / degraded
-    'warning_hover': '#b45309',
-    'warning_subtle': '#fef3c7',
+    'warning': '#936c32',
+    'warning_hover': '#7b5725',
+    'warning_subtle': '#f1e6cd',
     
-    'danger': '#dc2626',          # Red 600: Emergency / alert / blocked
-    'danger_hover': '#b91c1c',
-    'danger_subtle': '#fee2e2',
+    'danger': '#ac5147',          # Clay red remains distinct for alerts
+    'danger_hover': '#944238',
+    'danger_subtle': '#f2e1d9',
     
-    'info': '#4f46e5',            # Indigo 600
-    'info_subtle': '#e0e7ff',
+    'info': '#677b73',
+    'info_subtle': '#e2e8e1',
     
     # PFD / Instrument Colors
-    'pfd_sky': '#1e3a8a',         # Deep blue
-    'pfd_ground': '#451a03',      # Deep earth brown
+    'pfd_sky': '#637b80',         # Muted sky and earth retain horizon cues
+    'pfd_ground': '#89745f',
     'pfd_pitch_line': '#ffffff',
-    'pfd_crosshair': '#eab308',   # Bright yellow
+    'pfd_crosshair': '#f1dfad',
     
-    'plot_bg': '#ffffff',
-    'plot_grid': '#e2e8f0',
-    'map_bg': '#fafbfc',
-    'map_grid': '#e8ebef',
-    'shadow': 'rgba(15, 23, 42, 0.08)'
+    'plot_bg': '#faf9f5',
+    'plot_grid': '#dcded3',
+    'map_bg': '#f0f1e9',
+    'map_grid': '#e4e7dc',
+    'shadow': 'rgba(52, 61, 53, 0.06)'
 }
 
 THEME_DARK: Dict[str, str] = {
@@ -104,7 +104,7 @@ THEME_DARK: Dict[str, str] = {
     'shadow': 'rgba(0, 0, 0, 0.4)'
 }
 
-# White and soft gray are the default; dark mode remains an explicit preference.
+# Warm neutrals and sage are the default; dark mode is an explicit preference.
 active_theme = THEME_LIGHT
 
 
@@ -194,8 +194,8 @@ def get_app_stylesheet(t: Dict[str, str] = None) -> str:
         margin-right: 4px;
     }}
     QTabBar::tab:selected {{
-        background-color: {t['primary']};
-        color: {t['text_inverse']};
+        background-color: {t['primary_subtle']};
+        color: {t['primary']};
         border-color: {t['primary']};
     }}
     QTabBar::tab:hover:!selected {{

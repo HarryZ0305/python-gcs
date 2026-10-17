@@ -217,8 +217,8 @@ class TelemetryPlotPanel(QFrame):
         self.plot_widget.getAxis('left').setTextPen(t['text_muted'])
         self.plot_widget.getAxis('bottom').setTextPen(t['text_muted'])
 
-        self.alt_curve = self.plot_widget.plot(pen=pg.mkPen('#0284c7', width=1.5))
-        self.speed_curve = self.plot_widget.plot(pen=pg.mkPen('#d97706', width=1.5))
+        self.alt_curve = self.plot_widget.plot(pen=pg.mkPen(t['primary'], width=1.5))
+        self.speed_curve = self.plot_widget.plot(pen=pg.mkPen(t['warning'], width=1.5))
         layout.addWidget(self.plot_widget)
 
     def update_plots(self, times, alts, speeds):

@@ -230,7 +230,7 @@ class PrimaryFlightDisplay(QWidget):
 
         # Airspeed Digital Box (Black box with yellow/cyan text)
         box_h = 20.0
-        p.fillRect(QRectF(0, cy - box_h / 2, tape_w + 4, box_h), QColor('#0284c7'))
+        p.fillRect(QRectF(0, cy - box_h / 2, tape_w + 4, box_h), QColor(t['info']))
         p.setPen(QPen(QColor('#ffffff'), 1.5))
         p.drawRect(QRectF(0, cy - box_h / 2, tape_w + 4, box_h))
         p.setFont(QFont(FONT_FAMILY_MONO, 9, QFont.Weight.Bold))
@@ -264,7 +264,7 @@ class PrimaryFlightDisplay(QWidget):
                     p.drawText(QRectF(alt_tape_x + tick_len + 2, ay - 6, 24, 12), Qt.AlignmentFlag.AlignLeft, f"{a}")
 
         # Altitude Digital Box
-        p.fillRect(QRectF(alt_tape_x - 4, cy - box_h / 2, tape_w + 4, box_h), QColor('#059669'))
+        p.fillRect(QRectF(alt_tape_x - 4, cy - box_h / 2, tape_w + 4, box_h), QColor(t['success']))
         p.setPen(QPen(QColor('#ffffff'), 1.5))
         p.drawRect(QRectF(alt_tape_x - 4, cy - box_h / 2, tape_w + 4, box_h))
         p.setFont(QFont(FONT_FAMILY_MONO, 9, QFont.Weight.Bold))
@@ -312,7 +312,7 @@ class PrimaryFlightDisplay(QWidget):
 
         # 7. Status & Stale Warnings
         if self.is_stale:
-            p.fillRect(QRectF(cx - 50, 12, 100, 20), QColor(220, 38, 38, 220))
+            p.fillRect(QRectF(cx - 50, 12, 100, 20), QColor(t['danger']))
             p.setPen(QPen(QColor('#ffffff'), 1.0))
             p.setFont(QFont(FONT_FAMILY_PRIMARY, 9, QFont.Weight.Bold))
             p.drawText(QRectF(cx - 50, 12, 100, 20), Qt.AlignmentFlag.AlignCenter, "STALE DATA")

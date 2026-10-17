@@ -19,12 +19,12 @@ MAP_HTML = """
             src: url('http://localhost:PORT_PLACEHOLDER/static/fonts/GoogleSansCode-Regular.ttf') format('truetype');
         }
         * { box-sizing: border-box; }
-        body { margin: 0; padding: 0; background: #f4f5f7; font-family: 'Segoe UI', Arial, sans-serif; }
-        #map { width: 100%; height: 100vh; background-color: var(--map-bg, #fafbfc);
-            background-image: linear-gradient(var(--map-grid, #e8ebef) 1px, transparent 1px), linear-gradient(90deg, var(--map-grid, #e8ebef) 1px, transparent 1px);
+        body { margin: 0; padding: 0; background: var(--map-bg, #f0f1e9); font-family: 'Segoe UI', Arial, sans-serif; }
+        #map { width: 100%; height: 100vh; background-color: var(--map-bg, #f0f1e9);
+            background-image: linear-gradient(var(--map-grid, #e4e7dc) 1px, transparent 1px), linear-gradient(90deg, var(--map-grid, #e4e7dc) 1px, transparent 1px);
             background-size: 48px 48px; }
         #map-status { position: absolute; bottom: 30px; left: 12px; z-index: 1000;
-            padding: 8px 12px; background: var(--map-surface, #ffffff); color: var(--map-text, #4b5563); border: 1px solid #dfe3e8; border-radius: 6px; font-size: 11px; }
+            padding: 8px 12px; background: var(--map-surface, #faf9f5); color: var(--map-text, #596153); border: 1px solid var(--map-border, #dcded3); border-radius: 6px; font-size: 11px; }
         #map-hud { display: none !important; }
 
         /* Floating Mission Controls (Top Right) */
@@ -33,12 +33,12 @@ MAP_HTML = """
             top: 12px;
             right: 12px;
             z-index: 1000;
-            background: rgba(255, 255, 255, 0.95);
+            background: var(--map-surface, #faf9f5);
             padding: 8px;
             border-radius: 8px;
-            border: 1px solid #cbd5e1;
-            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
-            color: #0f172a;
+            border: 1px solid var(--map-border, #dcded3);
+            box-shadow: 0 4px 12px rgba(52, 61, 53, 0.06);
+            color: var(--map-text, #596153);
             display: flex;
             flex-direction: column;
             gap: 6px;
@@ -47,26 +47,26 @@ MAP_HTML = """
         .panel-label {
             font-size: 10px;
             font-weight: bold;
-            color: #5f6368;
+            color: var(--map-text, #596153);
             text-transform: uppercase;
             letter-spacing: 0.5px;
             margin-bottom: 2px;
         }
         .mode-btn {
-            background: #ffffff;
+            background: var(--map-surface, #faf9f5);
             border-radius: 5px;
             padding: 6px 10px;
             font-weight: bold;
             font-size: 11px;
-            font-family: 'Google Sans Code', monospace;
+            font-family: 'Segoe UI', Arial, sans-serif;
             cursor: pointer;
             transition: all 0.15s ease;
             text-align: center;
         }
-        #btn-takeoff { border: 1.5px solid #0f9d58; color: #0f9d58; }
-        #btn-waypoint { border: 1.5px solid #0b57d0; color: #0b57d0; }
-        #btn-landing { border: 1.5px solid #d93025; color: #d93025; }
-        #btn-goto { border: 1.5px solid #8b5cf6; color: #8b5cf6; }
+        #btn-takeoff { border: 1.5px solid #526e52; color: #526e52; }
+        #btn-waypoint { border: 1.5px solid var(--map-primary, #536b57); color: var(--map-primary, #536b57); }
+        #btn-landing { border: 1.5px solid #ac5147; color: #ac5147; }
+        #btn-goto { border: 1.5px solid var(--map-primary, #536b57); color: var(--map-primary, #536b57); }
 
         /* Floating Map Tools (Left / Top-Left) */
         #map-tools {
@@ -79,44 +79,44 @@ MAP_HTML = """
             gap: 8px;
         }
         .tool-bar {
-            background: rgba(255, 255, 255, 0.95);
+            background: var(--map-surface, #faf9f5);
             padding: 6px;
             border-radius: 8px;
-            border: 1px solid #cbd5e1;
-            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+            border: 1px solid var(--map-border, #dcded3);
+            box-shadow: 0 4px 12px rgba(52, 61, 53, 0.06);
             display: flex;
             gap: 6px;
         }
         .tool-btn {
-            background: #ffffff;
-            border: 1px solid #cbd5e1;
+            background: var(--map-surface, #faf9f5);
+            border: 1px solid var(--map-border, #dcded3);
             border-radius: 5px;
             padding: 5px 8px;
             font-size: 11px;
             font-weight: bold;
-            font-family: 'Google Sans Code', monospace;
+            font-family: 'Segoe UI', Arial, sans-serif;
             cursor: pointer;
-            color: #0f172a;
+            color: var(--map-text, #596153);
             display: flex;
             align-items: center;
             gap: 4px;
             transition: all 0.15s ease;
         }
         .tool-btn:hover {
-            background: #f1f5f9;
-            border-color: #94a3b8;
+            background: var(--map-subtle, #e1e7da);
+            border-color: #a1a798;
         }
         .tool-btn.active {
-            background: #0b57d0;
-            border-color: #0b57d0;
-            color: #ffffff;
+            background: var(--map-subtle, #e1e7da);
+            border-color: var(--map-primary, #536b57);
+            color: var(--map-primary, #536b57);
         }
 
         /* Map HUD Overlay */
         #map-hud {
             background: rgba(15, 23, 42, 0.88);
             backdrop-filter: blur(8px);
-            color: #ffffff;
+            color: var(--map-surface, #faf9f5);
             padding: 8px 12px;
             border-radius: 8px;
             border: 1px solid rgba(255, 255, 255, 0.15);
@@ -132,13 +132,13 @@ MAP_HTML = """
         }
         .hud-item span.label {
             font-size: 9px;
-            color: #94a3b8;
+            color: #a1a798;
             text-transform: uppercase;
             font-weight: 600;
         }
         .hud-item span.val {
             font-weight: bold;
-            color: #38bdf8;
+            color: #687f6a;
             font-size: 12px;
         }
 
@@ -171,8 +171,8 @@ MAP_HTML = """
             width: 30px;
             height: 30px;
             border-radius: 50%;
-            background: rgba(139, 92, 246, 0.4);
-            border: 2px solid #8b5cf6;
+            background: rgba(104, 118, 87, 0.25);
+            border: 2px solid var(--map-primary, #536b57);
             animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
         }
         .goto-center {
@@ -181,10 +181,10 @@ MAP_HTML = """
             left: 7px;
             width: 16px;
             height: 16px;
-            background: #8b5cf6;
-            border: 2px solid #ffffff;
+            background: var(--map-primary, #536b57);
+            border: 2px solid var(--map-surface, #faf9f5);
             border-radius: 50%;
-            box-shadow: 0 0 8px #8b5cf6;
+            box-shadow: 0 0 8px var(--map-primary, #536b57);
         }
     </style>
     <link rel="stylesheet" href="http://localhost:PORT_PLACEHOLDER/static/leaflet.css"/>
@@ -256,8 +256,8 @@ MAP_HTML = """
             return L.divIcon({
                 html: '<div id="drone-container" class="drone-marker-container" style="transform: rotate(' + headingDeg + 'deg);">' +
                       '<svg class="drone-svg" viewBox="0 0 100 100">' +
-                      '  <circle cx="50" cy="50" r="20" fill="#0b57d0" stroke="#ffffff" stroke-width="4"/>' +
-                      '  <polygon points="50,14 42,28 58,28" fill="#38bdf8" stroke="#ffffff" stroke-width="1.5"/>' +
+                      '  <circle cx="50" cy="50" r="20" fill="#536b57" stroke="#ffffff" stroke-width="4"/>' +
+                      '  <polygon points="50,14 42,28 58,28" fill="#80957b" stroke="#ffffff" stroke-width="1.5"/>' +
                       '  <line x1="22" y1="22" x2="78" y2="78" stroke="#475569" stroke-width="4" stroke-linecap="round"/>' +
                       '  <line x1="78" y1="22" x2="22" y2="78" stroke="#475569" stroke-width="4" stroke-linecap="round"/>' +
                       '  <circle cx="22" cy="22" r="8" fill="#0f9d58" stroke="#ffffff" stroke-width="2"/>' +
@@ -273,7 +273,7 @@ MAP_HTML = """
 
         var currentHeading = 0.0;
         var marker = L.marker([32.7157, -117.1611], { icon: createDroneIcon(0), opacity: 0 }).addTo(map);
-        var path = L.polyline([], { color: '#0b57d0', weight: 2.5, opacity: 0.85 }).addTo(map);
+        var path = L.polyline([], { color: '#536b57', weight: 2.5, opacity: 0.85 }).addTo(map);
         var positions = [];
         var followDrone = true;
 
@@ -338,18 +338,18 @@ MAP_HTML = """
             var gotoBtn = document.getElementById('btn-goto');
 
             takeoffBtn.style.background = '#ffffff'; takeoffBtn.style.color = '#0f9d58';
-            waypointBtn.style.background = '#ffffff'; waypointBtn.style.color = '#0b57d0';
+            waypointBtn.style.background = '#ffffff'; waypointBtn.style.color = '#536b57';
             landingBtn.style.background = '#ffffff'; landingBtn.style.color = '#d93025';
-            gotoBtn.style.background = '#ffffff'; gotoBtn.style.color = '#8b5cf6';
+            gotoBtn.style.background = '#ffffff'; gotoBtn.style.color = '#687657';
 
             if (mode === 'takeoff') {
                 takeoffBtn.style.background = '#0f9d58'; takeoffBtn.style.color = '#ffffff';
             } else if (mode === 'waypoint') {
-                waypointBtn.style.background = '#0b57d0'; waypointBtn.style.color = '#ffffff';
+                waypointBtn.style.background = '#536b57'; waypointBtn.style.color = '#ffffff';
             } else if (mode === 'landing') {
                 landingBtn.style.background = '#d93025'; landingBtn.style.color = '#ffffff';
             } else if (mode === 'goto') {
-                gotoBtn.style.background = '#8b5cf6'; gotoBtn.style.color = '#ffffff';
+                gotoBtn.style.background = '#687657'; gotoBtn.style.color = '#ffffff';
             }
         }
 
@@ -542,7 +542,7 @@ MAP_HTML = """
             }
 
             var targetMarker = null;
-            var highlightColor = '#0b57d0';
+            var highlightColor = '#536b57';
 
             var hasTakeoff = (takeoffPoint !== null);
             var hasLanding = (landingPoint !== null);
@@ -754,5 +754,7 @@ class MapView(QWebEngineView):
         self.page().setBackgroundColor(QColor(theme['map_bg']))
         if self._is_loaded:
             values = {'--map-bg': theme['map_bg'], '--map-grid': theme['map_grid'],
-                      '--map-surface': theme['surface'], '--map-text': theme['text_secondary']}
+                      '--map-surface': theme['surface'], '--map-text': theme['text_secondary'],
+                      '--map-border': theme['border'], '--map-primary': theme['primary'],
+                      '--map-subtle': theme['primary_subtle']}
             self.page().runJavaScript('Object.entries(' + json.dumps(values) + ').forEach(([key, value]) => document.documentElement.style.setProperty(key, value));')
