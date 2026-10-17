@@ -236,7 +236,7 @@ class WorkerBridge(QObject):
 
 
 class GCSWindow(QMainWindow):
-    def __init__(self, vehicle=None):
+    def __init__(self, vehicle=None, settings=None):
         super().__init__()
         self.vehicle = vehicle
         self.waypoints: List[List[float]] = []
@@ -257,8 +257,8 @@ class GCSWindow(QMainWindow):
         self._connection_generation = 0
         self._connection_workers = []
         self._connecting = False
-        self.settings = QSettings('PythonGCS', 'Desktop')
-        set_active_theme(self.settings.value('appearance/dark', True, type=bool))
+        self.settings = settings if settings is not None else QSettings('PythonGCS', 'Desktop')
+        set_active_theme(self.settings.value('appearance/dark', False, type=bool))
         self._current_theme = get_theme()
 
         self.setWindowTitle("PythonGCS — Autonomous Ground Control Station for PX4")
@@ -473,6 +473,9 @@ class GCSWindow(QMainWindow):
         self.setStyleSheet(get_app_stylesheet())
         self.plot_panel.plot_widget.setBackground(new['plot_bg'])
         self.instrument_container.pfd.update()
+        self.camera_view.update()
+        self.map_view.apply_theme()
+        self.plan_map_view.apply_theme()
         self.refresh()
 
     def _on_tab_changed(self, idx: int):

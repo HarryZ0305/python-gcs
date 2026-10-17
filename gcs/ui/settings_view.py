@@ -53,9 +53,9 @@ class SettingsView(QWidget):
         theme_row.addWidget(theme_lbl)
 
         self.theme_combo = QComboBox()
-        self.theme_combo.addItem("Cockpit Dark Mode (Field Optimized)", True)
-        self.theme_combo.addItem("Aviation Light Mode (Direct Sunlight)", False)
-        self.theme_combo.setCurrentIndex(0 if self.settings.value('appearance/dark', True, type=bool) else 1)
+        self.theme_combo.addItem("Dark", True)
+        self.theme_combo.addItem("Light — white and soft gray", False)
+        self.theme_combo.setCurrentIndex(0 if self.settings.value('appearance/dark', False, type=bool) else 1)
         self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
         theme_row.addWidget(self.theme_combo)
         theme_row.addStretch(1)

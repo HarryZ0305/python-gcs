@@ -74,6 +74,21 @@ the regression suite in `.github/workflows/tests.yml`.
 
 ## Visual verification
 
+The default appearance is white with soft neutral grays. The map canvas and idle
+camera view follow the selected theme. Existing explicitly saved dark preferences
+remain selectable in Settings.
+
+For the project showcase shown in the README:
+
+```powershell
+python tools/project_preview.py --output artifacts/project-overview-light.png
+```
+
+This uses private preview preferences, read-only sample telemetry, and a native Qt
+local-coordinate mission illustration. The illustration is a presentation fixture,
+not a real basemap or a simulated flight. No aircraft transport is opened. The UI
+around it is rendered from the actual desktop application.
+
 ```powershell
 python tools/capture_workspace.py --output artifacts/preview
 ```

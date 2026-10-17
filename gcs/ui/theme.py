@@ -14,21 +14,21 @@ FONT_FAMILY_MONO = "Consolas"
 
 THEME_LIGHT: Dict[str, str] = {
     'name': 'light',
-    'bg': '#f1f5f9',              # Slate 100: Clean field background
+    'bg': '#f4f5f7',              # Soft neutral gray around white panels
     'surface': '#ffffff',         # Pure white cards
-    'surface_elevated': '#f8fafc',# Slate 50
-    'surface_sunken': '#e2e8f0',  # Slate 200
-    'border': '#cbd5e1',          # Slate 300
-    'border_strong': '#94a3b8',   # Slate 400
-    'text': '#0f172a',            # Slate 900: High-contrast primary text
-    'text_secondary': '#475569',  # Slate 600
-    'text_muted': '#64748b',      # Slate 500
+    'surface_elevated': '#f9fafb',
+    'surface_sunken': '#e5e7eb',
+    'border': '#dfe3e8',
+    'border_strong': '#9ca3af',
+    'text': '#111827',
+    'text_secondary': '#4b5563',
+    'text_muted': '#6b7280',
     'text_inverse': '#ffffff',
     
     # Semantic Colors
-    'primary': '#0284c7',         # Sky 600: Professional aviation blue
-    'primary_hover': '#0369a1',   # Sky 700
-    'primary_subtle': '#e0f2fe',  # Sky 100
+    'primary': '#2563eb',
+    'primary_hover': '#1d4ed8',
+    'primary_subtle': '#eff6ff',
     
     'success': '#059669',         # Emerald 600: Confirmed safe state
     'success_hover': '#047857',
@@ -53,6 +53,8 @@ THEME_LIGHT: Dict[str, str] = {
     
     'plot_bg': '#ffffff',
     'plot_grid': '#e2e8f0',
+    'map_bg': '#fafbfc',
+    'map_grid': '#e8ebef',
     'shadow': 'rgba(15, 23, 42, 0.08)'
 }
 
@@ -97,14 +99,16 @@ THEME_DARK: Dict[str, str] = {
     
     'plot_bg': '#0f172a',
     'plot_grid': '#1e293b',
+    'map_bg': '#152033',
+    'map_grid': '#243147',
     'shadow': 'rgba(0, 0, 0, 0.4)'
 }
 
-# Active theme instance (defaults to dark theme for aviation GCS)
-active_theme = THEME_DARK
+# White and soft gray are the default; dark mode remains an explicit preference.
+active_theme = THEME_LIGHT
 
 
-def set_active_theme(is_dark: bool = True):
+def set_active_theme(is_dark: bool = False):
     global active_theme
     active_theme = THEME_DARK if is_dark else THEME_LIGHT
 

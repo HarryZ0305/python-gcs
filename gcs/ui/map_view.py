@@ -2,6 +2,7 @@ import json
 import math
 from pathlib import Path
 from gcs.paths import resource_path
+from gcs.ui.theme import get_theme
 from PyQt6.QtCore import pyqtSignal, QUrl
 from PyQt6.QtGui import QColor
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -14,15 +15,16 @@ MAP_HTML = """
     <style>
         @font-face {
             font-family: 'Google Sans Code';
+            font-display: swap;
             src: url('http://localhost:PORT_PLACEHOLDER/static/fonts/GoogleSansCode-Regular.ttf') format('truetype');
         }
         * { box-sizing: border-box; }
-        body { margin: 0; padding: 0; background: #f5f7fa; font-family: 'Google Sans Code', monospace; }
-        #map { width: 100%; height: 100vh; background-color: #152033;
-            background-image: linear-gradient(#243147 1px, transparent 1px), linear-gradient(90deg, #243147 1px, transparent 1px);
+        body { margin: 0; padding: 0; background: #f4f5f7; font-family: 'Segoe UI', Arial, sans-serif; }
+        #map { width: 100%; height: 100vh; background-color: var(--map-bg, #fafbfc);
+            background-image: linear-gradient(var(--map-grid, #e8ebef) 1px, transparent 1px), linear-gradient(90deg, var(--map-grid, #e8ebef) 1px, transparent 1px);
             background-size: 48px 48px; }
         #map-status { position: absolute; bottom: 30px; left: 12px; z-index: 1000;
-            padding: 8px 12px; background: #111827e8; color: #cbd5e1; border-radius: 6px; font-size: 11px; }
+            padding: 8px 12px; background: var(--map-surface, #ffffff); color: var(--map-text, #4b5563); border: 1px solid #dfe3e8; border-radius: 6px; font-size: 11px; }
         #map-hud { display: none !important; }
 
         /* Floating Mission Controls (Top Right) */
@@ -628,13 +630,14 @@ class MapView(QWebEngineView):
         local_html = local_html.replace(f'<script src="http://localhost:{port}/static/leaflet.js"></script>', '<script>' + script + '</script>')
         local_html = local_html.replace(f'<link rel="stylesheet" href="http://localhost:{port}/static/leaflet.css"/>', '<style>' + css + '</style>')
         local_html = local_html.replace('http://localhost:', 'http://127.0.0.1:')
-        self.page().setBackgroundColor(QColor('#152033'))
+        self.page().setBackgroundColor(QColor(get_theme()['map_bg']))
         self.setHtml(local_html, QUrl(f'http://127.0.0.1:{port}/static/'))
 
     def _on_load_finished(self, ok):
         self._is_loaded = bool(ok)
         if not ok:
             return
+        self.apply_theme()
         self.page().runJavaScript("""
             document.querySelectorAll('#btn-takeoff, #btn-waypoint, #btn-landing').forEach(function(el) { el.style.display = PLANNING ? '' : 'none'; });
             document.getElementById('btn-goto').style.display = PLANNING ? 'none' : '';
@@ -745,3 +748,11 @@ class MapView(QWebEngineView):
                     if (gotoMarker) { map.removeLayer(gotoMarker); gotoMarker = null; }
                 }
             """)
+
+    def apply_theme(self):
+        theme = get_theme()
+        self.page().setBackgroundColor(QColor(theme['map_bg']))
+        if self._is_loaded:
+            values = {'--map-bg': theme['map_bg'], '--map-grid': theme['map_grid'],
+                      '--map-surface': theme['surface'], '--map-text': theme['text_secondary']}
+            self.page().runJavaScript('Object.entries(' + json.dumps(values) + ').forEach(([key, value]) => document.documentElement.style.setProperty(key, value));')

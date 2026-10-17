@@ -9,6 +9,10 @@ A modern, high-performance desktop Ground Control Station (GCS) engineered nativ
 
 ---
 
+![Python GCS light-theme project preview](design/project-overview-light.png)
+
+*Read-only project showcase with sample telemetry and a local-coordinate mission illustration; no aircraft is connected.*
+
 ## Architecture & Workspaces
 
 PythonGCS organizes tactical workflows into five dedicated, purpose-built workspaces:
@@ -43,7 +47,7 @@ PythonGCS organizes tactical workflows into five dedicated, purpose-built worksp
 - **Historical Log Review**: Imported CSV plots are explicitly labelled as historical review, separate from live telemetry and vehicle controls. Full flight replay is not implemented.
 
 ### 5. SETTINGS — Ground Station Preferences
-- **Appearance & Themes**: Instant toggle between Cockpit Dark Mode (field-optimized) and Aviation Light Mode (direct sunlight).
+- **Appearance & Themes**: White panels and soft neutral-gray backgrounds by default, with blue accents and an optional dark theme.
 - **Video Stream Configuration**: Configurable RTSP, UDP, HTTP, USB camera index, or test pattern stream.
 - **Battery Chemistry Presets**: Configurable LiPo cell count (1S through 12S) and per-cell warning/critical voltage thresholds.
 - **Offline Maps & MBTiles**: Browse and mount offline `.mbtiles` raster packages or reset to cached OpenStreetMap.

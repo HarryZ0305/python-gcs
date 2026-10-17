@@ -245,13 +245,13 @@ class CameraView(QWidget):
             p.drawImage(x_off, y_off, scaled)
         else:
             # Standby / Disconnected Background
-            p.fillRect(self.rect(), QColor(15, 23, 42))
+            p.fillRect(self.rect(), QColor(t['surface_elevated']))
             p.setPen(QPen(QColor(t['border']), 1.0))
             p.drawRect(self.rect().adjusted(1, 1, -2, -2))
 
             # Centered Status Text
             p.setFont(QFont(FONT_FAMILY_PRIMARY, 11, QFont.Weight.Bold))
-            p.setPen(QPen(QColor('#94a3b8'), 1.0))
+            p.setPen(QPen(QColor(t['text_muted']), 1.0))
             msg = {
                 "DISCONNECTED": "NO VIDEO STREAM CONFIGURED\n(Select Source in Settings)",
                 "CONNECTING": "CONNECTING TO VIDEO STREAM...",
