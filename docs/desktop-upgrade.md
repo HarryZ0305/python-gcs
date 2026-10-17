@@ -50,7 +50,7 @@ The app opens disconnected. Optional camera decoding requires `opencv-python` in
 same environment. The existing `PythonGCS.spec` includes the new modules through normal
 imports and preserves bundled map assets.
 
-Baseline: 46 tests passed at commit `8ed81eb`. The final local suite passes **77 tests**
+Baseline: 46 tests passed at commit `8ed81eb`. The final local suite passes **78 tests**
 on Windows with Python 3.9. Compilation and whitespace checks also pass. New regressions cover link loss,
 individually frozen streams, cancelled commands, old-session packets, nondefault
 vehicle IDs, mission semantics, editing during upload, Qt-thread download application,

@@ -70,18 +70,21 @@ class PrimaryFlightDisplay(QWidget):
         position_valid: bool = True,
         speed_valid: bool = True
     ):
-        self.roll = float(roll)
-        self.pitch = float(pitch)
-        self.yaw = float(yaw)
-        self.altitude = float(alt)
+        attitude_finite = all(math.isfinite(float(value)) for value in (roll, pitch, yaw))
+        altitude_finite = math.isfinite(float(alt))
+        speed_finite = all(math.isfinite(float(value)) for value in (groundspeed, climb_rate))
+        self.roll = float(roll) if attitude_finite else 0.0
+        self.pitch = float(pitch) if attitude_finite else 0.0
+        self.yaw = float(yaw) if attitude_finite else 0.0
+        self.altitude = float(alt) if altitude_finite else 0.0
         self.altitude_amsl = float(alt_amsl)
-        self.groundspeed = float(groundspeed)
-        self.climb_rate = float(climb_rate)
+        self.groundspeed = float(groundspeed) if speed_finite else 0.0
+        self.climb_rate = float(climb_rate) if speed_finite else 0.0
         self.mode = str(mode)
         self.armed = bool(armed)
-        self.is_stale = bool(is_stale)
-        self.position_valid = position_valid
-        self.speed_valid = speed_valid
+        self.is_stale = bool(is_stale) or not attitude_finite
+        self.position_valid = position_valid and altitude_finite
+        self.speed_valid = speed_valid and speed_finite
 
     def paintEvent(self, event):
         t = get_theme()

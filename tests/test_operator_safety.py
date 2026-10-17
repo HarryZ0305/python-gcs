@@ -311,6 +311,16 @@ def test_camera_switch_discards_old_source_frames_without_blocking(qapp):
     qapp.processEvents()
 
 
+def test_invalid_sensor_numbers_do_not_crash_pfd_painting(qapp):
+    from PyQt6.QtGui import QImage
+    from gcs.ui.flight_instruments import PrimaryFlightDisplay
+    view = PrimaryFlightDisplay()
+    view.set_telemetry(float('nan'), 0, float('inf'), float('nan'), float('inf'))
+    assert view.is_stale and not view.position_valid and not view.speed_valid
+    image = QImage(320, 240, QImage.Format.Format_ARGB32)
+    view.render(image)
+
+
 def test_gui_lost_link_and_draft_edit_inhibit_actions(qapp, monkeypatch):
     import gcs.ui.gui as module
     import gcs.ui.plan_view as planner
