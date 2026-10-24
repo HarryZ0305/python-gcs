@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta
       name="description"
-      content="Custom drone GCS with OpenStreetMap, mission planning, and experimental 3D attitude. PX4/Gazebo integration and real-aircraft validation are work in progress."
+      content="Custom drone GCS with OpenStreetMap, mission planning, and experimental 3D attitude. Gazebo/PX4 SITL integration is implemented; real-aircraft validation is work in progress."
     />
-    <meta name="gcs-web-version" content="feature-status-2" />
+    <meta name="gcs-web-version" content="feature-status-3" />
     <title>PythonGCS — Clearer ground control</title>
     <link rel="stylesheet" href="assets/site.css?v=3" />
   </head>
-  <body data-release="feature-status-2">
+  <body data-release="feature-status-3">
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="wrap header-inner">
@@ -151,10 +151,11 @@
             <h2>Develop with the simulator.</h2>
             <p class="muted">
               Python 3.9+ and a PX4 SITL instance are required for the desktop
-              workflow. PX4/Gazebo integration and real-aircraft validation are
-              <strong>work in progress</strong>. Install the simulator
-              separately; desktop connection code is available for development
-              testing.
+              workflow.
+              <strong>Gazebo/PX4 SITL integration is implemented</strong> in the
+              desktop app. Run the simulator separately and connect over
+              MAVLink. Real-aircraft validation remains
+              <strong>work in progress</strong>.
             </p>
             <div class="actions">
               <a
@@ -177,15 +178,16 @@ python main.py</code></pre>
           <h2 id="project-status">Built so far. Still in progress.</h2>
           <p class="muted">
             Customized drone GCS with OpenStreetMap, improved mission planning,
-            and an experimental telemetry-driven 3D attitude viewer.
+            an experimental telemetry-driven 3D attitude viewer, and implemented
+            Gazebo/PX4 SITL simulation integration.
           </p>
           <details open>
-            <summary>PX4 connections & Gazebo — work in progress</summary>
+            <summary>Gazebo / PX4 SITL — implemented</summary>
             <p>
-              The desktop has MAVLink connection and telemetry code.
-              Real-aircraft validation and complete PX4/Gazebo integration are
-              <strong>work in progress</strong>. Gazebo is installed separately.
-              Browser aircraft connections are
+              The desktop already integrates with Gazebo/PX4 SITL over MAVLink.
+              Real-aircraft validation remains
+              <strong>work in progress</strong>. Browser aircraft connections
+              are
               <strong>planned work in progress, not implemented yet</strong>;
               the current demo uses generated data.
             </p>
@@ -228,8 +230,8 @@ python main.py</code></pre>
               Its flight motion, readings, video illustration, and event log are
               generated in your browser. Browser aircraft connections are
               <strong>work in progress (planned, not implemented yet)</strong>.
-              Desktop MAVLink code exists; real-aircraft validation and complete
-              PX4/Gazebo integration remain <strong>work in progress</strong>.
+              Desktop Gazebo/PX4 SITL integration is implemented; real-aircraft
+              validation remains <strong>work in progress</strong>.
             </p>
           </details>
           <details>

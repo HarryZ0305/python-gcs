@@ -10,13 +10,13 @@ Ivory panels, warm gray backgrounds, sage accents, and a system font are the def
 
 ## Implementation status
 
-**Project description:** Customized drone GCS with OpenStreetMap, improved mission planning, and an experimental telemetry-driven 3D attitude viewer; PX4/Gazebo integration and real-aircraft validation are work in progress.
+**Project description:** Customized drone GCS with OpenStreetMap, improved mission planning, an experimental telemetry-driven 3D attitude viewer, and implemented Gazebo/PX4 SITL simulation integration; real-aircraft validation remains work in progress.
 
 | Capability                                       | Current status                                                                                                                                                                                            |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | OpenStreetMap and mission planning               | **Implemented in the desktop app.** Map tiles, local mission editing, survey generation, and the supported `.plan` subset have code paths and software checks.                                            |
 | Actual PX4 connection                            | **Connection code implemented; real-aircraft validation work in progress.** MAVLink transports and telemetry exist. Protocol tests do not establish flight readiness.                                     |
-| Gazebo / PX4 SITL                                | **Integration and end-to-end acceptance work in progress.** Targets a separately configured simulator; Gazebo is not bundled or launched by the GCS.                                                      |
+| Gazebo / PX4 SITL                                | **Implemented desktop Gazebo/PX4 SITL simulation integration.** Connects over MAVLink to a separately running simulator. Additional regression testing is separate from implementation status.            |
 | Telemetry-driven 3D aircraft attitude            | **Experimental implementation; graphics and flight validation work in progress.** Requires WebGL. Displays aircraft orientation, not reconstructed 3D terrain.                                            |
 | Browser aircraft connection and parameter writes | **Work in progress — planned, not implemented yet.** The current demo generates local data and sends no MAVLink commands.                                                                                 |
 | Broader autonomy, 3D mapping and full replay     | **Work in progress — planned extensions.** Terrain following, geofence editing, calibration wizards, broader mission formats, terrain reconstruction, and full flight-log replay are not implemented yet. |
@@ -55,7 +55,7 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-**PX4/Gazebo integration is work in progress.** For development testing, install and configure the simulator separately, then start it from a configured [PX4-Autopilot](https://github.com/PX4/PX4-Autopilot) source checkout:
+**Gazebo/PX4 SITL integration is implemented in the desktop app.** Install and configure the simulator separately, then start it from a configured [PX4-Autopilot](https://github.com/PX4/PX4-Autopilot) source checkout:
 
 ```bash
 make px4_sitl gz_x500
@@ -77,7 +77,7 @@ Configure RTSP, UDP, HTTP, USB, or a test pattern in **Settings**. Show video in
 
 The desktop supports a documented subset of home-relative takeoff, waypoint, and landing missions. Broader mission support is **work in progress**; unsupported commands, complex items, frames, custom parameters, fences, and rally points currently cancel import. Historical CSV review is implemented; full flight-log replay is **work in progress (planned)**. Optional 3D attitude is **experimental**, depends on WebGL, and still needs graphics/flight validation.
 
-Automated checks cover software behavior; complete simulator and real-aircraft acceptance are **work in progress**. Read the [feature status](docs/feature-status.md), [implementation and validation notes](docs/desktop-upgrade.md), and [interface design comparison](docs/interface-design.md) for details.
+Automated checks cover software behavior; real-aircraft acceptance is **work in progress**. Existing Gazebo/PX4 SITL integration remains implemented; this documentation review did not repeat a full simulator regression run. Read the [feature status](docs/feature-status.md), [implementation and validation notes](docs/desktop-upgrade.md), and [interface design comparison](docs/interface-design.md) for details.
 
 ## Development
 

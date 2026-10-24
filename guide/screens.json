@@ -1,9 +1,9 @@
 [
   {
     "slug": "01-fly",
-    "title": "01 / Fly — the main flight screen",
+    "title": "01 / Fly \u2014 the main flight screen",
     "path": "Open: Fly",
-    "note": "Actual app interface · No aircraft connected · Feature labels are guide overlays.",
+    "note": "Actual app interface \u00b7 No aircraft connected \u00b7 Feature labels are guide overlays.",
     "features": [
       {
         "title": "Connection",
@@ -41,9 +41,9 @@
   },
   {
     "slug": "02-plan",
-    "title": "02 / Plan — build and verify a mission",
+    "title": "02 / Plan \u2014 build and verify a mission",
     "path": "Open: Plan",
-    "note": "Actual app interface · Illustrative local mission draft · No aircraft connected.",
+    "note": "Actual app interface \u00b7 Illustrative local mission draft \u00b7 No aircraft connected.",
     "features": [
       {
         "title": "Draft status & estimates",
@@ -73,9 +73,9 @@
   },
   {
     "slug": "03-vehicle",
-    "title": "03 / Vehicle — flight-controller parameters",
+    "title": "03 / Vehicle \u2014 flight-controller parameters",
     "path": "Open: Vehicle",
-    "note": "Actual parameter screen · Illustrative parameter values only · No aircraft connected.",
+    "note": "Actual parameter screen \u00b7 Illustrative parameter values only \u00b7 No aircraft connected.",
     "features": [
       {
         "title": "Parameter search",
@@ -101,9 +101,9 @@
   },
   {
     "slug": "04-analyze",
-    "title": "04 / Analyze — telemetry and flight events",
+    "title": "04 / Analyze \u2014 telemetry and flight events",
     "path": "Open: Analyze",
-    "note": "Actual Analyze workspace · Generated sample curves and sample events · No aircraft connected.",
+    "note": "Actual Analyze workspace \u00b7 Generated sample curves and sample events \u00b7 No aircraft connected.",
     "features": [
       {
         "title": "Signal selection",
@@ -129,9 +129,9 @@
   },
   {
     "slug": "05-settings",
-    "title": "05 / Settings — appearance, video and alerts",
+    "title": "05 / Settings \u2014 appearance, video and alerts",
     "path": "Open: Settings",
-    "note": "Actual app interface · No aircraft connected · Feature labels are guide overlays.",
+    "note": "Actual app interface \u00b7 No aircraft connected \u00b7 Feature labels are guide overlays.",
     "features": [
       {
         "title": "Appearance",
@@ -157,9 +157,9 @@
   },
   {
     "slug": "06-diagnostics",
-    "title": "06 / Diagnostics — detailed system monitoring",
+    "title": "06 / Diagnostics \u2014 detailed system monitoring",
     "path": "Open: Diagnostics",
-    "note": "Actual Diagnostics workspace · Example plot curves; stream status remains disconnected.",
+    "note": "Actual Diagnostics workspace \u00b7 Example plot curves; stream status remains disconnected.",
     "features": [
       {
         "title": "Stream freshness",
@@ -190,8 +190,8 @@
   {
     "slug": "07-connection",
     "title": "07 / Vehicle connection",
-    "path": "Open: Connection… or Connect vehicle",
-    "note": "Actual connection UI · No aircraft connected · Desktop MAVLink code is implemented; real-aircraft validation and complete PX4/Gazebo integration are work in progress.",
+    "path": "Open: Connection\u2026 or Connect vehicle",
+    "note": "Actual connection UI \u00b7 No aircraft connected in this screenshot \u00b7 Desktop Gazebo/PX4 SITL integration and MAVLink connection code are implemented; real-aircraft validation remains work in progress.",
     "features": [
       {
         "title": "Connection profile",
@@ -210,8 +210,8 @@
   {
     "slug": "08-pilot-controls",
     "title": "08 / Additional pilot controls",
-    "path": "Open: Fly → More flight controls…",
-    "note": "Actual app interface · No aircraft connected · Feature labels are guide overlays.",
+    "path": "Open: Fly \u2192 More flight controls\u2026",
+    "note": "Actual app interface \u00b7 No aircraft connected \u00b7 Feature labels are guide overlays.",
     "features": [
       {
         "title": "Flight mode",
@@ -231,7 +231,7 @@
     "slug": "09-preflight",
     "title": "09 / Preflight checklist",
     "path": "Open: Preflight checklist in the header",
-    "note": "Actual app interface · No aircraft connected · Feature labels are guide overlays.",
+    "note": "Actual app interface \u00b7 No aircraft connected \u00b7 Feature labels are guide overlays.",
     "features": [
       {
         "title": "Battery configuration",
@@ -254,8 +254,8 @@
   {
     "slug": "10-survey",
     "title": "10 / Survey grid generator",
-    "path": "Open: Plan → Survey grid",
-    "note": "Actual app interface · No aircraft connected · Feature labels are guide overlays.",
+    "path": "Open: Plan \u2192 Survey grid",
+    "note": "Actual app interface \u00b7 No aircraft connected \u00b7 Feature labels are guide overlays.",
     "features": [
       {
         "title": "Survey area",
@@ -278,8 +278,8 @@
   {
     "slug": "11-restore",
     "title": "11 / Parameter restore preview",
-    "path": "Open: Vehicle → Load backup → select a file",
-    "note": "Actual restore dialog · Illustrative backup comparison · No parameter writes are performed.",
+    "path": "Open: Vehicle \u2192 Load backup \u2192 select a file",
+    "note": "Actual restore dialog \u00b7 Illustrative backup comparison \u00b7 No parameter writes are performed.",
     "features": [
       {
         "title": "Difference table",
@@ -298,8 +298,8 @@
   {
     "slug": "12-second-window",
     "title": "12 / Diagnostics on a second display",
-    "path": "Open: Diagnostics → Open in second window",
-    "note": "Actual detached window · Close the window to restore it to the Diagnostics tab.",
+    "path": "Open: Diagnostics \u2192 Open in second window",
+    "note": "Actual detached window \u00b7 Close the window to restore it to the Diagnostics tab.",
     "features": [
       {
         "title": "Independent monitor",
@@ -318,8 +318,8 @@
   {
     "slug": "13-video-inset",
     "title": "13 / Fly with a video inset",
-    "path": "Open: Fly → Show video; choose a source in Settings",
-    "note": "Actual video layout · The colored bars are an explicitly labelled TEST PATTERN, not camera footage.",
+    "path": "Open: Fly \u2192 Show video; choose a source in Settings",
+    "note": "Actual video layout \u00b7 The colored bars are an explicitly labelled TEST PATTERN, not camera footage.",
     "features": [
       {
         "title": "Video inset",
@@ -342,8 +342,8 @@
   {
     "slug": "14-video-primary",
     "title": "14 / Video as the primary view",
-    "path": "Open: video inset → Swap",
-    "note": "Actual primary-video layout · Explicit TEST PATTERN feed · No camera or aircraft connected.",
+    "path": "Open: video inset \u2192 Swap",
+    "note": "Actual primary-video layout \u00b7 Explicit TEST PATTERN feed \u00b7 No camera or aircraft connected.",
     "features": [
       {
         "title": "Primary video",
@@ -362,8 +362,8 @@
   {
     "slug": "15-emergency",
     "title": "15 / Emergency motor-stop confirmation",
-    "path": "Open: Fly → Emergency motor stop… when the action is available",
-    "note": "Actual confirmation dialog recreated for illustration · No aircraft connected; no command is sent.",
+    "path": "Open: Fly \u2192 Emergency motor stop\u2026 when the action is available",
+    "note": "Actual confirmation dialog recreated for illustration \u00b7 No aircraft connected; no command is sent.",
     "features": [
       {
         "title": "Consequences stated",
@@ -378,8 +378,8 @@
   {
     "slug": "16-historical-review",
     "title": "16 / Historical flight-log review",
-    "path": "Open: Analyze → Load log replay → select a CSV",
-    "note": "Actual historical-review layout · Generated sample data · No live vehicle replay is claimed.",
+    "path": "Open: Analyze \u2192 Load log replay \u2192 select a CSV",
+    "note": "Actual historical-review layout \u00b7 Generated sample data \u00b7 No live vehicle replay is claimed.",
     "features": [
       {
         "title": "Historical-data banner",
@@ -398,8 +398,8 @@
   {
     "slug": "17-3d-attitude",
     "title": "17 / Experimental 3D attitude mode",
-    "path": "Open: Fly → Attitude → 3D",
-    "note": "Experimental implementation · WebGL rendering was unavailable in this capture environment · Graphics and flight validation are work in progress; 3D terrain reconstruction is planned, not implemented yet.",
+    "path": "Open: Fly \u2192 Attitude \u2192 3D",
+    "note": "Experimental implementation \u00b7 WebGL rendering was unavailable in this capture environment \u00b7 Graphics and flight validation are work in progress; 3D terrain reconstruction is planned, not implemented yet.",
     "features": [
       {
         "title": "2D / 3D selector",

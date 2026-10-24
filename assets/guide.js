@@ -1,4 +1,4 @@
-const screens = await fetch("screens.json?v=4").then((response) => {
+const screens = await fetch("screens.json?v=5").then((response) => {
   if (!response.ok) throw Error("Screen guide unavailable");
   return response.json();
 });

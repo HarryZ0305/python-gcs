@@ -107,9 +107,7 @@ or local-HTTP dependency. Basemap imagery still requires cached tiles or MBTiles
 
 ## Remaining flight acceptance
 
-**Work in progress:** Complete PX4 SITL/Gazebo acceptance and real-aircraft
-connection/flight validation remain unfinished. Desktop MAVLink transport code is
-implemented; this is distinct from a validated physical-aircraft connection.
+**Gazebo/PX4 SITL integration is implemented.** The desktop-upgrade test session below did not repeat full simulator regression testing; that is a validation-scope limit, not missing integration. **Work in progress:** Real-aircraft connection/flight validation. Desktop MAVLink transport code is implemented.
 See [feature status and evidence](feature-status.md) for the current scope.
 PX4 SITL/Gazebo and hardware flight behavior were not validated in the original
 desktop-upgrade session described by this document.
