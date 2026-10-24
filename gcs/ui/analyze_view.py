@@ -55,18 +55,18 @@ class AnalyzeView(QWidget):
 
         # 1. Top Replay Banner (hidden by default)
         self.replay_banner = QFrame()
-        self.replay_banner.setStyleSheet("background-color: #dc2626; border-radius: 6px; padding: 4px;")
+        self.replay_banner.setStyleSheet(f"background-color: {get_theme()['danger']}; border-radius: 6px; padding: 4px;")
         rb_layout = QHBoxLayout(self.replay_banner)
         rb_layout.setContentsMargins(12, 4, 12, 4)
         
         self.replay_label = QLabel("LOG REVIEW — historical plots only; live vehicle telemetry and controls are separate")
-        self.replay_label.setStyleSheet("color: #ffffff; font-family: 'Segoe UI'; font-weight: bold; font-size: 11px;")
+        self.replay_label.setStyleSheet(f"color: {get_theme()['surface']}; font-family: 'Segoe UI'; font-weight: bold; font-size: 11px;")
         rb_layout.addWidget(self.replay_label)
         rb_layout.addStretch(1)
 
         self.btn_exit_replay = QPushButton("EXIT REPLAY")
         self.btn_exit_replay.setFixedHeight(22)
-        self.btn_exit_replay.setStyleSheet("background-color: #ffffff; color: #dc2626; font-weight: bold; font-size: 10px; border-radius: 3px; padding: 2px 8px;")
+        self.btn_exit_replay.setStyleSheet(f"background-color: {get_theme()['surface']}; color: {get_theme()['danger']}; font-weight: bold; font-size: 10px; border-radius: 3px; padding: 2px 8px;")
         self.btn_exit_replay.clicked.connect(self.exit_replay_mode)
         rb_layout.addWidget(self.btn_exit_replay)
         self.replay_banner.hide()
@@ -83,27 +83,27 @@ class AnalyzeView(QWidget):
         # Signal selector checkboxes
         self.cb_alt = QCheckBox("Alt (Rel)")
         self.cb_alt.setChecked(True)
-        self.cb_alt.setStyleSheet("color: #0284c7; font-weight: bold;")
+        self.cb_alt.setStyleSheet(f"color: {get_theme()['info']}; font-weight: bold;")
         tf_layout.addWidget(self.cb_alt)
 
         self.cb_speed = QCheckBox("Speed (m/s)")
         self.cb_speed.setChecked(True)
-        self.cb_speed.setStyleSheet("color: #d97706; font-weight: bold;")
+        self.cb_speed.setStyleSheet(f"color: {get_theme()['warning']}; font-weight: bold;")
         tf_layout.addWidget(self.cb_speed)
 
         self.cb_climb = QCheckBox("Climb (m/s)")
         self.cb_climb.setChecked(False)
-        self.cb_climb.setStyleSheet("color: #8b5cf6; font-weight: bold;")
+        self.cb_climb.setStyleSheet(f"color: {get_theme()['info']}; font-weight: bold;")
         tf_layout.addWidget(self.cb_climb)
 
         self.cb_volt = QCheckBox("Voltage (V)")
         self.cb_volt.setChecked(False)
-        self.cb_volt.setStyleSheet("color: #059669; font-weight: bold;")
+        self.cb_volt.setStyleSheet(f"color: {get_theme()['success']}; font-weight: bold;")
         tf_layout.addWidget(self.cb_volt)
 
         self.cb_loss = QCheckBox("Loss (%)")
         self.cb_loss.setChecked(False)
-        self.cb_loss.setStyleSheet("color: #dc2626; font-weight: bold;")
+        self.cb_loss.setStyleSheet(f"color: {get_theme()['danger']}; font-weight: bold;")
         tf_layout.addWidget(self.cb_loss)
 
         tf_layout.addStretch(1)
@@ -143,11 +143,11 @@ class AnalyzeView(QWidget):
         self.plot_widget.addLegend(offset=(10, 10))
 
         # Curves
-        self.curve_alt = self.plot_widget.plot(pen=pg.mkPen('#0284c7', width=2), name="Alt (m Rel)")
-        self.curve_speed = self.plot_widget.plot(pen=pg.mkPen('#d97706', width=2), name="Speed (m/s)")
-        self.curve_climb = self.plot_widget.plot(pen=pg.mkPen('#8b5cf6', width=1.5), name="Climb (m/s)")
-        self.curve_volt = self.plot_widget.plot(pen=pg.mkPen('#059669', width=1.5), name="Voltage (V)")
-        self.curve_loss = self.plot_widget.plot(pen=pg.mkPen('#dc2626', width=1.5), name="Packet Loss (%)")
+        self.curve_alt = self.plot_widget.plot(pen=pg.mkPen(get_theme()['info'], width=2), name="Alt (m Rel)")
+        self.curve_speed = self.plot_widget.plot(pen=pg.mkPen(get_theme()['warning'], width=2), name="Speed (m/s)")
+        self.curve_climb = self.plot_widget.plot(pen=pg.mkPen(get_theme()['info'], width=1.5), name="Climb (m/s)")
+        self.curve_volt = self.plot_widget.plot(pen=pg.mkPen(get_theme()['success'], width=1.5), name="Voltage (V)")
+        self.curve_loss = self.plot_widget.plot(pen=pg.mkPen(get_theme()['danger'], width=1.5), name="Packet Loss (%)")
 
         splitter.addWidget(self.plot_widget)
 

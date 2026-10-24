@@ -1,3 +1,4 @@
+from gcs.ui.theme import get_theme
 import time
 import math
 from PyQt6.QtWidgets import (
@@ -7,17 +8,6 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from gcs.telemetry import telemetry_data, battery_config
 
-THEME = {
-    'bg': '#f5f7fa',
-    'panel_bg': '#ffffff',
-    'panel_border': '#cbd5e1',
-    'primary': '#0b57d0',
-    'success': '#0f9d58',
-    'warning': '#e37400',
-    'danger': '#d93025',
-    'muted': '#5f6368',
-    'dark_text': '#0f172a',
-}
 
 # Sensor masks from MAVLink SYS_STATUS
 SENSOR_3D_GYRO = 1
@@ -43,28 +33,28 @@ class PreflightChecklistDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Pre-Flight Safety Verification")
         self.setFixedSize(560, 600)
-        self.setStyleSheet(f"background-color: {THEME['bg']}; font-family: Google Sans Code;")
+        self.setStyleSheet(f"background-color: {get_theme()['bg']}; font-family: Segoe UI;")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(10)
 
         title = QLabel("SYSTEM PRE-FLIGHT VERIFICATION")
-        title.setStyleSheet(f"color: {THEME['primary']}; font-size: 13px; font-weight: bold;")
+        title.setStyleSheet(f"color: {get_theme()['primary']}; font-size: 13px; font-weight: bold;")
         layout.addWidget(title)
 
         desc = QLabel("Verifying critical telemetry, link status, and sensor health before arming:")
-        desc.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px;")
+        desc.setStyleSheet(f"color: {get_theme()['text_muted']}; font-size: 11px;")
         layout.addWidget(desc)
 
         # Config row: Battery cell configuration
         cfg_frame = QFrame()
-        cfg_frame.setStyleSheet(f"background: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 6px;")
+        cfg_frame.setStyleSheet(f"background: {get_theme()['surface']}; border: 1px solid {get_theme()['border']}; border-radius: 6px;")
         cfg_layout = QHBoxLayout(cfg_frame)
         cfg_layout.setContentsMargins(10, 6, 10, 6)
 
         cfg_lbl = QLabel("Battery Configuration:")
-        cfg_lbl.setStyleSheet(f"color: {THEME['dark_text']}; font-size: 11px; font-weight: bold; border: none;")
+        cfg_lbl.setStyleSheet(f"color: {get_theme()['text']}; font-size: 11px; font-weight: bold; border: none;")
         cfg_layout.addWidget(cfg_lbl)
 
         self.cell_combo = QComboBox()
@@ -80,7 +70,7 @@ class PreflightChecklistDialog(QDialog):
         layout.addWidget(cfg_frame)
 
         self.items_container = QFrame()
-        self.items_container.setStyleSheet(f"background: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
+        self.items_container.setStyleSheet(f"background: {get_theme()['surface']}; border: 1px solid {get_theme()['border']}; border-radius: 8px;")
         ic_layout = QVBoxLayout(self.items_container)
         ic_layout.setContentsMargins(14, 14, 14, 14)
         ic_layout.setSpacing(10)
@@ -98,9 +88,9 @@ class PreflightChecklistDialog(QDialog):
         for key, name, default_status in checks:
             row = QHBoxLayout()
             lbl = QLabel(name)
-            lbl.setStyleSheet(f"color: {THEME['dark_text']}; font-weight: bold; font-size: 11px; background: transparent; border: none;")
+            lbl.setStyleSheet(f"color: {get_theme()['text']}; font-weight: bold; font-size: 11px; background: transparent; border: none;")
             val = QLabel(default_status)
-            val.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px; background: transparent; border: none;")
+            val.setStyleSheet(f"color: {get_theme()['text_muted']}; font-size: 11px; background: transparent; border: none;")
             val.setAlignment(Qt.AlignmentFlag.AlignRight)
             row.addWidget(lbl)
             row.addWidget(val)
@@ -110,22 +100,22 @@ class PreflightChecklistDialog(QDialog):
         layout.addWidget(self.items_container)
 
         self.summary_card = QFrame()
-        self.summary_card.setStyleSheet(f"background: {THEME['panel_bg']}; border: 2px solid {THEME['panel_border']}; border-radius: 8px; padding: 6px;")
+        self.summary_card.setStyleSheet(f"background: {get_theme()['surface']}; border: 2px solid {get_theme()['border']}; border-radius: 8px; padding: 6px;")
         sc_layout = QVBoxLayout(self.summary_card)
         self.summary_label = QLabel("AWAITING TELEMETRY VERIFICATION")
         self.summary_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.summary_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {THEME['muted']}; border: none;")
+        self.summary_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {get_theme()['text_muted']}; border: none;")
         sc_layout.addWidget(self.summary_label)
         layout.addWidget(self.summary_card)
 
         btn_layout = QHBoxLayout()
         self.refresh_btn = QPushButton("Refresh Status")
-        self.refresh_btn.setStyleSheet(f"background: {THEME['primary']}; color: #ffffff; padding: 8px 16px; border-radius: 6px; font-weight: bold;")
+        self.refresh_btn.setStyleSheet(f"background: {get_theme()['primary']}; color: #ffffff; padding: 8px 16px; border-radius: 6px; font-weight: bold;")
         self.refresh_btn.clicked.connect(self.evaluate_checks)
         btn_layout.addWidget(self.refresh_btn)
 
         self.close_btn = QPushButton("Close")
-        self.close_btn.setStyleSheet(f"background: #e2e8f0; color: {THEME['dark_text']}; padding: 8px 16px; border-radius: 6px;")
+        self.close_btn.setStyleSheet(f"background: #e2e8f0; color: {get_theme()['text']}; padding: 8px 16px; border-radius: 6px;")
         self.close_btn.clicked.connect(self.accept)
         btn_layout.addWidget(self.close_btn)
         layout.addLayout(btn_layout)
@@ -151,14 +141,14 @@ class PreflightChecklistDialog(QDialog):
 
         if last_hb > 0.0 and link_age <= 2.5:
             self.check_rows['link'].setText(f"PASS: Active ({link_age:.1f}s, {rate_hz:.1f} Hz)")
-            self.check_rows['link'].setStyleSheet(f"color: {THEME['success']};")
+            self.check_rows['link'].setStyleSheet(f"color: {get_theme()['success']};")
         elif last_hb > 0.0 and link_age <= 4.0:
             self.check_rows['link'].setText(f"WARN: Degraded ({link_age:.1f}s)")
-            self.check_rows['link'].setStyleSheet(f"color: {THEME['warning']};")
+            self.check_rows['link'].setStyleSheet(f"color: {get_theme()['warning']};")
             has_unknown = True
         else:
             self.check_rows['link'].setText("FAIL: No Telemetry Heartbeat")
-            self.check_rows['link'].setStyleSheet(f"color: {THEME['danger']};")
+            self.check_rows['link'].setStyleSheet(f"color: {get_theme()['danger']};")
             has_fail = True
 
         # 2. GNSS Fix
@@ -168,14 +158,14 @@ class PreflightChecklistDialog(QDialog):
         if fix_type >= 3 and sats >= 6:
             eph_str = f", HDOP {eph/100:.1f}m" if eph < 9000 else ""
             self.check_rows['gps'].setText(f"PASS: 3D Fix ({sats} Sats{eph_str})")
-            self.check_rows['gps'].setStyleSheet(f"color: {THEME['success']};")
+            self.check_rows['gps'].setStyleSheet(f"color: {get_theme()['success']};")
         elif fix_type == 0 and sats == 0:
             self.check_rows['gps'].setText("UNKNOWN: Awaiting GPS Telemetry")
-            self.check_rows['gps'].setStyleSheet(f"color: {THEME['warning']};")
+            self.check_rows['gps'].setStyleSheet(f"color: {get_theme()['warning']};")
             has_unknown = True
         else:
             self.check_rows['gps'].setText(f"FAIL: {fix_type}D Fix ({sats} Sats - Min 6)")
-            self.check_rows['gps'].setStyleSheet(f"color: {THEME['danger']};")
+            self.check_rows['gps'].setStyleSheet(f"color: {get_theme()['danger']};")
             has_fail = True
 
         # 3. Power (Configurable Battery Voltage & Capacity)
@@ -190,24 +180,24 @@ class PreflightChecklistDialog(QDialog):
 
         if batt == -1 and volt == 0.0:
             self.check_rows['power'].setText("UNKNOWN: No Power Telemetry")
-            self.check_rows['power'].setStyleSheet(f"color: {THEME['warning']};")
+            self.check_rows['power'].setStyleSheet(f"color: {get_theme()['warning']};")
             has_unknown = True
         elif volt > 0.0 and volt < crit_v:
             self.check_rows['power'].setText(f"FAIL: Critical Voltage ({volt:.1f}V < {crit_v:.1f}V)")
-            self.check_rows['power'].setStyleSheet(f"color: {THEME['danger']};")
+            self.check_rows['power'].setStyleSheet(f"color: {get_theme()['danger']};")
             has_fail = True
         elif batt >= 0 and batt < crit_p:
             self.check_rows['power'].setText(f"FAIL: Critical Capacity ({batt}% < {crit_p}%)")
-            self.check_rows['power'].setStyleSheet(f"color: {THEME['danger']};")
+            self.check_rows['power'].setStyleSheet(f"color: {get_theme()['danger']};")
             has_fail = True
         elif (volt > 0.0 and volt < warn_v) or (batt >= 0 and batt < warn_p):
             self.check_rows['power'].setText(f"WARN: Low ({volt:.1f}V, {batt}%)")
-            self.check_rows['power'].setStyleSheet(f"color: {THEME['warning']};")
+            self.check_rows['power'].setStyleSheet(f"color: {get_theme()['warning']};")
             has_unknown = True
         else:
             disp_b = f"{batt}%" if batt >= 0 else "OK"
             self.check_rows['power'].setText(f"PASS: {volt:.1f}V ({disp_b} on {cells}S)")
-            self.check_rows['power'].setStyleSheet(f"color: {THEME['success']};")
+            self.check_rows['power'].setStyleSheet(f"color: {get_theme()['success']};")
 
         # 4. Sensor Health from SYS_STATUS
         present = d.get('sensors_present', 0)
@@ -216,7 +206,7 @@ class PreflightChecklistDialog(QDialog):
 
         if present == 0:
             self.check_rows['sensors'].setText("UNKNOWN: Awaiting SYS_STATUS")
-            self.check_rows['sensors'].setStyleSheet(f"color: {THEME['warning']};")
+            self.check_rows['sensors'].setStyleSheet(f"color: {get_theme()['warning']};")
             has_unknown = True
         else:
             unhealthy_sensors = []
@@ -232,25 +222,25 @@ class PreflightChecklistDialog(QDialog):
 
             if unhealthy_sensors:
                 self.check_rows['sensors'].setText(f"FAIL: Unhealthy ({', '.join(unhealthy_sensors)})")
-                self.check_rows['sensors'].setStyleSheet(f"color: {THEME['danger']};")
+                self.check_rows['sensors'].setStyleSheet(f"color: {get_theme()['danger']};")
                 has_fail = True
             else:
                 self.check_rows['sensors'].setText("PASS: Gyro, Accel, Mag, Baro OK")
-                self.check_rows['sensors'].setStyleSheet(f"color: {THEME['success']};")
+                self.check_rows['sensors'].setStyleSheet(f"color: {get_theme()['success']};")
 
         # 5. Horizon Level Alignment
         roll_deg = abs(math.degrees(d.get('roll', 0.0)))
         pitch_deg = abs(math.degrees(d.get('pitch', 0.0)))
         if last_hb == 0.0:
             self.check_rows['attitude'].setText("UNKNOWN: No Attitude Data")
-            self.check_rows['attitude'].setStyleSheet(f"color: {THEME['warning']};")
+            self.check_rows['attitude'].setStyleSheet(f"color: {get_theme()['warning']};")
             has_unknown = True
         elif roll_deg < 15.0 and pitch_deg < 15.0:
             self.check_rows['attitude'].setText(f"PASS: Level (R {roll_deg:.0f}\u00b0, P {pitch_deg:.0f}\u00b0)")
-            self.check_rows['attitude'].setStyleSheet(f"color: {THEME['success']};")
+            self.check_rows['attitude'].setStyleSheet(f"color: {get_theme()['success']};")
         else:
             self.check_rows['attitude'].setText(f"FAIL: Tilted (R {roll_deg:.0f}\u00b0, P {pitch_deg:.0f}\u00b0 > 15\u00b0)")
-            self.check_rows['attitude'].setStyleSheet(f"color: {THEME['danger']};")
+            self.check_rows['attitude'].setStyleSheet(f"color: {get_theme()['danger']};")
             has_fail = True
 
         # 6. FCU Prearm Readiness (Evidence-Based: requires confirmed STANDBY/ACTIVE state)
@@ -258,30 +248,30 @@ class PreflightChecklistDialog(QDialog):
         sys_state = d.get('system_status', 0)
         if last_hb == 0.0:
             self.check_rows['fcu'].setText("UNKNOWN: Disconnected")
-            self.check_rows['fcu'].setStyleSheet(f"color: {THEME['warning']};")
+            self.check_rows['fcu'].setStyleSheet(f"color: {get_theme()['warning']};")
             has_unknown = True
         elif prearm:
             disp = prearm[:26] + "..." if len(prearm) > 26 else prearm
             self.check_rows['fcu'].setText(f"FAIL: {disp}")
-            self.check_rows['fcu'].setStyleSheet(f"color: {THEME['danger']};")
+            self.check_rows['fcu'].setStyleSheet(f"color: {get_theme()['danger']};")
             has_fail = True
         elif d.get('armed', False):
             self.check_rows['fcu'].setText("PASS: Armed & In-Flight")
-            self.check_rows['fcu'].setStyleSheet(f"color: {THEME['success']};")
+            self.check_rows['fcu'].setStyleSheet(f"color: {get_theme()['success']};")
         elif sys_state in (3, 4): # Confirmed STANDBY or ACTIVE
             self.check_rows['fcu'].setText("PASS: Standby & Armed Ready")
-            self.check_rows['fcu'].setStyleSheet(f"color: {THEME['success']};")
+            self.check_rows['fcu'].setStyleSheet(f"color: {get_theme()['success']};")
         elif sys_state in (1, 2): # BOOT or CALIBRATING
             self.check_rows['fcu'].setText(f"UNKNOWN: FCU Initializing ({sys_state})")
-            self.check_rows['fcu'].setStyleSheet(f"color: {THEME['warning']};")
+            self.check_rows['fcu'].setStyleSheet(f"color: {get_theme()['warning']};")
             has_unknown = True
         elif sys_state in (5, 6): # CRITICAL or EMERGENCY
             self.check_rows['fcu'].setText(f"FAIL: FCU Emergency ({sys_state})")
-            self.check_rows['fcu'].setStyleSheet(f"color: {THEME['danger']};")
+            self.check_rows['fcu'].setStyleSheet(f"color: {get_theme()['danger']};")
             has_fail = True
         else:
             self.check_rows['fcu'].setText("UNKNOWN: Awaiting FCU Prearm Evidence")
-            self.check_rows['fcu'].setStyleSheet(f"color: {THEME['warning']};")
+            self.check_rows['fcu'].setStyleSheet(f"color: {get_theme()['warning']};")
             has_unknown = True
 
         # 7. Home Position
@@ -293,26 +283,26 @@ class PreflightChecklistDialog(QDialog):
 
         if has_home and (h_lat != 0.0 or h_lon != 0.0):
             self.check_rows['home'].setText(f"PASS: Locked ({h_lat:.4f}, {h_lon:.4f})")
-            self.check_rows['home'].setStyleSheet(f"color: {THEME['success']};")
+            self.check_rows['home'].setStyleSheet(f"color: {get_theme()['success']};")
         elif fix_type >= 3 and (curr_lat != 0.0 or curr_lon != 0.0):
             self.check_rows['home'].setText("WARN: 3D Fix Active, Awaiting HOME_POSITION")
-            self.check_rows['home'].setStyleSheet(f"color: {THEME['warning']};")
+            self.check_rows['home'].setStyleSheet(f"color: {get_theme()['warning']};")
             has_unknown = True
         else:
             self.check_rows['home'].setText("UNKNOWN: No Home Lock")
-            self.check_rows['home'].setStyleSheet(f"color: {THEME['warning']};")
+            self.check_rows['home'].setStyleSheet(f"color: {get_theme()['warning']};")
             has_unknown = True
 
         # Overall Status Verdict
         if has_fail:
             self.summary_label.setText("NO-GO: CRITICAL PRE-FLIGHT CHECKS FAILED")
-            self.summary_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {THEME['danger']}; border: none;")
-            self.summary_card.setStyleSheet(f"background: #fdf2f2; border: 2px solid {THEME['danger']}; border-radius: 8px; padding: 6px;")
+            self.summary_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {get_theme()['danger']}; border: none;")
+            self.summary_card.setStyleSheet(f"background: #fdf2f2; border: 2px solid {get_theme()['danger']}; border-radius: 8px; padding: 6px;")
         elif has_unknown:
             self.summary_label.setText("CAUTION: UNKNOWN / INCOMPLETE TELEMETRY (NO-GO)")
-            self.summary_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {THEME['warning']}; border: none;")
-            self.summary_card.setStyleSheet(f"background: #fffbeb; border: 2px solid {THEME['warning']}; border-radius: 8px; padding: 6px;")
+            self.summary_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {get_theme()['warning']}; border: none;")
+            self.summary_card.setStyleSheet(f"background: #fffbeb; border: 2px solid {get_theme()['warning']}; border-radius: 8px; padding: 6px;")
         else:
             self.summary_label.setText("GO FOR FLIGHT: ALL PRE-FLIGHT CHECKS PASSED")
-            self.summary_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {THEME['success']}; border: none;")
-            self.summary_card.setStyleSheet(f"background: #f0fdf4; border: 2px solid {THEME['success']}; border-radius: 8px; padding: 6px;")
+            self.summary_label.setStyleSheet(f"font-size: 13px; font-weight: bold; color: {get_theme()['success']}; border: none;")
+            self.summary_card.setStyleSheet(f"background: #f0fdf4; border: 2px solid {get_theme()['success']}; border-radius: 8px; padding: 6px;")

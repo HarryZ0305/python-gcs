@@ -1,3 +1,4 @@
+from gcs.ui.theme import get_theme
 import json
 import time
 import threading
@@ -25,14 +26,14 @@ class ParamDiffDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Parameter Restore - Difference Preview")
         self.resize(750, 450)
-        self.setStyleSheet("background-color: #ffffff; font-family: Google Sans Code;")
+        self.setStyleSheet(f"background-color: {get_theme()['surface']}; font-family: Segoe UI;")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
         title = QLabel("PARAMETER DIFFERENCE PREVIEW")
-        title.setStyleSheet("color: #0b57d0; font-size: 13px; font-weight: bold;")
+        title.setStyleSheet(f"color: {get_theme()['primary']}; font-size: 13px; font-weight: bold;")
         layout.addWidget(title)
 
         updates = [d for d in diffs if d['action'] == 'UPDATE']
@@ -40,7 +41,7 @@ class ParamDiffDialog(QDialog):
         same = [d for d in diffs if d['action'] == 'UNCHANGED']
 
         summary = QLabel(f"Total in file: {len(diffs)} | To Update: {len(updates)} | Incompatible/Skipped: {len(skips)} | Unchanged: {len(same)}")
-        summary.setStyleSheet("color: #5f6368; font-size: 11px;")
+        summary.setStyleSheet(f"color: {get_theme()['text_muted']}; font-size: 11px;")
         layout.addWidget(summary)
 
         self.table = QTableWidget(len(diffs), 5)
@@ -59,14 +60,14 @@ class ParamDiffDialog(QDialog):
             action_item = QTableWidgetItem(d['description'])
 
             if d['action'] == 'UPDATE':
-                action_item.setForeground(QColor("#0b57d0"))
-                name_item.setForeground(QColor("#0f172a"))
+                action_item.setForeground(QColor(get_theme()['primary']))
+                name_item.setForeground(QColor(get_theme()['text']))
             elif 'SKIP' in d['action']:
-                action_item.setForeground(QColor("#d93025"))
-                name_item.setForeground(QColor("#5f6368"))
+                action_item.setForeground(QColor(get_theme()['danger']))
+                name_item.setForeground(QColor(get_theme()['text_muted']))
             else:
-                action_item.setForeground(QColor("#5f6368"))
-                name_item.setForeground(QColor("#5f6368"))
+                action_item.setForeground(QColor(get_theme()['text_muted']))
+                name_item.setForeground(QColor(get_theme()['text_muted']))
 
             self.table.setItem(row, 0, name_item)
             self.table.setItem(row, 1, curr_item)
@@ -83,7 +84,7 @@ class ParamDiffDialog(QDialog):
         
         apply_btn = QPushButton(f"APPLY {len(updates)} UPDATES TO FCU")
         apply_btn.setFixedHeight(32)
-        apply_btn.setStyleSheet("background-color: #0b57d0; color: #ffffff; font-weight: bold; padding: 4px 14px; border-radius: 4px;")
+        apply_btn.setStyleSheet(f"background-color: {get_theme()['primary']}; color: {get_theme()['text_inverse']}; font-weight: bold; padding: 4px 14px; border-radius: 4px;")
         apply_btn.clicked.connect(self.accept)
         apply_btn.setEnabled(len(updates) > 0)
 
@@ -120,29 +121,29 @@ class SetupView(QWidget):
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search parameters (e.g. MPC_XY, COM_ARM)...")
         self.search_bar.setFixedHeight(30)
-        self.search_bar.setStyleSheet("""
-            QLineEdit {
-                background-color: #ffffff; color: #0f172a;
-                border: 1px solid #cbd5e1; border-radius: 4px;
-                padding: 4px 10px; font-family: Google Sans Code; font-size: 12px;
-            }
+        self.search_bar.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {get_theme()['surface']}; color: {get_theme()['text']};
+                border: 1px solid {get_theme()['border']}; border-radius: 4px;
+                padding: 4px 10px; font-family: Segoe UI; font-size: 12px;
+            }}
         """)
         self.search_bar.textChanged.connect(self.on_search_changed)
         top_row.addWidget(self.search_bar, stretch=1)
 
         self.progress_lbl = QLabel("Parameters: 0 / 0")
-        self.progress_lbl.setStyleSheet("color: #5f6368; font-family: Google Sans Code; font-size: 11px;")
+        self.progress_lbl.setStyleSheet(f"color: {get_theme()['text_muted']}; font-family: Segoe UI; font-size: 11px;")
         top_row.addWidget(self.progress_lbl)
 
-        btn_style = """
-            QPushButton {
-                background-color: #ffffff; color: #0b57d0;
-                border: 1px solid #0b57d0; border-radius: 4px;
-                font-family: Google Sans Code; font-size: 11px; font-weight: bold;
+        btn_style = f"""
+            QPushButton {{
+                background-color: {get_theme()['surface']}; color: {get_theme()['primary']};
+                border: 1px solid {get_theme()['primary']}; border-radius: 4px;
+                font-family: Segoe UI; font-size: 11px; font-weight: bold;
                 padding: 4px 12px;
-            }
-            QPushButton:hover { background-color: #0b57d0; color: #ffffff; }
-            QPushButton:disabled { border-color: #cbd5e1; color: #5f6368; }
+            }}
+            QPushButton:hover {{ background-color: {get_theme()['primary']}; color: {get_theme()['text_inverse']}; }}
+            QPushButton:disabled {{ border-color: {get_theme()['border']}; color: {get_theme()['text_muted']}; }}
         """
 
         self.refresh_btn = QPushButton("REFRESH ALL")
@@ -178,17 +179,17 @@ class SetupView(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.table.setStyleSheet("""
-            QTableWidget {
-                background-color: #ffffff; color: #0f172a;
-                gridline-color: #cbd5e1;
-                border: 1px solid #cbd5e1; border-radius: 6px;
-                font-family: Google Sans Code; font-size: 12px;
-            }
-            QHeaderView::section {
-                background-color: #f5f7fa; color: #0b57d0;
-                padding: 4px; font-weight: bold; border: 1px solid #cbd5e1;
-            }
+        self.table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: {get_theme()['surface']}; color: {get_theme()['text']};
+                gridline-color: {get_theme()['border']};
+                border: 1px solid {get_theme()['border']}; border-radius: 6px;
+                font-family: Segoe UI; font-size: 12px;
+            }}
+            QHeaderView::section {{
+                background-color: {get_theme()['surface_elevated']}; color: {get_theme()['primary']};
+                padding: 4px; font-weight: bold; border: 1px solid {get_theme()['border']};
+            }}
         """)
         self.table.cellChanged.connect(self.on_cell_changed)
         layout.addWidget(self.table)
@@ -277,7 +278,7 @@ class SetupView(QWidget):
             status_item = self.table.item(row, 3)
             if status_item:
                 status_item.setText(f"ERROR: {err_msg}")
-                status_item.setForeground(QColor("#d93025"))
+                status_item.setForeground(QColor(get_theme()['danger']))
             self.table.blockSignals(False)
             return
 
@@ -295,7 +296,7 @@ class SetupView(QWidget):
         status_item = self.table.item(row, 3)
         if status_item:
             status_item.setText("PENDING WRITE...")
-            status_item.setForeground(QColor("#e37400"))
+            status_item.setForeground(QColor(get_theme()['warning']))
 
         # Send PARAM_SET in background
         def _set_worker():
@@ -358,7 +359,7 @@ class SetupView(QWidget):
             # Col 0: Name (Read-only)
             name_item = QTableWidgetItem(name)
             name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            name_item.setForeground(QColor("#0f172a"))
+            name_item.setForeground(QColor(get_theme()['text']))
             self.table.setItem(row, 0, name_item)
 
             # Col 1: Value (Editable)
@@ -366,22 +367,22 @@ class SetupView(QWidget):
             if name in self._pending_edits:
                 val_to_show = str(self._pending_edits[name]['target_val'])
             val_item = QTableWidgetItem(val_to_show)
-            val_item.setForeground(QColor("#0b57d0"))
+            val_item.setForeground(QColor(get_theme()['primary']))
             self.table.setItem(row, 1, val_item)
 
             # Col 2: Type (Read-only)
             type_item = QTableWidgetItem(type_str)
             type_item.setFlags(type_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            type_item.setForeground(QColor("#5f6368"))
+            type_item.setForeground(QColor(get_theme()['text_muted']))
             self.table.setItem(row, 2, type_item)
 
             # Col 3: Status (Read-only)
             if name in self._pending_edits:
                 status_item = QTableWidgetItem("PENDING...")
-                status_item.setForeground(QColor("#e37400"))
+                status_item.setForeground(QColor(get_theme()['warning']))
             else:
                 status_item = QTableWidgetItem("CONFIRMED")
-                status_item.setForeground(QColor("#0f9d58"))
+                status_item.setForeground(QColor(get_theme()['success']))
             status_item.setFlags(status_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, 3, status_item)
 

@@ -449,8 +449,11 @@ class GCSWindow(QMainWindow):
         self.settings_view = SettingsView(settings=self.settings)
         self.settings_view.theme_changed.connect(self._on_theme_toggled)
         self.settings_view.settings_changed.connect(self.refresh)
-        self.settings_view.video_source_changed.connect(self.camera_view.set_stream_source)
-        self.tabs.addTab(self.settings_view, "SETTINGS")
+        self.settings_view.video_source_changed.connect(self._set_video_source)
+        self.tabs.addTab(self.settings_view, "Settings")
+        self._build_diagnostics_tab(rf_layout, status_row)
+        for index, name in enumerate(('Fly', 'Plan', 'Vehicle', 'Analyze', 'Settings', 'Diagnostics')):
+            self.tabs.setTabText(index, name)
 
         self.profile_combo.setCurrentIndex(self.settings.value('connection/profile', 0, type=int))
         self.conn_input.setText(self.settings.value('connection/address', self.conn_input.text()))
@@ -516,6 +519,7 @@ class GCSWindow(QMainWindow):
         # Cockpit Primary Flight Display (PFD) / 3D CAD toggle container
         self.instrument_container = InstrumentContainer()
         self.attitude_view = None  # 3D WebEngine view is created only on request.
+        self.instrument_container.setMaximumHeight(300)
         left_col.addWidget(self.instrument_container)
 
         # Action Card: Flight Commands
@@ -540,12 +544,21 @@ class GCSWindow(QMainWindow):
         self.mode_btn.clicked.connect(self.on_set_mode)
         mode_row.addWidget(self.mode_combo, stretch=1)
         mode_row.addWidget(self.mode_btn)
-        ac_layout.addLayout(mode_row)
+        self.pilot_dialog = QDialog(self)
+        self.pilot_dialog.setWindowTitle("Pilot controls")
+        self.pilot_dialog.setMinimumWidth(420)
+        pilot_layout = QVBoxLayout(self.pilot_dialog)
+        pilot_layout.setContentsMargins(20, 20, 20, 20)
+        pilot_layout.setSpacing(14)
+        pilot_note = QLabel("Additional flight modes and keyboard control.\nAutopilot checks and keyboard safeguards remain active.")
+        pilot_note.setWordWrap(True)
+        pilot_layout.addWidget(pilot_note)
+        pilot_layout.addLayout(mode_row)
 
         # Row 2: Arm, Altitude Spin, Takeoff
         arm_row = QHBoxLayout()
         self.arm_btn = QPushButton("ARM")
-        self.arm_btn.setFixedHeight(30)
+        self.arm_btn.setFixedHeight(36)
         self.arm_btn.setStyleSheet(get_button_style('success', 'sm'))
         self.arm_btn.clicked.connect(self.on_arm_disarm)
 
@@ -555,7 +568,7 @@ class GCSWindow(QMainWindow):
         self.alt_spin.setSuffix(" m")
 
         self.takeoff_btn = QPushButton("TAKEOFF")
-        self.takeoff_btn.setFixedHeight(30)
+        self.takeoff_btn.setFixedHeight(36)
         self.takeoff_btn.setStyleSheet(get_button_style('primary', 'sm'))
         self.takeoff_btn.clicked.connect(self.on_takeoff)
 
@@ -566,18 +579,18 @@ class GCSWindow(QMainWindow):
 
         # Row 3: Prominent HOLD, RTL, LAND
         nav_row = QHBoxLayout()
-        self.hold_btn = QPushButton("HOLD (LOITER)")
-        self.hold_btn.setFixedHeight(30)
-        self.hold_btn.setStyleSheet(get_button_style('warning', 'sm'))
+        self.hold_btn = QPushButton("Hold")
+        self.hold_btn.setFixedHeight(36)
+        self.hold_btn.setStyleSheet(get_button_style('secondary', 'sm'))
         self.hold_btn.clicked.connect(self.on_emergency_hold)
 
-        self.rtl_btn = QPushButton("RTL")
-        self.rtl_btn.setFixedHeight(30)
+        self.rtl_btn = QPushButton("Return")
+        self.rtl_btn.setFixedHeight(36)
         self.rtl_btn.setStyleSheet(get_button_style('secondary', 'sm'))
         self.rtl_btn.clicked.connect(self.on_rtl)
 
-        self.land_btn = QPushButton("LAND")
-        self.land_btn.setFixedHeight(30)
+        self.land_btn = QPushButton("Land")
+        self.land_btn.setFixedHeight(36)
         self.land_btn.setStyleSheet(get_button_style('secondary', 'sm'))
         self.land_btn.clicked.connect(self.on_land)
 
@@ -587,19 +600,19 @@ class GCSWindow(QMainWindow):
         ac_layout.addLayout(nav_row)
 
         # Row 4: Start Mission Button
-        self.start_btn = QPushButton("START MISSION")
-        self.start_btn.setFixedHeight(28)
+        self.start_btn = QPushButton("Start mission")
+        self.start_btn.setFixedHeight(36)
         self.start_btn.setStyleSheet(get_button_style('primary', 'sm'))
         self.start_btn.setEnabled(False) # Enabled upon verified mission
         self.start_btn.clicked.connect(self.on_start_mission)
         ac_layout.addWidget(self.start_btn)
 
-        # Row 5: Emergency Motor Stop
+        # Emergency stop stays accessible; additional pilot controls are on demand.
         self.emer_stop_btn = QPushButton("EMERGENCY MOTOR CUTOFF (KILL)")
         self.emer_stop_btn.setFixedHeight(28)
         self.emer_stop_btn.setStyleSheet(get_button_style('danger', 'sm'))
         self.emer_stop_btn.clicked.connect(self.on_emergency_motor_stop)
-        ac_layout.addWidget(self.emer_stop_btn)
+
 
         # Row 6: Keyboard Flight Safeguard Checkbox & Banner
         kb_box = QFrame()
@@ -615,38 +628,47 @@ class GCSWindow(QMainWindow):
         self.kb_banner = QLabel("KEYS INHIBITED — Opt-in required")
         self.kb_banner.setStyleSheet(f"color: {t['text_muted']}; font-size: 10px; font-weight: bold;")
         kb_l.addWidget(self.kb_banner)
-        ac_layout.addWidget(kb_box)
+        pilot_layout.addWidget(kb_box)
 
         # Row 7: Preflight & Voice Controls
-        pre_row = QHBoxLayout()
-        self.preflight_btn = QPushButton("PRE-FLIGHT CHECKLIST")
+        self.preflight_btn = QPushButton("Preflight checklist")
         self.preflight_btn.setFixedHeight(26)
         self.preflight_btn.setStyleSheet(get_button_style('primary', 'sm'))
         self.preflight_btn.clicked.connect(self.on_open_preflight_dialog)
-        pre_row.addWidget(self.preflight_btn)
 
         self.voice_btn = QPushButton("VOICE: ON")
         self.voice_btn.setFixedHeight(26)
         self.voice_btn.setStyleSheet(get_button_style('secondary', 'sm'))
         self.voice_btn.clicked.connect(self.on_toggle_voice)
-        pre_row.addWidget(self.voice_btn)
-        ac_layout.addLayout(pre_row)
+        pilot_layout.addWidget(self.voice_btn)
+        pilot_done = QPushButton("Done")
+        pilot_done.setStyleSheet(get_button_style("secondary", "sm"))
+        pilot_done.clicked.connect(self.pilot_dialog.accept)
+        pilot_layout.addWidget(pilot_done)
+        self.more_controls_btn = QPushButton("More flight controls…")
+        self.more_controls_btn.setStyleSheet(get_button_style('secondary', 'sm'))
+        self.more_controls_btn.clicked.connect(self.pilot_dialog.show)
+        ac_layout.addWidget(self.more_controls_btn)
+        self.emer_stop_btn.setText("Emergency motor stop…")
+        self.emer_stop_btn.setStyleSheet(get_button_style('secondary', 'sm').replace(t['text'], t['danger']))
+        ac_layout.addWidget(self.emer_stop_btn)
 
         self.status_label = QLabel("System ready.")
         self.status_label.setWordWrap(True)
+        self.status_label.setMaximumHeight(48)
         self.status_label.setStyleSheet(f"color: {t['text_secondary']}; font-size: 11px;")
         ac_layout.addWidget(self.status_label)
 
         left_col.addWidget(action_card)
         self.stream_health = StreamHealthPanel()
-        left_col.addWidget(self.stream_health)
+
         left_col.addStretch(1)
 
         rail_scroll = QScrollArea()
         rail_scroll.setWidgetResizable(True)
         rail_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        rail_scroll.setMinimumWidth(330)
-        rail_scroll.setMaximumWidth(400)
+        rail_scroll.setMinimumWidth(310)
+        rail_scroll.setMaximumWidth(350)
         rail_scroll.setWidget(self.left_col_widget)
         fly_splitter.addWidget(rail_scroll)
 
@@ -655,7 +677,7 @@ class GCSWindow(QMainWindow):
         center_layout = QVBoxLayout(center_container)
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(4)
-        self.telemetry_strip = TelemetryStrip()
+        self.telemetry_strip = TelemetryStrip(fields=('alt', 'speed', 'climb', 'home'))
         center_layout.addWidget(self.telemetry_strip)
 
         self.map_view = MapView(planning=False)
@@ -665,12 +687,30 @@ class GCSWindow(QMainWindow):
         # A test feed is available explicitly in Settings; never auto-start it.
 
         self.pip_workspace = PipWorkspace(self.map_view, self.camera_view)
+        self.pip_workspace.pip_frame.hide()
+        self.empty_flight = QFrame(self.pip_workspace)
+        self.empty_flight.setObjectName('FlightWelcome')
+        self.empty_flight.setFixedSize(400, 174)
+        self.empty_flight.setStyleSheet(f"#FlightWelcome {{background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 14px;}}")
+        welcome = QVBoxLayout(self.empty_flight)
+        welcome.setContentsMargins(24, 20, 24, 20)
+        welcome.setSpacing(10)
+        welcome_title = QLabel('Your flight starts here')
+        welcome_title.setStyleSheet(f"font-size: 21px; font-weight: 600; color: {t['text']};")
+        welcome.addWidget(welcome_title)
+        welcome_note = QLabel('Connect your vehicle, review the preflight checklist,\nthen fly or start a verified mission.')
+        welcome_note.setStyleSheet(f"color: {t['text_secondary']}; font-size: 12px;")
+        welcome.addWidget(welcome_note)
+        welcome_connect = QPushButton('Connect vehicle')
+        welcome_connect.setStyleSheet(get_button_style('primary', 'md'))
+        welcome_connect.clicked.connect(lambda: self.connection_dialog.show())
+        welcome.addWidget(welcome_connect, alignment=Qt.AlignmentFlag.AlignLeft)
         center_layout.addWidget(self.pip_workspace, stretch=1)
 
         # Bottom Expandable Diagnostics Drawer (Collapsible for maximum map area)
         self.diag_drawer = QFrame()
         self.diag_drawer.setObjectName("DiagnosticsDrawer")
-        self.diag_drawer.setFixedHeight(180)
+        self.diag_drawer.setMinimumHeight(300)
         self.diag_drawer.setStyleSheet(f"#DiagnosticsDrawer {{ background-color: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; }}")
         dd_layout = QHBoxLayout(self.diag_drawer)
         dd_layout.setContentsMargins(6, 6, 6, 6)
@@ -685,12 +725,11 @@ class GCSWindow(QMainWindow):
         self.console_view = ConsoleView()
         dd_layout.addWidget(self.console_view, stretch=1)
 
-        center_layout.addWidget(self.diag_drawer)
-        self.diag_drawer.hide()
+
 
         # Drawer Collapse / Expand Button
         drawer_bar = QHBoxLayout()
-        self.btn_toggle_drawer = QPushButton("SHOW DIAGNOSTICS & CONSOLE")
+        self.btn_toggle_drawer = QPushButton("Diagnostics →")
         self.btn_toggle_drawer.setFixedHeight(22)
         self.btn_toggle_drawer.setStyleSheet(get_button_style('secondary', 'sm'))
         self.btn_toggle_drawer.clicked.connect(self._toggle_diagnostics_drawer)
@@ -701,13 +740,21 @@ class GCSWindow(QMainWindow):
         self.load_mbtiles_btn.setFixedHeight(22)
         self.load_mbtiles_btn.setStyleSheet(get_button_style('secondary', 'sm'))
         self.load_mbtiles_btn.clicked.connect(self.on_load_offline_mbtiles)
-        drawer_bar.addWidget(self.load_mbtiles_btn)
+
 
         self.export_kml_btn = QPushButton("EXPORT KML")
         self.export_kml_btn.setFixedHeight(22)
         self.export_kml_btn.setStyleSheet(get_button_style('secondary', 'sm'))
         self.export_kml_btn.clicked.connect(self.on_export_flight_trail)
-        drawer_bar.addWidget(self.export_kml_btn)
+        self.video_toggle_btn = QPushButton("Show video")
+        self.video_toggle_btn.setCheckable(True)
+        self.video_toggle_btn.setStyleSheet(get_button_style('secondary', 'sm'))
+        self.video_toggle_btn.toggled.connect(self._toggle_video)
+        drawer_bar.addWidget(self.video_toggle_btn)
+        map_settings = QPushButton("Map / video settings")
+        map_settings.setStyleSheet(get_button_style('secondary', 'sm'))
+        map_settings.clicked.connect(lambda: self.tabs.setCurrentWidget(self.settings_view))
+        drawer_bar.addWidget(map_settings)
 
         center_layout.addLayout(drawer_bar)
         fly_splitter.addWidget(center_container)
@@ -716,7 +763,7 @@ class GCSWindow(QMainWindow):
 
         fly_layout.addWidget(fly_splitter)
         self.tabs.addTab(fly_widget, "FLY")
-        self.fly_splitter.setSizes([350, 1000])
+        self.fly_splitter.setSizes([320, 1040])
 
         # Fallback gauges for test compatibility
         self.gauge_spd = ArcGauge("SPEED", "m/s", 0, 25, THEME['primary'])
@@ -728,12 +775,105 @@ class GCSWindow(QMainWindow):
         self.link_panel = StatPanel("LINK", [('msg_rate', 'Rate', 'Hz'), ('loss_pct', 'Loss', '%')])
 
     def _toggle_diagnostics_drawer(self):
-        if self.diag_drawer.isVisible():
-            self.diag_drawer.hide()
-            self.btn_toggle_drawer.setText("▼ SHOW DIAGNOSTICS & CONSOLE")
-        else:
-            self.diag_drawer.show()
-            self.btn_toggle_drawer.setText("▲ HIDE DIAGNOSTICS & CONSOLE")
+        self.tabs.setCurrentWidget(self.diagnostics_view)
+
+    def _toggle_video(self, visible):
+        if not visible and not self.pip_workspace.is_map_dominant:
+            self.pip_workspace.swap_views()
+        self.pip_workspace.pip_frame.setVisible(visible)
+        self.video_toggle_btn.setText('Hide video' if visible else 'Show video')
+
+    def _set_video_source(self, source):
+        self.camera_view.set_stream_source(source)
+        self.video_toggle_btn.setChecked(bool(source))
+
+    def _build_diagnostics_tab(self, connection_row, status_row):
+        t = get_theme()
+        self.diagnostics_view = QWidget()
+        page = QVBoxLayout(self.diagnostics_view)
+        page.setContentsMargins(18, 16, 18, 16)
+        page.setSpacing(16)
+        heading = QHBoxLayout()
+        title = QLabel('System diagnostics')
+        title.setStyleSheet(f"font-size: 20px; font-weight: 600; color: {t['text']};")
+        heading.addWidget(title)
+        heading.addStretch()
+        self.detach_diagnostics_btn = QPushButton('Open in second window ↗')
+        self.detach_diagnostics_btn.setStyleSheet(get_button_style('secondary', 'sm'))
+        self.detach_diagnostics_btn.clicked.connect(self._detach_diagnostics)
+        heading.addWidget(self.detach_diagnostics_btn)
+        page.addLayout(heading)
+        description = QLabel('Stream health, live plots and command acknowledgements. Flight controls stay in Fly.')
+        description.setWordWrap(True)
+        page.addWidget(description)
+        self.diagnostics_content = QWidget()
+        content = QVBoxLayout(self.diagnostics_content)
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(16)
+        overview = QHBoxLayout()
+        overview.addWidget(self.stream_health, 1)
+        details = QVBoxLayout()
+        details.addWidget(QLabel('VEHICLE & SESSION'))
+        for label in (self.ribbon_fw_pill, self.ribbon_timer_pill, self.ribbon_dist_pill):
+            status_row.removeWidget(label)
+            details.addWidget(label)
+        details.addStretch()
+        overview.addLayout(details, 1)
+        content.addLayout(overview)
+        content.addWidget(self.diag_drawer, 1)
+        self.diag_drawer.show()
+        content.addWidget(self.export_kml_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        page.addWidget(self.diagnostics_content, 1)
+        self.diagnostics_placeholder = QLabel('Diagnostics are open in the second window. Close that window to return them here.')
+        self.diagnostics_placeholder.setWordWrap(True)
+        self.diagnostics_placeholder.hide()
+        page.addWidget(self.diagnostics_placeholder)
+        self.tabs.addTab(self.diagnostics_view, 'Diagnostics')
+        self.diagnostics_window = QDialog(self, Qt.WindowType.Window)
+        self.diagnostics_window.setWindowTitle('PythonGCS — System diagnostics')
+        self.diagnostics_window.resize(1100, 760)
+        QVBoxLayout(self.diagnostics_window)
+        self.diagnostics_window.finished.connect(self._restore_diagnostics)
+
+        # Connection details are available on demand instead of occupying Fly.
+        self.connection_dialog = QDialog(self)
+        self.connection_dialog.setWindowTitle('Vehicle connection')
+        self.connection_dialog.setMinimumWidth(480)
+        form = QVBoxLayout(self.connection_dialog)
+        form.setContentsMargins(22, 22, 22, 22)
+        form.setSpacing(14)
+        form.addWidget(QLabel('Choose a connection profile, then connect to your vehicle or simulator.'))
+        for caption, widget in [('Connection profile', self.profile_combo), ('MAVLink address', self.conn_input)]:
+            connection_row.removeWidget(widget)
+            form.addWidget(QLabel(caption))
+            widget.setMaximumWidth(16777215)
+            form.addWidget(widget)
+        connection_row.removeWidget(self.conn_btn)
+        form.addWidget(self.conn_btn)
+        done = QPushButton('Done')
+        done.setStyleSheet(get_button_style('secondary', 'sm'))
+        done.clicked.connect(self.connection_dialog.accept)
+        form.addWidget(done)
+        self.connection_settings_btn = QPushButton('Connection…')
+        self.connection_settings_btn.setStyleSheet(get_button_style('secondary', 'sm'))
+        self.connection_settings_btn.clicked.connect(self.connection_dialog.show)
+        connection_row.insertWidget(2, self.connection_settings_btn)
+
+    def _detach_diagnostics(self):
+        if self.diagnostics_window.isVisible():
+            self.diagnostics_window.raise_()
+            self.diagnostics_window.activateWindow()
+            return
+        self.diagnostics_view.layout().removeWidget(self.diagnostics_content)
+        self.diagnostics_window.layout().addWidget(self.diagnostics_content)
+        self.diagnostics_placeholder.show()
+        self.diagnostics_window.show()
+
+    def _restore_diagnostics(self, _result=0):
+        self.diagnostics_window.layout().removeWidget(self.diagnostics_content)
+        self.diagnostics_view.layout().insertWidget(2, self.diagnostics_content, 1)
+        self.diagnostics_content.show()
+        self.diagnostics_placeholder.hide()
 
     def _fast_instrument_update(self):
         """High-rate 30 Hz flight attitude & PFD instrument refresh."""
@@ -1260,12 +1400,19 @@ class GCSWindow(QMainWindow):
         d = get_telemetry_snapshot()
         t = get_theme()
         connected = self.vehicle is not None
+        show_welcome = not connected and self.pip_workspace.is_map_dominant
+        self.empty_flight.setVisible(show_welcome)
+        if show_welcome:
+            self.empty_flight.move(max(12, (self.pip_workspace.width() - self.empty_flight.width()) // 2),
+                                   max(12, (self.pip_workspace.height() - self.empty_flight.height()) // 2))
+            self.empty_flight.raise_()
         state = self._update_action_states()
         fresh = state['freshness']
         live = state['live']
         armed = bool(d.get('armed'))
         first_alert = state['alerts'][0]
         extra = len(state['alerts']) - 1
+        self.alert_banner.setVisible(first_alert.severity in ('warning', 'danger'))
         self.alert_banner.setText(f"{first_alert.title}  /  {first_alert.detail}" + (f"  (+{extra} more)" if extra else ''))
         self.alert_banner.setToolTip('\n'.join(f'{a.title}: {a.detail}' for a in state['alerts']))
         self.alert_banner.setStyleSheet(get_pill_style(first_alert.severity))

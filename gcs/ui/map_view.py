@@ -26,6 +26,7 @@ MAP_HTML = """
         #map-status { position: absolute; bottom: 30px; left: 12px; z-index: 1000;
             padding: 8px 12px; background: var(--map-surface, #faf9f5); color: var(--map-text, #596153); border: 1px solid var(--map-border, #dcded3); border-radius: 6px; font-size: 11px; }
         #map-hud { display: none !important; }
+        .leaflet-top.leaflet-left { top: 64px; }
 
         /* Floating Mission Controls (Top Right) */
         #mode-controls {

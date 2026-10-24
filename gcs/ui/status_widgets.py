@@ -5,7 +5,7 @@ from gcs.ui.theme import get_theme, FONT_FAMILY_MONO
 
 
 class TelemetryStrip(QFrame):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, fields=None):
         super().__init__(parent)
         self.setObjectName('TelemetryStrip')
         t = get_theme()
@@ -15,6 +15,8 @@ class TelemetryStrip(QFrame):
         self.values = {}
         for key, title in [('alt', 'ALTITUDE · REL HOME'), ('speed', 'GROUND SPEED'),
                            ('climb', 'CLIMB RATE'), ('heading', 'HEADING'), ('home', 'DISTANCE TO HOME')]:
+            if fields is not None and key not in fields:
+                continue
             column = QVBoxLayout()
             label = QLabel(title)
             label.setStyleSheet(f"color: {t['text_muted']}; font-size: 10px; font-weight: 600;")
@@ -34,6 +36,8 @@ class TelemetryStrip(QFrame):
             'home': (connected and fresh['position_valid'] and home_distance is not None, home_distance or 0, '.0f', 'm'),
         }
         for key, (valid, number, fmt, unit) in entries.items():
+            if key not in self.values:
+                continue
             self.values[key].setText(f'{number:{fmt}} {unit}' if valid else '—')
             self.values[key].setToolTip('Current telemetry' if valid else 'No fresh, valid source available')
 

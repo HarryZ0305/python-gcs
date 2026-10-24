@@ -343,15 +343,15 @@ class InstrumentContainer(QFrame):
         header = QHBoxLayout()
         header.setContentsMargins(4, 2, 4, 2)
         
-        title = QLabel("FLIGHT ATTITUDE & PFD")
+        title = QLabel("Attitude")
         title.setStyleSheet(f"color: {t['primary']}; font-family: {FONT_FAMILY_PRIMARY}; font-size: 11px; font-weight: 700; border: none; background: transparent;")
         header.addWidget(title)
         header.addStretch(1)
 
         # View Toggle Buttons
-        self.btn_pfd = QPushButton("2D PFD")
+        self.btn_pfd = QPushButton("2D")
         self.btn_pfd.setFixedHeight(22)
-        self.btn_3d = QPushButton("3D CAD")
+        self.btn_3d = QPushButton("3D")
         self.btn_3d.setFixedHeight(22)
 
         toggle_btn_style = f"""

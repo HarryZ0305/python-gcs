@@ -17,7 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "windows" if sys.platform == 'win32' el
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--no-sandbox --disable-gpu")
 os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QSettings, QTimer
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtTest import QTest
 from gcs.ui.gui import GCSWindow
@@ -31,7 +31,9 @@ def main():
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     app = QApplication(sys.argv)
-    win = GCSWindow()
+    settings = QSettings(str(output / 'capture-preferences.ini'), QSettings.Format.IniFormat)
+    settings.setValue('appearance/dark', False)
+    win = GCSWindow(settings=settings)
     win.voice_enabled = False
     win.timer.stop()
     win.fast_timer.stop()
@@ -52,6 +54,14 @@ def main():
         QTest.qWait(300)
         app.processEvents()
         win.grab().save(str(output / "fly-disconnected.png"))
+        win.tabs.setCurrentWidget(win.diagnostics_view)
+        QTest.qWait(200)
+        win.grab().save(str(output / 'diagnostics.png'))
+        win._detach_diagnostics()
+        QTest.qWait(200)
+        win.diagnostics_window.grab().save(str(output / 'diagnostics-second-window.png'))
+        win.diagnostics_window.close()
+        win.tabs.setCurrentIndex(0)
         print(f"Window: {win.width()} x {win.height()}", flush=True)
         now = time.monotonic()
         telemetry_data.update({

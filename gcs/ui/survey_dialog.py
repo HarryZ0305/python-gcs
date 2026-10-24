@@ -1,3 +1,4 @@
+from gcs.ui.theme import get_theme
 import math
 from typing import List, Tuple
 from PyQt6.QtWidgets import (
@@ -6,15 +7,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-THEME = {
-    'bg': '#f5f7fa',
-    'panel_bg': '#ffffff',
-    'panel_border': '#cbd5e1',
-    'primary': '#0b57d0',
-    'success': '#0f9d58',
-    'muted': '#5f6368',
-    'dark_text': '#0f172a',
-}
 
 class SurveyGridDialog(QDialog):
     """
@@ -32,27 +24,27 @@ class SurveyGridDialog(QDialog):
 
         self.setWindowTitle("Aerial Survey Grid Generator")
         self.setFixedSize(400, 380)
-        self.setStyleSheet(f"background-color: {THEME['bg']}; font-family: Google Sans Code;")
+        self.setStyleSheet(f"background-color: {get_theme()['bg']}; font-family: Segoe UI;")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)
 
         title = QLabel("SURVEY GRID GENERATOR")
-        title.setStyleSheet(f"color: {THEME['primary']}; font-size: 13px; font-weight: bold;")
+        title.setStyleSheet(f"color: {get_theme()['primary']}; font-size: 13px; font-weight: bold;")
         layout.addWidget(title)
 
         sub = QLabel("Auto-generates lawnmower survey flight lines for mapping:")
-        sub.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px;")
+        sub.setStyleSheet(f"color: {get_theme()['text_muted']}; font-size: 11px;")
         layout.addWidget(sub)
 
         form_frame = QFrame()
-        form_frame.setStyleSheet(f"background: {THEME['panel_bg']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;")
+        form_frame.setStyleSheet(f"background: {get_theme()['surface']}; border: 1px solid {get_theme()['border']}; border-radius: 8px;")
         fl = QGridLayout(form_frame)
         fl.setContentsMargins(12, 12, 12, 12)
         fl.setSpacing(8)
 
-        lbl_style = f"color: {THEME['dark_text']}; font-size: 11px; font-weight: bold;"
+        lbl_style = f"color: {get_theme()['text']}; font-size: 11px; font-weight: bold;"
 
         l0 = QLabel("Width (m):")
         l0.setStyleSheet(lbl_style)
@@ -90,7 +82,7 @@ class SurveyGridDialog(QDialog):
         layout.addWidget(form_frame)
 
         self.stats_lbl = QLabel("Estimated: 0 waypoints")
-        self.stats_lbl.setStyleSheet(f"color: {THEME['muted']}; font-size: 11px;")
+        self.stats_lbl.setStyleSheet(f"color: {get_theme()['text_muted']}; font-size: 11px;")
         layout.addWidget(self.stats_lbl)
 
         # Wire spin changes to update estimate
@@ -102,12 +94,12 @@ class SurveyGridDialog(QDialog):
         btn_box = QHBoxLayout()
         cancel_btn = QPushButton("CANCEL")
         cancel_btn.setFixedHeight(34)
-        cancel_btn.setStyleSheet(f"background: {THEME['panel_bg']}; color: {THEME['muted']}; border: 1px solid {THEME['panel_border']}; border-radius: 4px; font-weight: bold; font-family: Google Sans Code;")
+        cancel_btn.setStyleSheet(f"background: {get_theme()['surface']}; color: {get_theme()['text_muted']}; border: 1px solid {get_theme()['border']}; border-radius: 4px; font-weight: bold; font-family: Segoe UI;")
         cancel_btn.clicked.connect(self.reject)
 
         gen_btn = QPushButton("GENERATE GRID")
         gen_btn.setFixedHeight(34)
-        gen_btn.setStyleSheet(f"background: {THEME['success']}; color: #ffffff; border: none; border-radius: 4px; font-weight: bold; font-family: Google Sans Code;")
+        gen_btn.setStyleSheet(f"background: {get_theme()['success']}; color: #ffffff; border: none; border-radius: 4px; font-weight: bold; font-family: Segoe UI;")
         gen_btn.clicked.connect(self.generate_grid)
 
         btn_box.addWidget(cancel_btn)

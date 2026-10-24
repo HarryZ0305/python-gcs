@@ -9,13 +9,16 @@ A modern, high-performance desktop Ground Control Station (GCS) engineered nativ
 
 ---
 
-![Python GCS light-theme project preview](design/project-overview-light.png)
+![Python GCS focused flight workspace](design/fly-workspace.png)
 
-*Read-only project showcase with sample telemetry and a local-coordinate mission illustration; no aircraft is connected.*
+*Actual desktop flight workspace, shown disconnected. Detailed telemetry and logs
+have a dedicated Diagnostics view that can open in a second window.*
+
+Read the [interface design and ground station comparison](docs/interface-design.md).
 
 ## Architecture & Workspaces
 
-PythonGCS organizes tactical workflows into five dedicated, purpose-built workspaces:
+PythonGCS organizes workflows into six dedicated workspaces:
 
 ### 1. FLY — Tactical Operations & Picture-in-Picture Workspace
 - **Aviation-Grade Primary Flight Display (PFD)**: High-performance 2D PFD rendered at 30 Hz via native `QPainter` with artificial horizon, pitch ladder, roll bank pointer, rolling airspeed/altitude tapes, heading compass ribbon, vertical speed/climb rate indicator, and 1-click toggle to 3D CAD visualization.
@@ -47,10 +50,15 @@ PythonGCS organizes tactical workflows into five dedicated, purpose-built worksp
 - **Historical Log Review**: Imported CSV plots are explicitly labelled as historical review, separate from live telemetry and vehicle controls. Full flight replay is not implemented.
 
 ### 5. SETTINGS — Ground Station Preferences
-- **Appearance & Themes**: White panels and soft neutral-gray backgrounds by default, with blue accents and an optional dark theme.
+- **Appearance & Themes**: Ivory panels, warm neutral backgrounds and sage accents by default, with an optional dark theme.
 - **Video Stream Configuration**: Configurable RTSP, UDP, HTTP, USB camera index, or test pattern stream.
 - **Battery Chemistry Presets**: Configurable LiPo cell count (1S through 12S) and per-cell warning/critical voltage thresholds.
 - **Offline Maps & MBTiles**: Browse and mount offline `.mbtiles` raster packages or reset to cached OpenStreetMap.
+
+### 6. DIAGNOSTICS — System Health & Command History
+- Independent telemetry stream freshness, vehicle/session details, altitude/speed plots and the MAVLink acknowledgment log.
+- **Open in second window** keeps detailed monitoring on another display; closing the window restores the same live widgets to the Diagnostics tab.
+- Flight-trail KML export is available here. Connection setup and additional pilot controls open on demand, keeping Fly focused.
 
 ---
 
