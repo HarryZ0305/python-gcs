@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta
       name="description"
-      content="PythonGCS: a focused desktop ground control station for PX4. Explore the interface, try a browser simulation, and get the source."
+      content="Custom drone GCS with OpenStreetMap, mission planning, and experimental 3D attitude. PX4/Gazebo integration and real-aircraft validation are work in progress."
     />
-    <meta name="gcs-web-version" content="focused-workspaces-1" />
+    <meta name="gcs-web-version" content="feature-status-2" />
     <title>PythonGCS — Clearer ground control</title>
     <link rel="stylesheet" href="assets/site.css?v=3" />
   </head>
-  <body data-release="focused-workspaces-1">
+  <body data-release="feature-status-2">
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="wrap header-inner">
@@ -148,11 +148,13 @@
         <div class="wrap start-layout">
           <div>
             <p class="eyebrow">Run it locally</p>
-            <h2>Start with the simulator.</h2>
+            <h2>Develop with the simulator.</h2>
             <p class="muted">
               Python 3.9+ and a PX4 SITL instance are required for the desktop
-              workflow. Once it is running, open <strong>Connection…</strong>,
-              select your profile, and connect.
+              workflow. PX4/Gazebo integration and real-aircraft validation are
+              <strong>work in progress</strong>. Install the simulator
+              separately; desktop connection code is available for development
+              testing.
             </p>
             <div class="actions">
               <a
@@ -172,14 +174,62 @@ python main.py</code></pre>
       </section>
       <section class="section">
         <div class="wrap">
+          <h2 id="project-status">Built so far. Still in progress.</h2>
+          <p class="muted">
+            Customized drone GCS with OpenStreetMap, improved mission planning,
+            and an experimental telemetry-driven 3D attitude viewer.
+          </p>
+          <details open>
+            <summary>PX4 connections & Gazebo — work in progress</summary>
+            <p>
+              The desktop has MAVLink connection and telemetry code.
+              Real-aircraft validation and complete PX4/Gazebo integration are
+              <strong>work in progress</strong>. Gazebo is installed separately.
+              Browser aircraft connections are
+              <strong>planned work in progress, not implemented yet</strong>;
+              the current demo uses generated data.
+            </p>
+          </details>
+          <details>
+            <summary>
+              3D attitude — experimental; validation in progress
+            </summary>
+            <p>
+              The desktop has a telemetry-driven aircraft attitude viewer that
+              requires WebGL. Graphics and flight validation are
+              <strong>work in progress</strong>. 3D terrain reconstruction is
+              <strong>planned work in progress, not implemented yet</strong>.
+            </p>
+          </details>
+          <details>
+            <summary>
+              Advanced autonomy & replay — planned work in progress
+            </summary>
+            <p>
+              Local mission editing, survey grids, a supported .plan subset, and
+              historical CSV review are implemented. Terrain following, geofence
+              editing, calibration wizards, broader mission formats, and full
+              flight-log replay are <strong>planned work in progress</strong>.
+              <a
+                href="https://github.com/HarryZ0305/python-gcs/blob/main/docs/feature-status.md"
+                >See feature status and implementation evidence</a
+              >.
+            </p>
+          </details>
+        </div>
+      </section>
+      <section class="section">
+        <div class="wrap">
           <h2>A few useful distinctions.</h2>
           <details>
             <summary>Is the browser demo connected to an aircraft?</summary>
             <p>
               No. It is a local browser simulation for exploring the interface.
               Its flight motion, readings, video illustration, and event log are
-              generated in your browser. PX4 / Gazebo flight simulation and real
-              MAVLink connections use the desktop app.
+              generated in your browser. Browser aircraft connections are
+              <strong>work in progress (planned, not implemented yet)</strong>.
+              Desktop MAVLink code exists; real-aircraft validation and complete
+              PX4/Gazebo integration remain <strong>work in progress</strong>.
             </p>
           </details>
           <details>

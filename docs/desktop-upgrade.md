@@ -107,7 +107,12 @@ or local-HTTP dependency. Basemap imagery still requires cached tiles or MBTiles
 
 ## Remaining flight acceptance
 
-PX4 SITL/Gazebo and hardware flight behavior were not validated in this session.
+**Work in progress:** Complete PX4 SITL/Gazebo acceptance and real-aircraft
+connection/flight validation remain unfinished. Desktop MAVLink transport code is
+implemented; this is distinct from a validated physical-aircraft connection.
+See [feature status and evidence](feature-status.md) for the current scope.
+PX4 SITL/Gazebo and hardware flight behavior were not validated in the original
+desktop-upgrade session described by this document.
 Before hardware use, verify on the intended PX4 release:
 
 1. Connect/reconnect/reboot, vehicle identity, HOME_POSITION and stream freshness.
@@ -118,8 +123,9 @@ Before hardware use, verify on the intended PX4 release:
 6. Actual RTSP/USB start, source replacement and shutdown with installed codecs.
 7. Offline MBTiles, Windows DPI scaling, theme changes and packaged startup.
 
-This change does not implement terrain following, geofence editing, calibration
-wizards, full QGC ComplexItem support or complete flight-log replay. The existing
+**Planned work in progress:** Terrain following, geofence editing, calibration
+wizards, full QGC ComplexItem support and complete flight-log replay are not
+implemented yet. The existing
 trajectory recording/export path still needs an end-to-end recording audit. GCS
 battery alert settings do not configure PX4 failsafes. Tests and sample screenshots
 do not establish flight readiness.

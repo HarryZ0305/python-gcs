@@ -7,18 +7,19 @@
       name="description"
       content="Explore the six PythonGCS workspaces in a clearly labeled browser-only simulation. No aircraft connection required."
     />
-    <meta name="gcs-web-version" content="focused-workspaces-1" />
+    <meta name="gcs-web-version" content="feature-status-2" />
     <title>PythonGCS — Browser demo</title>
     <link rel="stylesheet" href="assets/site.css?v=3" />
   </head>
-  <body data-release="focused-workspaces-1">
+  <body data-release="feature-status-2">
     <a class="skip-link" href="#main">Skip to workspace</a>
     <header class="app-header">
       <a href="./" class="brand">PythonGCS</a
       ><span class="badge">Browser simulation</span
       ><span class="muted">Generated data · No aircraft connected</span>
       <div class="right">
-        <a href="guide/">Screen guide</a
+        <a href="./#project-status">Work in progress</a
+        ><a href="guide/">Screen guide</a
         ><button type="button" data-open="preflight-dialog">Preflight</button>
       </div>
     </header>
@@ -280,7 +281,8 @@
             <h1>Vehicle parameters.</h1>
             <p>
               Read-only examples of the desktop parameter workflow. The browser
-              does not read or write a flight controller.
+              uses example parameters today. Browser parameter read/write is
+              work in progress (planned, not implemented yet).
             </p>
           </div>
           <a class="button" href="guide/#03-vehicle">Desktop parameter guide</a>
@@ -484,8 +486,15 @@
               ><span>Position & attitude</span><span>Generated locally</span
               ><span>Battery</span><span>Illustrative model</span
               ><span>Video</span><span>Generated test view</span
-              ><span>PX4 / Gazebo</span><span>Use desktop app</span>
+              ><span>PX4 / Gazebo</span
+              ><span>Integration work in progress</span>
             </div>
+            <p class="subtle-line">
+              Desktop MAVLink connection code is implemented; real-aircraft
+              validation is work in progress. Browser aircraft connections are
+              planned work in progress and are not implemented yet.
+              <a href="./#project-status">Project status →</a>
+            </p>
           </div>
           <div class="panel">
             <h2>Demo state</h2>
@@ -540,6 +549,11 @@
       <h2>Before you fly.</h2>
       <p>
         This page is a browser simulation, so it cannot assess a real aircraft.
+      </p>
+      <p>
+        Connecting this browser to actual PX4 is work in progress (planned, not
+        implemented yet). Desktop hardware and complete PX4/Gazebo validation
+        are also work in progress.
       </p>
       <ul class="check-list">
         <li><strong>Data source:</strong> local browser model</li>

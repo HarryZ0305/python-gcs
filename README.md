@@ -8,6 +8,21 @@ A Python desktop ground control station for PX4 and MAVLink multirotors. A focus
 
 Ivory panels, warm gray backgrounds, sage accents, and a system font are the default. Video and additional pilot controls open on demand. Diagnostics can move to a second window for another display.
 
+## Implementation status
+
+**Project description:** Customized drone GCS with OpenStreetMap, improved mission planning, and an experimental telemetry-driven 3D attitude viewer; PX4/Gazebo integration and real-aircraft validation are work in progress.
+
+| Capability                                       | Current status                                                                                                                                                                                            |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenStreetMap and mission planning               | **Implemented in the desktop app.** Map tiles, local mission editing, survey generation, and the supported `.plan` subset have code paths and software checks.                                            |
+| Actual PX4 connection                            | **Connection code implemented; real-aircraft validation work in progress.** MAVLink transports and telemetry exist. Protocol tests do not establish flight readiness.                                     |
+| Gazebo / PX4 SITL                                | **Integration and end-to-end acceptance work in progress.** Targets a separately configured simulator; Gazebo is not bundled or launched by the GCS.                                                      |
+| Telemetry-driven 3D aircraft attitude            | **Experimental implementation; graphics and flight validation work in progress.** Requires WebGL. Displays aircraft orientation, not reconstructed 3D terrain.                                            |
+| Browser aircraft connection and parameter writes | **Work in progress — planned, not implemented yet.** The current demo generates local data and sends no MAVLink commands.                                                                                 |
+| Broader autonomy, 3D mapping and full replay     | **Work in progress — planned extensions.** Terrain following, geofence editing, calibration wizards, broader mission formats, terrain reconstruction, and full flight-log replay are not implemented yet. |
+
+See [feature status and evidence](docs/feature-status.md). Work-in-progress labels identify unfinished scope, including planned work; they do not mean a feature is already available or has a committed delivery date.
+
 ## Six workspaces
 
 | View            | Main features                                                                                                                         |
@@ -25,7 +40,7 @@ The [screen guide](https://harryz0305.github.io/python-gcs/guide/) shows the six
 
 Open the [browser demo](https://harryz0305.github.io/python-gcs/web_gcs.html) and choose **Run sample flight**. Explore the six views, edit a local route, generate a survey, view charts, and open the diagnostics monitor in another window.
 
-The demo generates its motion, readings, events, and test video locally. It does not connect to an aircraft or PX4/Gazebo. Example parameters are read-only. Routes are session-only; appearance and flight preferences are stored locally when available.
+The demo generates its motion, readings, events, and test video locally. Browser connections to actual PX4, Gazebo, or an aircraft and browser parameter read/write are **work in progress (planned, not implemented yet)**. Today's demo sends no aircraft commands and uses read-only example parameters. Routes are session-only; appearance and flight preferences are stored locally when available.
 
 The demo imports a deliberately narrow `.plan` subset: an auto-continuing home takeoff, waypoints with the default acceptance radius and no commanded yaw, and a home landing in relative-altitude frame. Takeoff altitude must match the first waypoint. Coordinates are displayed as offsets from the imported planned home; the browser does not reproduce geographic terrain or flight physics. Unsupported semantics cancel import.
 
@@ -40,7 +55,7 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-For PX4 simulation, start the simulator from a configured [PX4-Autopilot](https://github.com/PX4/PX4-Autopilot) source checkout:
+**PX4/Gazebo integration is work in progress.** For development testing, install and configure the simulator separately, then start it from a configured [PX4-Autopilot](https://github.com/PX4/PX4-Autopilot) source checkout:
 
 ```bash
 make px4_sitl gz_x500
@@ -60,9 +75,9 @@ Configure RTSP, UDP, HTTP, USB, or a test pattern in **Settings**. Show video in
 
 ### Scope and validation
 
-The desktop supports a documented subset of home-relative takeoff, waypoint, and landing missions. Unsupported commands, complex items, frames, custom parameters, fences, and rally points cancel import. Historical CSV review is not full flight replay. Optional 3D attitude depends on WebGL availability.
+The desktop supports a documented subset of home-relative takeoff, waypoint, and landing missions. Broader mission support is **work in progress**; unsupported commands, complex items, frames, custom parameters, fences, and rally points currently cancel import. Historical CSV review is implemented; full flight-log replay is **work in progress (planned)**. Optional 3D attitude is **experimental**, depends on WebGL, and still needs graphics/flight validation.
 
-Automated checks cover software behavior; simulator and hardware acceptance remain separate work. Read the [implementation and validation notes](docs/desktop-upgrade.md) and [interface design comparison](docs/interface-design.md) for details.
+Automated checks cover software behavior; complete simulator and real-aircraft acceptance are **work in progress**. Read the [feature status](docs/feature-status.md), [implementation and validation notes](docs/desktop-upgrade.md), and [interface design comparison](docs/interface-design.md) for details.
 
 ## Development
 
