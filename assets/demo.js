@@ -739,12 +739,10 @@ $("export-csv").addEventListener("click", () => {
   }
   download(
     "pythongcs-demo.csv",
-    "Time_Sec,Alt_Rel_m,Groundspeed_ms,Climb_ms,Voltage_V,Packet_Loss_pct\n" +
+    "Time_Sec,Alt_Rel_m,Groundspeed_ms\n" +
       data
         .map((r) =>
-          [r.time, r.alt, r.speed, r.climb || 0, r.voltage || 16.2, 0]
-            .map((v) => Number(v).toFixed(3))
-            .join(","),
+          [r.time, r.alt, r.speed].map((v) => Number(v).toFixed(3)).join(","),
         )
         .join("\n"),
     "text/csv",
@@ -784,7 +782,13 @@ $("load-csv").addEventListener("change", async (e) => {
     const rows = lines.map((line) => {
       const values = line.split(","),
         [time, alt, speed] = indices.map((i) => Number(values[i]));
-      if (![time, alt, speed].every(Number.isFinite) || alt < 0 || speed < 0)
+      if (
+        indices.some((i) => !values[i]?.trim()) ||
+        ![time, alt, speed].every(Number.isFinite) ||
+        time < 0 ||
+        alt < 0 ||
+        speed < 0
+      )
         throw Error("CSV contains invalid numeric data.");
       return { time, alt, speed };
     });
@@ -846,10 +850,11 @@ window.addEventListener("keydown", (e) => {
     !model.armed ||
     model.alt < 1 ||
     document.querySelector("dialog[open]") ||
-    e.target.matches("input,select,textarea,button,a,[contenteditable=true]")
+    e.target.matches("input,select,textarea,[contenteditable=true]")
   )
     return;
   const key = e.key.toLowerCase();
+  if (key === " " && e.target.matches("button,a")) return;
   if ("wasdq eik".replaceAll(" ", "").includes(key) || key === " ") {
     e.preventDefault();
     if (key === " ") {
