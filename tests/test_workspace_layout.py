@@ -80,3 +80,29 @@ def test_hiding_video_restores_map_as_primary_view(window):
     win.video_toggle_btn.setChecked(False)
     assert win.pip_workspace.is_map_dominant
     assert not win.pip_workspace.pip_frame.isVisible()
+
+
+def test_original_3d_model_map_and_gazebo_profile_remain_accessible(window, monkeypatch):
+    import gcs.ui.flight_instruments as instruments
+    class AttitudeStub(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.samples = []
+        def update_attitude(self, *values):
+            self.samples.append(values)
+    monkeypatch.setattr(instruments, 'AttitudeView', AttitudeStub)
+    win = window
+    card = win.instrument_container
+    card.btn_3d.click()
+    assert card.stack.currentWidget() is card.cad_view
+    card.update_attitude(.1, .2, .3, 20, 5, is_stale=False)
+    assert card.cad_view.samples[-1] == (.1, .2, .3, 20, 5)
+    model = card.cad_view
+    card.btn_pfd.click()
+    card.btn_3d.click()
+    assert card.cad_view is model
+    assert win.pip_workspace.is_map_dominant
+    profiles = [(win.profile_combo.itemText(i), win.profile_combo.itemData(i))
+                for i in range(win.profile_combo.count())]
+    assert any('Gazebo' in label and uri == 'udpin:0.0.0.0:14540' for label, uri in profiles)
+    assert win.map_view.isVisibleTo(win)

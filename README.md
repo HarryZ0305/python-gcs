@@ -10,18 +10,26 @@ Ivory panels, warm gray backgrounds, sage accents, and a system font are the def
 
 ## Implementation status
 
-**Project description:** Customized drone GCS with OpenStreetMap, improved mission planning, an experimental telemetry-driven 3D attitude viewer, and implemented Gazebo/PX4 SITL simulation integration; real-aircraft validation remains work in progress.
+**Project description:** Customized drone GCS with OpenStreetMap, improved mission planning, a telemetry-driven 3D attitude viewer, and implemented Gazebo/PX4 SITL simulation integration; real-aircraft validation remains work in progress.
 
 | Capability                                       | Current status                                                                                                                                                                                            |
 | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | OpenStreetMap and mission planning               | **Implemented in the desktop app.** Map tiles, local mission editing, survey generation, and the supported `.plan` subset have code paths and software checks.                                            |
 | Actual PX4 connection                            | **Connection code implemented; real-aircraft validation work in progress.** MAVLink transports and telemetry exist. Protocol tests do not establish flight readiness.                                     |
 | Gazebo / PX4 SITL                                | **Implemented desktop Gazebo/PX4 SITL simulation integration.** Connects over MAVLink to a separately running simulator. Additional regression testing is separate from implementation status.            |
-| Telemetry-driven 3D aircraft attitude            | **Experimental implementation; graphics and flight validation work in progress.** Requires WebGL. Displays aircraft orientation, not reconstructed 3D terrain.                                            |
+| Telemetry-driven 3D aircraft attitude            | **Implemented.** Original Three.js aircraft attitude model, driven by roll/pitch/yaw; requires WebGL. Also available in the browser demo with generated telemetry.                                        |
 | Browser aircraft connection and parameter writes | **Work in progress — planned, not implemented yet.** The current demo generates local data and sends no MAVLink commands.                                                                                 |
 | Broader autonomy, 3D mapping and full replay     | **Work in progress — planned extensions.** Terrain following, geofence editing, calibration wizards, broader mission formats, terrain reconstruction, and full flight-log replay are not implemented yet. |
 
 See [feature status and evidence](docs/feature-status.md). Work-in-progress labels identify unfinished scope, including planned work; they do not mean a feature is already available or has a committed delivery date.
+
+## Find your existing features
+
+| Feature               | Desktop                                                   | Browser demo                                                                                                                         |
+| --------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **3D attitude model** | Fly → Attitude → **3D model**                             | Fly → **3D model** (default); drag to orbit, scroll to zoom.                                                                         |
+| **OpenStreetMap**     | Fly and Plan maps                                         | Fly and Plan maps; **OpenStreetMap** toggles the local-grid fallback.                                                                |
+| **Gazebo / PX4 SITL** | **Connection… → PX4 SITL / Gazebo (UDP 14540) → Connect** | **Gazebo / PX4 SITL** in the header explains how to open your existing desktop integration. Hosted demo telemetry remains generated. |
 
 ## Six workspaces
 
@@ -75,7 +83,7 @@ Configure RTSP, UDP, HTTP, USB, or a test pattern in **Settings**. Show video in
 
 ### Scope and validation
 
-The desktop supports a documented subset of home-relative takeoff, waypoint, and landing missions. Broader mission support is **work in progress**; unsupported commands, complex items, frames, custom parameters, fences, and rally points currently cancel import. Historical CSV review is implemented; full flight-log replay is **work in progress (planned)**. Optional 3D attitude is **experimental**, depends on WebGL, and still needs graphics/flight validation.
+The desktop supports a documented subset of home-relative takeoff, waypoint, and landing missions. Broader mission support is **work in progress**; unsupported commands, complex items, frames, custom parameters, fences, and rally points currently cancel import. Historical CSV review is implemented; full flight-log replay is **work in progress (planned)**. The original 3D attitude model is implemented and depends on WebGL. Rendering failures in a capture environment do not change its implementation status.
 
 Automated checks cover software behavior; real-aircraft acceptance is **work in progress**. Existing Gazebo/PX4 SITL integration remains implemented; this documentation review did not repeat a full simulator regression run. Read the [feature status](docs/feature-status.md), [implementation and validation notes](docs/desktop-upgrade.md), and [interface design comparison](docs/interface-design.md) for details.
 

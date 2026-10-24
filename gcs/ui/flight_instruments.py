@@ -351,7 +351,8 @@ class InstrumentContainer(QFrame):
         # View Toggle Buttons
         self.btn_pfd = QPushButton("2D")
         self.btn_pfd.setFixedHeight(22)
-        self.btn_3d = QPushButton("3D")
+        self.btn_3d = QPushButton("3D model")
+        self.btn_3d.setToolTip("Show your 3D drone attitude model using live roll, pitch and yaw")
         self.btn_3d.setFixedHeight(22)
 
         toggle_btn_style = f"""

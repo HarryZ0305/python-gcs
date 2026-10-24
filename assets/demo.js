@@ -16,6 +16,7 @@ import {
   validatePoints,
   bounded,
 } from "./demo-model.js?v=3";
+import { geographicViews, attitudeModel } from "./flight-views.js?v=6";
 const $ = (id) => document.getElementById(id),
   clone = (x) => structuredClone(x);
 const query = new URLSearchParams(location.search),
@@ -365,6 +366,10 @@ $("toggle-trail").addEventListener("click", () => {
   render();
 });
 $("fit-map").addEventListener("click", () => {
+  geographic?.fit(
+    model.armed && model.route.length ? model.route : applied,
+    model,
+  );
   mapSVG($("flight-map"), applied);
   message("Map fitted to the demo route and aircraft.");
 });
@@ -377,7 +382,35 @@ function changeDraft(next) {
   renderPlan();
 }
 function draftMatches() {
+  // Draft equality is independent of the selected map renderer.
   return JSON.stringify(draft) === JSON.stringify(applied);
+}
+const geographic = geographicViews(HOME, (p) =>
+  run(() =>
+    changeDraft([
+      ...draft,
+      { ...p, alt: Number($("takeoff-alt").value) || 20 },
+    ]),
+  ),
+);
+const droneModel = attitudeModel($("attitude-model"));
+for (const mode of ["2d", "3d"])
+  $(`attitude-${mode}`).addEventListener("click", () => {
+    $("attitude").hidden = mode !== "2d";
+    $("attitude-model").hidden = mode !== "3d";
+    $("attitude-2d").setAttribute("aria-pressed", String(mode === "2d"));
+    $("attitude-3d").setAttribute("aria-pressed", String(mode === "3d"));
+    if (mode === "3d") droneModel?.resize();
+    render();
+  });
+if (!geographic) {
+  document
+    .querySelectorAll(".geographic-map")
+    .forEach((e) => (e.hidden = true));
+  document.querySelectorAll('[id$="-map-mode"]').forEach((b) => {
+    b.disabled = true;
+    b.textContent = "Local grid";
+  });
 }
 function renderPlan() {
   const body = $("waypoint-list");
@@ -461,6 +494,7 @@ function renderPlan() {
   $("apply-plan").disabled = !draft.length || draftMatches();
   $("export-plan").disabled = !draft.length;
   mapSVG($("plan-map"), draft, true);
+  geographic?.update("plan", draft, model);
 }
 $("undo-plan").addEventListener("click", () =>
   run(() => {
@@ -936,9 +970,19 @@ function render() {
       model.armed && model.route.length ? model.route : applied,
     );
     horizon($("attitude"));
+    droneModel?.update(state);
+    geographic?.update(
+      "flight",
+      model.armed && model.route.length ? model.route : applied,
+      state,
+      showTrail,
+    );
     if (video) horizon($("test-video"), true);
   }
-  if (active === "plan") mapSVG($("plan-map"), draft, true);
+  if (active === "plan") {
+    mapSVG($("plan-map"), draft, true);
+    geographic?.update("plan", draft, state);
+  }
   if (active === "analyze") drawGraphs();
 }
 if (monitor) {

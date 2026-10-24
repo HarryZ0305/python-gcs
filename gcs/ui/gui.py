@@ -74,7 +74,7 @@ THEME = {
 }
 
 CONNECTION_PROFILES = [
-    ("PX4 SITL (UDP 14540)", "udpin:0.0.0.0:14540"),
+    ("PX4 SITL / Gazebo (UDP 14540)", "udpin:0.0.0.0:14540"),
     ("QGC Port (UDP 14550)", "udpin:0.0.0.0:14550"),
     ("TCP Local (5760)", "tcp:127.0.0.1:5760"),
     ("Serial Radio (COM3 57600)", "com3:57600"),
@@ -681,6 +681,7 @@ class GCSWindow(QMainWindow):
         center_layout.addWidget(self.telemetry_strip)
 
         self.map_view = MapView(planning=False)
+        self.map_view.setToolTip('OpenStreetMap with live vehicle position, mission and flight trail')
         self.map_view.goto_requested.connect(self.on_map_goto_requested)
 
         self.camera_view = CameraView()

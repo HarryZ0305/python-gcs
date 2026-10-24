@@ -397,9 +397,9 @@
   },
   {
     "slug": "17-3d-attitude",
-    "title": "17 / Experimental 3D attitude mode",
+    "title": "17 / 3D attitude model",
     "path": "Open: Fly \u2192 Attitude \u2192 3D",
-    "note": "Experimental implementation \u00b7 WebGL rendering was unavailable in this capture environment \u00b7 Graphics and flight validation are work in progress; 3D terrain reconstruction is planned, not implemented yet.",
+    "note": "Implemented original 3D attitude model \u00b7 The earlier capture environment could not render WebGL; that was a capture limitation, not a missing feature. Also restored in the browser demo.",
     "features": [
       {
         "title": "2D / 3D selector",
@@ -407,7 +407,7 @@
       },
       {
         "title": "3D renderer area",
-        "detail": "Telemetry-driven aircraft orientation requires WebGL. Rendering and flight validation are work in progress. This is not 3D terrain reconstruction."
+        "detail": "Original drone attitude model, driven by roll/pitch/yaw. Requires WebGL; select Fly \u2192 3D model. Browser demo uses generated telemetry."
       }
     ]
   }

@@ -7,18 +7,22 @@
       name="description"
       content="Explore the six PythonGCS workspaces in a clearly labeled browser-only simulation. No aircraft connection required."
     />
-    <meta name="gcs-web-version" content="feature-status-3" />
+    <meta name="gcs-web-version" content="preserved-flight-features-4" />
     <title>PythonGCS — Browser demo</title>
-    <link rel="stylesheet" href="assets/site.css?v=3" />
+    <link rel="stylesheet" href="assets/site.css?v=6" />
+    <link rel="stylesheet" href="gcs/ui/static/leaflet.css" />
+    <script src="gcs/ui/static/leaflet.js"></script>
+    <script src="gcs/ui/static/three.min.js"></script>
   </head>
-  <body data-release="feature-status-3">
+  <body data-release="preserved-flight-features-4">
     <a class="skip-link" href="#main">Skip to workspace</a>
     <header class="app-header">
       <a href="./" class="brand">PythonGCS</a
       ><span class="badge">Browser simulation</span
       ><span class="muted">Generated data · No aircraft connected</span>
       <div class="right">
-        <a href="./#project-status">Work in progress</a
+        <button data-open="gazebo-dialog">Gazebo / PX4 SITL</button>
+        <a href="./#project-status">Feature status</a
         ><a href="guide/">Screen guide</a
         ><button type="button" data-open="preflight-dialog">Preflight</button>
       </div>
@@ -96,12 +100,29 @@
         <div class="fly-layout">
           <aside class="flight-rail">
             <div class="panel">
-              <h2>Attitude</h2>
+              <div class="attitude-heading">
+                <h2>Attitude</h2>
+                <div>
+                  <button id="attitude-2d" aria-pressed="false">2D</button
+                  ><button id="attitude-3d" aria-pressed="true">
+                    3D model
+                  </button>
+                </div>
+              </div>
               <canvas
                 id="attitude"
                 class="instrument"
                 aria-label="Simulated artificial horizon and heading"
+                hidden
               ></canvas>
+              <div
+                id="attitude-model"
+                class="instrument"
+                role="img"
+                aria-label="3D drone attitude model"
+              >
+                <p id="attitude-model-status" class="tiny"></p>
+              </div>
               <div class="tiny" id="heading-readout">
                 Heading 000° · Simulated
               </div>
@@ -168,6 +189,11 @@
               </div>
             </div>
             <div class="map-area" id="flight-map-area">
+              <div
+                id="flight-osm"
+                class="geographic-map"
+                aria-label="OpenStreetMap flight map"
+              ></div>
               <svg
                 id="flight-map"
                 viewBox="0 0 900 520"
@@ -175,6 +201,9 @@
                 aria-label="Local simulation map with home, planned route, aircraft and flight trail"
               ></svg>
               <div class="map-tools">
+                <button id="flight-map-mode" aria-pressed="true">
+                  OpenStreetMap
+                </button>
                 <button id="fit-map">Fit route</button
                 ><button id="toggle-trail" aria-pressed="true">Trail on</button>
               </div>
@@ -195,8 +224,8 @@
                   aria-label="Generated flight illustration, not camera footage"
                 ></canvas>
               </div>
-              <div class="map-caption">
-                Local simulation map · No basemap or aircraft connection
+              <div class="map-caption" id="flight-map-caption">
+                OpenStreetMap · Generated demo aircraft
               </div>
             </div>
             <div class="work-footer">
@@ -213,7 +242,7 @@
           <div>
             <h1>Plan a route.</h1>
             <p>
-              Click the local map to add waypoints. This is a browser draft; no
+              Click the map to add waypoints. This is a browser draft; no
               flight-controller upload takes place.
             </p>
           </div>
@@ -235,6 +264,16 @@
         </div>
         <div class="plan-layout">
           <div class="map-area">
+            <div
+              id="plan-osm"
+              class="geographic-map"
+              aria-label="OpenStreetMap mission planner"
+            ></div>
+            <div class="map-tools">
+              <button id="plan-map-mode" aria-pressed="true">
+                OpenStreetMap
+              </button>
+            </div>
             <svg
               id="plan-map"
               viewBox="0 0 900 520"
@@ -243,7 +282,7 @@
               tabindex="0"
             ></svg>
             <div class="map-caption">
-              Click to add a waypoint · Coordinates in metres from home
+              Click to add a waypoint · OpenStreetMap / home-relative offsets
             </div>
           </div>
           <div class="panel">
@@ -658,6 +697,42 @@
         ><button id="confirm-cutoff" class="danger">Stop demo motors</button>
       </div>
     </dialog>
-    <script type="module" src="assets/demo.js?v=3"></script>
+    <dialog id="gazebo-dialog">
+      <h2>Gazebo / PX4 SITL</h2>
+      <p>
+        <strong>Implemented in the desktop GCS.</strong> Your Gazebo
+        integration, MAVLink connection, OpenStreetMap, and 3D attitude model
+        remain available together in the desktop app.
+      </p>
+      <ol>
+        <li>
+          Start your existing PX4/Gazebo simulator:
+          <pre><code>cd ~/PX4-Autopilot
+make px4_sitl gz_x500</code></pre>
+        </li>
+        <li>Run <code>python main.py</code> from the GCS repository.</li>
+        <li>
+          Open
+          <strong>Connection… → PX4 SITL / Gazebo (UDP 14540) → Connect</strong
+          >.
+        </li>
+        <li>
+          In <strong>Fly</strong>, use
+          <strong>Attitude → 3D model</strong> beside the OpenStreetMap view.
+        </li>
+      </ol>
+      <p>
+        The hosted browser demo uses generated telemetry. It does not launch
+        your locally installed simulator.
+      </p>
+      <div class="dialog-actions">
+        <a
+          class="button"
+          href="https://github.com/HarryZ0305/python-gcs#run-the-desktop-app"
+          >Desktop setup</a
+        ><button data-close>Done</button>
+      </div>
+    </dialog>
+    <script type="module" src="assets/demo.js?v=6"></script>
   </body>
 </html>

@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta
       name="description"
-      content="Custom drone GCS with OpenStreetMap, mission planning, and experimental 3D attitude. Gazebo/PX4 SITL integration is implemented; real-aircraft validation is work in progress."
+      content="Custom drone GCS with OpenStreetMap, mission planning, and 3D attitude. Gazebo/PX4 SITL integration is implemented; real-aircraft validation is work in progress."
     />
-    <meta name="gcs-web-version" content="feature-status-3" />
+    <meta name="gcs-web-version" content="preserved-flight-features-4" />
     <title>PythonGCS — Clearer ground control</title>
-    <link rel="stylesheet" href="assets/site.css?v=3" />
+    <link rel="stylesheet" href="assets/site.css?v=6" />
   </head>
-  <body data-release="feature-status-3">
+  <body data-release="preserved-flight-features-4">
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <div class="wrap header-inner">
@@ -105,6 +105,7 @@
                 <h3 id="workspace-title">Fly with fewer distractions</h3>
                 <p id="workspace-description">
                   Attitude, key telemetry, map, and essential flight actions.
+                  The 3D attitude model and OpenStreetMap remain available.
                   Additional controls and video open only when you need them.
                 </p>
               </div>
@@ -178,8 +179,8 @@ python main.py</code></pre>
           <h2 id="project-status">Built so far. Still in progress.</h2>
           <p class="muted">
             Customized drone GCS with OpenStreetMap, improved mission planning,
-            an experimental telemetry-driven 3D attitude viewer, and implemented
-            Gazebo/PX4 SITL simulation integration.
+            a telemetry-driven 3D attitude viewer, and implemented Gazebo/PX4
+            SITL simulation integration.
           </p>
           <details open>
             <summary>Gazebo / PX4 SITL — implemented</summary>
@@ -193,13 +194,11 @@ python main.py</code></pre>
             </p>
           </details>
           <details>
-            <summary>
-              3D attitude — experimental; validation in progress
-            </summary>
+            <summary>3D attitude model — implemented</summary>
             <p>
               The desktop has a telemetry-driven aircraft attitude viewer that
-              requires WebGL. Graphics and flight validation are
-              <strong>work in progress</strong>. 3D terrain reconstruction is
+              requires WebGL. The original 3D model is implemented and available
+              in Fly; WebGL is required. 3D terrain reconstruction is
               <strong>planned work in progress, not implemented yet</strong>.
             </p>
           </details>

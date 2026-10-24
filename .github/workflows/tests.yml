@@ -12,7 +12,7 @@ jobs:
         with:
           node-version: "22"
       - run: node --test tests/web-model.test.mjs
-      - run: node --check assets/demo.js && node --check assets/site.js && node --check assets/guide.js
+      - run: node --check assets/demo.js && node --check assets/site.js && node --check assets/guide.js && node --check assets/flight-views.js
   pytest:
     runs-on: windows-latest
     env:
