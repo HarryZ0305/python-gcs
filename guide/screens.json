@@ -1,0 +1,414 @@
+[
+  {
+    "slug": "01-fly",
+    "title": "01 / Fly \u2014 the main flight screen",
+    "path": "Open: Fly",
+    "note": "Actual app interface \u00b7 No aircraft connected \u00b7 Feature labels are guide overlays.",
+    "features": [
+      {
+        "title": "Connection",
+        "detail": "Open connection profiles and connect to a vehicle or simulator."
+      },
+      {
+        "title": "Aircraft status",
+        "detail": "Armed state, flight mode, GNSS and battery are always visible."
+      },
+      {
+        "title": "Attitude display",
+        "detail": "Artificial horizon, heading, speed and altitude tapes; 2D / 3D selector."
+      },
+      {
+        "title": "Key telemetry",
+        "detail": "Altitude, ground speed, climb rate and distance to home."
+      },
+      {
+        "title": "Flight actions",
+        "detail": "Arm, take off, Hold, Return, Land and start a verified mission."
+      },
+      {
+        "title": "More pilot controls",
+        "detail": "Flight modes, keyboard opt-in and voice settings."
+      },
+      {
+        "title": "Emergency stop",
+        "detail": "Separate motor-cutoff action with a deliberate confirmation."
+      },
+      {
+        "title": "Map / video",
+        "detail": "The map is the main workspace. Video is available on demand."
+      }
+    ]
+  },
+  {
+    "slug": "02-plan",
+    "title": "02 / Plan \u2014 build and verify a mission",
+    "path": "Open: Plan",
+    "note": "Actual app interface \u00b7 Illustrative local mission draft \u00b7 No aircraft connected.",
+    "features": [
+      {
+        "title": "Draft status & estimates",
+        "detail": "Local / verified mission state, item count, distance and estimated duration."
+      },
+      {
+        "title": "Survey generator",
+        "detail": "Create lawnmower survey lines from area size and lane spacing."
+      },
+      {
+        "title": "Import / export",
+        "detail": "Read and save the supported QGroundControl .plan subset."
+      },
+      {
+        "title": "Upload & readback",
+        "detail": "Send to the flight controller or read its mission; transfer requires a connection."
+      },
+      {
+        "title": "Mission items",
+        "detail": "Select and inspect takeoff, waypoint and landing items."
+      },
+      {
+        "title": "Reorder & altitude",
+        "detail": "Move / delete items and edit home-relative altitude."
+      }
+    ]
+  },
+  {
+    "slug": "03-vehicle",
+    "title": "03 / Vehicle \u2014 flight-controller parameters",
+    "path": "Open: Vehicle",
+    "note": "Actual parameter screen \u00b7 Illustrative parameter values only \u00b7 No aircraft connected.",
+    "features": [
+      {
+        "title": "Parameter search",
+        "detail": "Filter the parameter list by name."
+      },
+      {
+        "title": "Download & recovery",
+        "detail": "Request all parameters or fetch missing entries."
+      },
+      {
+        "title": "Backup / restore",
+        "detail": "Save vehicle settings or preview differences before restoring."
+      },
+      {
+        "title": "Typed parameters",
+        "detail": "Name, value and MAVLink type are shown together."
+      },
+      {
+        "title": "Readback status",
+        "detail": "Edits stay pending until the controller confirms the value."
+      }
+    ]
+  },
+  {
+    "slug": "04-analyze",
+    "title": "04 / Analyze \u2014 telemetry and flight events",
+    "path": "Open: Analyze",
+    "note": "Actual Analyze workspace \u00b7 Generated sample curves and sample events \u00b7 No aircraft connected.",
+    "features": [
+      {
+        "title": "Signal selection",
+        "detail": "Toggle altitude, speed, climb, voltage and packet loss."
+      },
+      {
+        "title": "Telemetry plots",
+        "detail": "Compare the selected signals over time."
+      },
+      {
+        "title": "Flight event timeline",
+        "detail": "Review timestamps, command outcomes and mode events."
+      },
+      {
+        "title": "Export CSV",
+        "detail": "Save the plotted data for offline analysis."
+      },
+      {
+        "title": "Historical CSV review",
+        "detail": "Load a CSV as historical plots. This does not replay a live vehicle."
+      }
+    ]
+  },
+  {
+    "slug": "05-settings",
+    "title": "05 / Settings \u2014 appearance, video and alerts",
+    "path": "Open: Settings",
+    "note": "Actual app interface \u00b7 No aircraft connected \u00b7 Feature labels are guide overlays.",
+    "features": [
+      {
+        "title": "Appearance",
+        "detail": "Switch between the ivory / sage light theme and dark mode."
+      },
+      {
+        "title": "Video source",
+        "detail": "Choose RTSP, UDP, HTTP, USB camera index, or an explicit test feed."
+      },
+      {
+        "title": "Battery chemistry",
+        "detail": "Choose the battery cell count used for GCS voltage alerts."
+      },
+      {
+        "title": "Warning / critical limits",
+        "detail": "Save voltage and percentage alert thresholds; these do not set PX4 failsafes."
+      },
+      {
+        "title": "Offline maps",
+        "detail": "Load an MBTiles package or return to OpenStreetMap."
+      }
+    ]
+  },
+  {
+    "slug": "06-diagnostics",
+    "title": "06 / Diagnostics \u2014 detailed system monitoring",
+    "path": "Open: Diagnostics",
+    "note": "Actual Diagnostics workspace \u00b7 Example plot curves; stream status remains disconnected.",
+    "features": [
+      {
+        "title": "Stream freshness",
+        "detail": "Independent health and age for heartbeat, position, GNSS, attitude, power and speed."
+      },
+      {
+        "title": "Vehicle & session",
+        "detail": "Firmware, armed duration and home information."
+      },
+      {
+        "title": "Live trend plots",
+        "detail": "Altitude and ground-speed trends have a dedicated space."
+      },
+      {
+        "title": "MAVLink / ACK log",
+        "detail": "Filter messages and inspect accepted, rejected or failed commands."
+      },
+      {
+        "title": "Second window",
+        "detail": "Detach the same live diagnostics to another monitor."
+      },
+      {
+        "title": "Flight trail export",
+        "detail": "Export the recorded flight trajectory as KML."
+      }
+    ]
+  },
+  {
+    "slug": "07-connection",
+    "title": "07 / Vehicle connection",
+    "path": "Open: Connection\u2026 or Connect vehicle",
+    "note": "Actual app interface \u00b7 No aircraft connected \u00b7 Feature labels are guide overlays.",
+    "features": [
+      {
+        "title": "Connection profile",
+        "detail": "Choose a predefined SITL, UDP, TCP or serial profile."
+      },
+      {
+        "title": "MAVLink address",
+        "detail": "Inspect or enter the transport address."
+      },
+      {
+        "title": "Connect / disconnect",
+        "detail": "Open a transport and wait for the autopilot heartbeat."
+      }
+    ]
+  },
+  {
+    "slug": "08-pilot-controls",
+    "title": "08 / Additional pilot controls",
+    "path": "Open: Fly \u2192 More flight controls\u2026",
+    "note": "Actual app interface \u00b7 No aircraft connected \u00b7 Feature labels are guide overlays.",
+    "features": [
+      {
+        "title": "Flight mode",
+        "detail": "Select a mode and request it; PX4 validates its prerequisites."
+      },
+      {
+        "title": "Keyboard opt-in",
+        "detail": "Enable guarded keyboard control; typing and focus changes inhibit motion."
+      },
+      {
+        "title": "Voice announcements",
+        "detail": "Turn spoken status announcements on or off."
+      }
+    ]
+  },
+  {
+    "slug": "09-preflight",
+    "title": "09 / Preflight checklist",
+    "path": "Open: Preflight checklist in the header",
+    "note": "Actual app interface \u00b7 No aircraft connected \u00b7 Feature labels are guide overlays.",
+    "features": [
+      {
+        "title": "Battery configuration",
+        "detail": "Select the expected pack cell count."
+      },
+      {
+        "title": "Evidence-based checks",
+        "detail": "Link, GNSS, power, sensors, attitude, readiness and home are checked."
+      },
+      {
+        "title": "Go / no-go summary",
+        "detail": "Missing evidence stays UNKNOWN; it never becomes a false pass."
+      },
+      {
+        "title": "Refresh status",
+        "detail": "Re-evaluate the current telemetry evidence."
+      }
+    ]
+  },
+  {
+    "slug": "10-survey",
+    "title": "10 / Survey grid generator",
+    "path": "Open: Plan \u2192 Survey grid",
+    "note": "Actual app interface \u00b7 No aircraft connected \u00b7 Feature labels are guide overlays.",
+    "features": [
+      {
+        "title": "Survey area",
+        "detail": "Set the width and height of the mapping area."
+      },
+      {
+        "title": "Lane spacing",
+        "detail": "Choose the separation between parallel flight lines."
+      },
+      {
+        "title": "Survey altitude",
+        "detail": "Choose the home-relative altitude for generated points."
+      },
+      {
+        "title": "Estimate & generate",
+        "detail": "Review the waypoint estimate, then generate the survey draft."
+      }
+    ]
+  },
+  {
+    "slug": "11-restore",
+    "title": "11 / Parameter restore preview",
+    "path": "Open: Vehicle \u2192 Load backup \u2192 select a file",
+    "note": "Actual restore dialog \u00b7 Illustrative backup comparison \u00b7 No parameter writes are performed.",
+    "features": [
+      {
+        "title": "Difference table",
+        "detail": "Compare the controller value with the backup value and parameter type."
+      },
+      {
+        "title": "Update / skip decisions",
+        "detail": "Unchanged and unknown parameters are identified before writing."
+      },
+      {
+        "title": "Apply reviewed updates",
+        "detail": "Send only supported updates after reviewing the differences."
+      }
+    ]
+  },
+  {
+    "slug": "12-second-window",
+    "title": "12 / Diagnostics on a second display",
+    "path": "Open: Diagnostics \u2192 Open in second window",
+    "note": "Actual detached window \u00b7 Close the window to restore it to the Diagnostics tab.",
+    "features": [
+      {
+        "title": "Independent monitor",
+        "detail": "Keep system health visible while Fly stays on the primary screen."
+      },
+      {
+        "title": "Same live plots",
+        "detail": "Detaching moves the original widgets; it does not duplicate their histories."
+      },
+      {
+        "title": "ACK monitoring",
+        "detail": "Inspect command messages without covering the flight map."
+      }
+    ]
+  },
+  {
+    "slug": "13-video-inset",
+    "title": "13 / Fly with a video inset",
+    "path": "Open: Fly \u2192 Show video; choose a source in Settings",
+    "note": "Actual video layout \u00b7 The colored bars are an explicitly labelled TEST PATTERN, not camera footage.",
+    "features": [
+      {
+        "title": "Video inset",
+        "detail": "Watch a configured feed while retaining the large map."
+      },
+      {
+        "title": "Stream state",
+        "detail": "Disconnected, connecting, live, stale, failed and test states are explicit."
+      },
+      {
+        "title": "Swap map / video",
+        "detail": "Promote video to the main view; the map becomes the inset."
+      },
+      {
+        "title": "Show / hide video",
+        "detail": "Collapse the video view when it is not needed."
+      }
+    ]
+  },
+  {
+    "slug": "14-video-primary",
+    "title": "14 / Video as the primary view",
+    "path": "Open: video inset \u2192 Swap",
+    "note": "Actual primary-video layout \u00b7 Explicit TEST PATTERN feed \u00b7 No camera or aircraft connected.",
+    "features": [
+      {
+        "title": "Primary video",
+        "detail": "The video stream fills the monitoring workspace."
+      },
+      {
+        "title": "Map inset",
+        "detail": "The map remains available in the smaller inset."
+      },
+      {
+        "title": "Return to map",
+        "detail": "Swap again, or hide video to restore map-first operation."
+      }
+    ]
+  },
+  {
+    "slug": "15-emergency",
+    "title": "15 / Emergency motor-stop confirmation",
+    "path": "Open: Fly \u2192 Emergency motor stop\u2026 when the action is available",
+    "note": "Actual confirmation dialog recreated for illustration \u00b7 No aircraft connected; no command is sent.",
+    "features": [
+      {
+        "title": "Consequences stated",
+        "detail": "The dialog explicitly describes immediate loss of motor power."
+      },
+      {
+        "title": "Deliberate confirmation",
+        "detail": "Yes confirms the cutoff request; Cancel is the default."
+      }
+    ]
+  },
+  {
+    "slug": "16-historical-review",
+    "title": "16 / Historical flight-log review",
+    "path": "Open: Analyze \u2192 Load log replay \u2192 select a CSV",
+    "note": "Actual historical-review layout \u00b7 Generated sample data \u00b7 No live vehicle replay is claimed.",
+    "features": [
+      {
+        "title": "Historical-data banner",
+        "detail": "Makes clear that these are historical plots, separate from live flight."
+      },
+      {
+        "title": "Review plotted signals",
+        "detail": "Inspect the imported time series with the same plot controls."
+      },
+      {
+        "title": "Exit log review",
+        "detail": "Return from historical review to the normal Analyze workspace."
+      }
+    ]
+  },
+  {
+    "slug": "17-3d-attitude",
+    "title": "17 / Optional 3D attitude mode",
+    "path": "Open: Fly \u2192 Attitude \u2192 3D",
+    "note": "Actual 3D-mode layout \u00b7 WebGL rendering is unavailable in this capture environment; no model image is fabricated.",
+    "features": [
+      {
+        "title": "2D / 3D selector",
+        "detail": "Switch between the standard PFD and optional 3D aircraft attitude view."
+      },
+      {
+        "title": "3D renderer area",
+        "detail": "This view requires WebGL. The capture environment may leave this viewport blank."
+      }
+    ]
+  }
+]

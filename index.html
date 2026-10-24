@@ -1,1149 +1,228 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Python GCS — Professional Open-Source Ground Control Station for PX4</title>
-  <meta name="description" content="A modern, high-performance desktop Ground Control Station for PX4 Autopilot and MAVLink multirotors. Features an aviation Primary Flight Display (PFD), interactive guided flight, aerial survey grid generation, and offline maps." />
-  
-  <!-- Modern Typography -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-
-  <style>
-    :root {
-      --bg: #090d16;
-      --bg-card: rgba(17, 24, 39, 0.85);
-      --bg-card-hover: rgba(30, 41, 59, 0.95);
-      --border: rgba(255, 255, 255, 0.08);
-      --border-accent: rgba(56, 189, 248, 0.3);
-      --text-main: #f8fafc;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
-      --primary: #0284c7;
-      --primary-bright: #38bdf8;
-      --primary-glow: rgba(56, 189, 248, 0.25);
-      --accent-green: #10b981;
-      --accent-green-glow: rgba(16, 185, 129, 0.2);
-      --accent-amber: #f59e0b;
-      --accent-red: #ef4444;
-      --accent-purple: #8b5cf6;
-      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
-      --radius-sm: 8px;
-      --radius-md: 14px;
-      --radius-lg: 20px;
-      --shadow-subtle: 0 4px 20px rgba(0, 0, 0, 0.4);
-      --shadow-glow: 0 0 35px var(--primary-glow);
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; font-size: 16px; }
-    body {
-      background-color: var(--bg);
-      color: var(--text-main);
-      font-family: var(--font-sans);
-      line-height: 1.6;
-      overflow-x: hidden;
-      background-image: 
-        radial-gradient(circle at 50% 0%, rgba(2, 132, 199, 0.15) 0%, transparent 60%),
-        radial-gradient(circle at 90% 20%, rgba(139, 92, 246, 0.08) 0%, transparent 40%),
-        radial-gradient(circle at 10% 80%, rgba(16, 185, 129, 0.06) 0%, transparent 50%);
-      background-attachment: fixed;
-    }
-
-    /* Container */
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 24px;
-    }
-
-    /* Top Navigation */
-    nav {
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-      background: rgba(9, 13, 22, 0.85);
-      backdrop-filter: blur(14px);
-      border-bottom: 1px solid var(--border);
-    }
-    .nav-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 72px;
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      text-decoration: none;
-      color: var(--text-main);
-      font-weight: 800;
-      font-size: 1.25rem;
-      letter-spacing: -0.02em;
-    }
-    .brand-icon {
-      width: 38px;
-      height: 38px;
-      background: linear-gradient(135deg, var(--primary-bright), var(--primary));
-      border-radius: var(--radius-sm);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 16px var(--primary-glow);
-    }
-    .brand-badge {
-      font-size: 0.72rem;
-      font-family: var(--font-mono);
-      background: rgba(56, 189, 248, 0.12);
-      color: var(--primary-bright);
-      padding: 3px 8px;
-      border-radius: 999px;
-      border: 1px solid var(--border-accent);
-      font-weight: 600;
-    }
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 28px;
-      list-style: none;
-    }
-    .nav-links a {
-      color: var(--text-muted);
-      text-decoration: none;
-      font-size: 0.92rem;
-      font-weight: 600;
-      transition: color 0.15s ease;
-    }
-    .nav-links a:hover {
-      color: var(--text-main);
-    }
-    .nav-cta {
-      background: linear-gradient(135deg, var(--primary), #0369a1);
-      color: #ffffff !important;
-      padding: 9px 18px;
-      border-radius: var(--radius-sm);
-      box-shadow: 0 0 20px var(--primary-glow);
-      transition: all 0.2s ease !important;
-    }
-    .nav-cta:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 0 28px rgba(56, 189, 248, 0.4);
-    }
-
-    /* Hero Section */
-    .hero {
-      padding: 90px 0 70px;
-      text-align: center;
-      position: relative;
-    }
-    .hero-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 14px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--primary-bright);
-      margin-bottom: 24px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-    }
-    .hero-pill span.dot {
-      width: 7px;
-      height: 7px;
-      background: var(--accent-green);
-      border-radius: 50%;
-      box-shadow: 0 0 8px var(--accent-green);
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(1.3); }
-      100% { opacity: 1; transform: scale(1); }
-    }
-    .hero h1 {
-      font-size: clamp(2.5rem, 5.5vw, 4.2rem);
-      font-weight: 800;
-      line-height: 1.12;
-      letter-spacing: -0.035em;
-      margin-bottom: 20px;
-      max-width: 950px;
-      margin-left: auto;
-      margin-right: auto;
-    }
-    .hero h1 .highlight {
-      background: linear-gradient(135deg, #ffffff 30%, var(--primary-bright) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    .hero p {
-      font-size: clamp(1.05rem, 2vw, 1.25rem);
-      color: var(--text-muted);
-      max-width: 720px;
-      margin: 0 auto 36px;
-      font-weight: 400;
-    }
-    .hero-actions {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 16px;
-      flex-wrap: wrap;
-      margin-bottom: 40px;
-    }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 0.98rem;
-      font-weight: 700;
-      padding: 14px 26px;
-      border-radius: var(--radius-sm);
-      text-decoration: none;
-      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-      cursor: pointer;
-    }
-    .btn-primary {
-      background: linear-gradient(135deg, #0284c7, #0369a1);
-      color: #ffffff;
-      box-shadow: 0 0 25px var(--primary-glow), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-    }
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 0 35px rgba(56, 189, 248, 0.45);
-    }
-    .btn-secondary {
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text-main);
-      border: 1px solid var(--border);
-    }
-    .btn-secondary:hover {
-      background: rgba(255, 255, 255, 0.09);
-      border-color: rgba(255, 255, 255, 0.2);
-      transform: translateY(-2px);
-    }
-
-    /* Trust Pill Bar */
-    .trust-bar {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 32px;
-      flex-wrap: wrap;
-      font-size: 0.86rem;
-      color: var(--text-dim);
-      font-weight: 600;
-    }
-    .trust-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .trust-item svg {
-      color: var(--accent-green);
-    }
-
-    /* Interactive Cockpit Preview Frame */
-    .cockpit-preview {
-      margin: 30px auto 90px;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      box-shadow: var(--shadow-subtle), 0 0 50px rgba(0, 0, 0, 0.6);
-      overflow: hidden;
-      backdrop-filter: blur(20px);
-      position: relative;
-    }
-    .preview-header {
-      background: rgba(15, 23, 42, 0.95);
-      border-bottom: 1px solid var(--border);
-      padding: 12px 20px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .window-dots {
-      display: flex;
-      gap: 8px;
-    }
-    .dot-circle {
-      width: 11px;
-      height: 11px;
-      border-radius: 50%;
-    }
-    .dot-red { background: #ef4444; }
-    .dot-yellow { background: #f59e0b; }
-    .dot-green { background: #10b981; }
-
-    /* Interactive Tab Buttons in Preview */
-    .cockpit-tabs {
-      display: flex;
-      background: rgba(255, 255, 255, 0.04);
-      padding: 4px;
-      border-radius: 8px;
-      gap: 4px;
-    }
-    .tab-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      font-family: var(--font-mono);
-      font-size: 0.78rem;
-      font-weight: 700;
-      padding: 6px 14px;
-      border-radius: 6px;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    .tab-btn.active {
-      background: var(--primary);
-      color: #ffffff;
-      box-shadow: 0 0 10px var(--primary-glow);
-    }
-
-    /* Cockpit Body */
-    .cockpit-body {
-      padding: 20px;
-      background: #0f172a;
-      min-height: 480px;
-    }
-
-    /* Top Ribbon Mockup */
-    .mock-ribbon {
-      background: rgba(30, 41, 59, 0.7);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 14px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-      font-family: var(--font-mono);
-      font-size: 0.78rem;
-    }
-    .mock-pills {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .mock-pill {
-      padding: 4px 8px;
-      border-radius: 5px;
-      font-weight: 700;
-      border: 1px solid transparent;
-    }
-    .pill-armed { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border-color: var(--accent-green); }
-    .pill-mode { background: rgba(2, 132, 199, 0.15); color: var(--primary-bright); border-color: var(--primary); }
-    .pill-gps { background: rgba(255, 255, 255, 0.05); color: var(--text-main); border-color: var(--border); }
-    .pill-batt { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); border-color: var(--accent-green); }
-    .pill-timer { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border-color: var(--accent-amber); }
-
-    /* Mock Grid Content */
-    .cockpit-grid {
-      display: grid;
-      grid-template-columns: 280px 1fr 300px;
-      gap: 16px;
-    }
-    @media (max-width: 960px) {
-      .cockpit-grid { grid-template-columns: 1fr; }
-    }
-
-    /* Mock Cards */
-    .mock-card {
-      background: rgba(30, 41, 59, 0.5);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 14px;
-    }
-    .mock-card-title {
-      font-family: var(--font-mono);
-      font-size: 0.75rem;
-      font-weight: 700;
-      color: var(--primary-bright);
-      margin-bottom: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    /* Mock Gauges 2x2 */
-    .gauge-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-bottom: 14px;
-    }
-    .gauge-box {
-      background: rgba(15, 23, 42, 0.8);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 10px;
-      text-align: center;
-    }
-    .gauge-val {
-      font-family: var(--font-mono);
-      font-size: 1.25rem;
-      font-weight: 700;
-      color: var(--primary-bright);
-    }
-    .gauge-lbl {
-      font-size: 0.68rem;
-      color: var(--text-dim);
-      font-weight: 600;
-      text-transform: uppercase;
-    }
-
-    /* Mock Map Graphic */
-    .mock-map {
-      background: #1e293b;
-      background-image: 
-        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-      background-size: 30px 30px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      height: 380px;
-      position: relative;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .mock-drone {
-      position: absolute;
-      width: 44px;
-      height: 44px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transform: rotate(45deg);
-      animation: hoverDrone 3s ease-in-out infinite alternate;
-    }
-    @keyframes hoverDrone {
-      0% { transform: translate(-5px, -5px) rotate(40deg); }
-      100% { transform: translate(5px, 5px) rotate(50deg); }
-    }
-    .mock-trail {
-      position: absolute;
-      width: 140px;
-      height: 100px;
-      border: 2px dashed rgba(56, 189, 248, 0.5);
-      border-radius: 40px;
-      pointer-events: none;
-    }
-    .mock-home {
-      position: absolute;
-      top: 60px;
-      left: 70px;
-      width: 24px;
-      height: 24px;
-      background: #0f172a;
-      border: 2px solid #ffffff;
-      border-radius: 50%;
-      color: #ffffff;
-      font-family: var(--font-mono);
-      font-size: 11px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .mock-hud-badge {
-      position: absolute;
-      top: 12px;
-      left: 12px;
-      background: rgba(15, 23, 42, 0.88);
-      border: 1px solid var(--border);
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-family: var(--font-mono);
-      font-size: 0.72rem;
-      display: flex;
-      gap: 12px;
-    }
-
-    /* PFD Canvas View (Tab 2) */
-    .pfd-container {
-      display: none;
-      height: 380px;
-      background: #000000;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      position: relative;
-      overflow: hidden;
-    }
-    .pfd-horizon {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-    }
-    .pfd-sky { flex: 1; background: #0284c7; }
-    .pfd-ground { flex: 1; background: #78350f; border-top: 2px solid #ffffff; }
-    .pfd-reticle {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 120px;
-      height: 12px;
-      border-top: 3px solid #fbbf24;
-      display: flex;
-      justify-content: center;
-    }
-    .pfd-reticle::after {
-      content: '';
-      width: 8px;
-      height: 8px;
-      background: #fbbf24;
-      border-radius: 50%;
-      position: absolute;
-      top: -5px;
-    }
-
-    /* Section Styles */
-    section {
-      padding: 90px 0;
-      border-top: 1px solid var(--border);
-    }
-    .section-tag {
-      font-family: var(--font-mono);
-      font-size: 0.8rem;
-      font-weight: 700;
-      color: var(--primary-bright);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 12px;
-      display: block;
-    }
-    .section-title {
-      font-size: clamp(2rem, 3.5vw, 2.8rem);
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      margin-bottom: 18px;
-      max-width: 650px;
-    }
-    .section-desc {
-      font-size: 1.1rem;
-      color: var(--text-muted);
-      max-width: 650px;
-      margin-bottom: 50px;
-    }
-
-    /* 6 Pillars Feature Grid */
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-      gap: 24px;
-    }
-    .feature-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 32px;
-      transition: all 0.25s ease;
-      position: relative;
-      overflow: hidden;
-    }
-    .feature-card:hover {
-      background: var(--bg-card-hover);
-      border-color: var(--border-accent);
-      transform: translateY(-3px);
-      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
-    }
-    .feature-icon-wrap {
-      width: 48px;
-      height: 48px;
-      border-radius: 10px;
-      background: rgba(56, 189, 248, 0.1);
-      border: 1px solid rgba(56, 189, 248, 0.2);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.4rem;
-      margin-bottom: 20px;
-      color: var(--primary-bright);
-    }
-    .feature-card h3 {
-      font-size: 1.25rem;
-      font-weight: 700;
-      margin-bottom: 10px;
-      letter-spacing: -0.01em;
-    }
-    .feature-card p {
-      font-size: 0.95rem;
-      color: var(--text-muted);
-      line-height: 1.6;
-    }
-
-    /* Hardware Specs & SITL Section */
-    .specs-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 32px;
-      align-items: center;
-    }
-    @media (max-width: 850px) {
-      .specs-grid { grid-template-columns: 1fr; }
-    }
-    .spec-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.92rem;
-    }
-    .spec-table tr {
-      border-bottom: 1px solid var(--border);
-    }
-    .spec-table td {
-      padding: 14px 10px;
-    }
-    .spec-table td.label {
-      color: var(--text-muted);
-      font-weight: 500;
-      width: 40%;
-    }
-    .spec-table td.val {
-      font-family: var(--font-mono);
-      font-weight: 600;
-      color: var(--text-main);
-    }
-    .code-block {
-      background: #0f172a;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 20px;
-      font-family: var(--font-mono);
-      font-size: 0.88rem;
-      color: #38bdf8;
-      overflow-x: auto;
-      line-height: 1.7;
-    }
-    .code-block span.comment { color: var(--text-dim); }
-
-    /* Steps Quickstart */
-    .steps-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 24px;
-    }
-    .step-box {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 28px;
-      position: relative;
-    }
-    .step-num {
-      width: 32px;
-      height: 32px;
-      background: var(--primary);
-      color: #ffffff;
-      font-family: var(--font-mono);
-      font-size: 0.9rem;
-      font-weight: 800;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 18px;
-    }
-
-    /* CTA Bottom Banner */
-    .cta-banner {
-      background: linear-gradient(135deg, rgba(2, 132, 199, 0.2), rgba(15, 23, 42, 0.8));
-      border: 1px solid var(--border-accent);
-      border-radius: var(--radius-lg);
-      padding: 60px 40px;
-      text-align: center;
-      margin: 40px 0;
-      position: relative;
-      overflow: hidden;
-    }
-
-    /* Footer */
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 40px 0;
-      font-size: 0.88rem;
-      color: var(--text-dim);
-    }
-    .footer-inner {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 20px;
-    }
-  </style>
-</head>
-<body>
-
-  <!-- Navigation -->
-  <nav>
-    <div class="container nav-inner">
-      <a href="#" class="brand">
-        <div class="brand-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polygon points="12 2 19 21 12 17 5 21 12 2"></polygon>
-          </svg>
-        </div>
-        <span>PythonGCS</span>
-        <span class="brand-badge">v2.2 PX4</span>
-      </a>
-
-      <ul class="nav-links">
-        <li><a href="#features">Features</a></li>
-          <a href="web_gcs.html" target="_blank" style="color:var(--accent-green); font-weight:700;">Live Web GCS</a>
-        <li><a href="#preview">Cockpit</a></li>
-        <li><a href="#hardware">Hardware & SITL</a></li>
-        <li><a href="#quickstart">Quickstart</a></li>
-        <li><a href="https://github.com/HarryZ0305/python-gcs" target="_blank">GitHub</a></li>
-        <a href="web_gcs.html" target="_blank" class="btn btn-primary" style="background: linear-gradient(135deg, #10b981, #059669); box-shadow: 0 0 25px rgba(16, 185, 129, 0.45);">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polygon points="5 3 19 12 5 21 5 3"></polygon>
-          </svg>
-          Launch Live Web GCS (No Install)
-        </a>
-        <li><a href="dist/PythonGCS/PythonGCS.exe" class="nav-cta" download>Download .exe</a></li>
-      </ul>
-    </div>
-  </nav>
-
-  <!-- Hero Section -->
-  <header class="hero">
-    <div class="container">
-      <div class="hero-pill">
-        <span class="dot"></span>
-        <span>Built for PX4 Autopilot & Pixhawk 6C Systems</span>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="PythonGCS: a focused desktop ground control station for PX4. Explore the interface, try a browser simulation, and get the source."
+    />
+    <meta name="gcs-web-version" content="focused-workspaces-1" />
+    <title>PythonGCS — Clearer ground control</title>
+    <link rel="stylesheet" href="assets/site.css?v=3" />
+  </head>
+  <body data-release="focused-workspaces-1">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="./" aria-label="PythonGCS home">PythonGCS</a>
+        <nav class="header-links" aria-label="Main navigation">
+          <a href="#workspaces">Workspaces</a><a href="guide/">Screen guide</a
+          ><a href="#start">Get started</a
+          ><a href="web_gcs.html" class="button primary">Try the demo</a>
+        </nav>
       </div>
-
-      <h1>
-        Ground Control, <br />
-        <span class="highlight">Engineered for Flight Precision.</span>
-      </h1>
-
-      <p>
-        A modern, zero-bloat desktop Ground Control Station built in Python & PyQt6 with native MAVLink. Featuring an aviation Primary Flight Display (PFD), tactical guided flight, aerial survey grids, and offline terrain mapping.
-      </p>
-
-      <div class="hero-actions">
-        <a href="dist/PythonGCS/PythonGCS.exe" class="btn btn-primary" download>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          Download Windows App (.exe)
-        </a>
-        <a href="#preview" class="btn btn-secondary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polygon points="10 8 16 12 10 16 10 8"></polygon>
-          </svg>
-          Explore Cockpit Demo
-        </a>
-        <a href="https://github.com/HarryZ0305/python-gcs" target="_blank" class="btn btn-secondary">
-          View Source Code
-        </a>
-      </div>
-
-      <div class="trust-bar">
-        <div class="trust-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <span>100% Offline Tile Caching</span>
-        </div>
-        <div class="trust-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <span>Raw pymavlink Reliability</span>
-        </div>
-        <div class="trust-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <span>Sub-Millisecond Thread Locking</span>
-        </div>
-        <div class="trust-item">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          <span>Free & Open Source (MIT)</span>
-        </div>
-      </div>
-    </div>
-  </header>
-
-  <!-- Interactive Cockpit Preview -->
-  <section id="preview" style="padding-top: 10px;">
-    <div class="container">
-      <div class="cockpit-preview">
-        <!-- Preview Window Titlebar -->
-        <div class="preview-header">
-          <div class="window-dots">
-            <span class="dot-circle dot-red"></span>
-            <span class="dot-circle dot-yellow"></span>
-            <span class="dot-circle dot-green"></span>
-          </div>
-
-          <!-- Interactive Mode Switcher -->
-          <div class="cockpit-tabs">
-            <button class="tab-btn active" onclick="switchPreview('fly')">FLY DASHBOARD</button>
-            <button class="tab-btn" onclick="switchPreview('pfd')">AVIATION PFD</button>
-            <button class="tab-btn" onclick="switchPreview('plan')">SURVEY & PLAN</button>
-            <button class="tab-btn" onclick="switchPreview('console')">CONSOLE ACK</button>
-          </div>
-
-          <div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--primary-bright);">
-            udpin:0.0.0.0:14540 [CONNECTED]
-          </div>
-        </div>
-
-        <!-- Cockpit Body -->
-        <div class="cockpit-body">
-          <!-- Top Flight Telemetry Ribbon -->
-          <div class="mock-ribbon">
-            <div class="mock-pills">
-              <span class="mock-pill pill-armed">ARMED</span>
-              <span class="mock-pill pill-mode">MODE: POSCTL</span>
-              <span class="mock-pill pill-gps">GPS: 3D FIX (14 sats)</span>
-              <span class="mock-pill pill-batt">BATT: 86% | 15.8V</span>
-              <span class="mock-pill pill-timer">FLIGHT: 04:18</span>
-              <span class="mock-pill pill-gps">DIST: 382 m</span>
-            </div>
-            <div style="display: flex; gap: 6px;">
-              <span class="mock-pill" style="background:#ef4444; color:#fff;">HOLD</span>
-              <span class="mock-pill" style="background:#0284c7; color:#fff;">VOICE: ON</span>
-            </div>
-          </div>
-
-          <!-- Tab Content 1: FLY Dashboard -->
-          <div id="content-fly" class="cockpit-grid">
-            <!-- Left Column: Actions & Safety -->
-            <div class="mock-card">
-              <div class="mock-card-title">Flight Controls</div>
-              <div style="display: flex; gap: 6px; margin-bottom: 10px;">
-                <button class="tab-btn active" style="flex:1;">TAKEOFF</button>
-                <button class="tab-btn" style="flex:1; border: 1px solid var(--border);">RTL</button>
-                <button class="tab-btn" style="flex:1; border: 1px solid var(--border);">LAND</button>
-              </div>
-              <div style="font-size: 0.78rem; color: var(--text-dim); margin-bottom: 8px;">Takeoff Altitude:</div>
-              <div style="display: flex; gap: 4px; margin-bottom: 14px;">
-                <span class="mock-pill" style="background: rgba(255,255,255,0.06); font-size: 10px;">2.5m</span>
-                <span class="mock-pill pill-mode" style="font-size: 10px;">5m</span>
-                <span class="mock-pill" style="background: rgba(255,255,255,0.06); font-size: 10px;">10m</span>
-                <span class="mock-pill" style="background: rgba(255,255,255,0.06); font-size: 10px;">20m</span>
-              </div>
-              <div class="mock-card-title" style="margin-top: 18px;">6-Point Safety Checklist</div>
-              <div style="font-size: 0.78rem; display: flex; flex-direction: column; gap: 6px; color: var(--accent-green);">
-                <span>✓ MAVLink Stream: 10 Hz</span>
-                <span>✓ GPS 3D Fix (14 Satellites)</span>
-                <span>✓ Battery: 15.8V (Healthy)</span>
-                <span>✓ IMU & Horizon Level (0.2°)</span>
-                <span>✓ Pre-arm Readiness: PASSED</span>
-              </div>
-            </div>
-
-            <!-- Center Column: Tactical Map -->
-            <div class="mock-map">
-              <div class="mock-hud-badge">
-                <span>HOME: 42.5m</span>
-                <span>SPD: 3.8m/s</span>
-                <span>ALT: 12.4m</span>
-                <span>HDG: 045°</span>
-              </div>
-
-              <div class="mock-home">H</div>
-              <div class="mock-trail"></div>
-
-              <div class="mock-drone">
-                <svg width="40" height="40" viewBox="0 0 100 100">
-                  <circle cx="50" cy="50" r="20" fill="#0b57d0" stroke="#ffffff" stroke-width="4"/>
-                  <polygon points="50,14 42,28 58,28" fill="#38bdf8" stroke="#ffffff" stroke-width="1.5"/>
-                  <line x1="22" y1="22" x2="78" y2="78" stroke="#94a3b8" stroke-width="4"/>
-                  <line x1="78" y1="22" x2="22" y2="78" stroke="#94a3b8" stroke-width="4"/>
-                  <circle cx="22" cy="22" r="8" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
-                  <circle cx="78" cy="22" r="8" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
-                  <circle cx="22" cy="78" r="8" fill="#ef4444" stroke="#ffffff" stroke-width="2"/>
-                  <circle cx="78" cy="78" r="8" fill="#ef4444" stroke="#ffffff" stroke-width="2"/>
-                </svg>
-              </div>
-            </div>
-
-            <!-- Right Column: Gauges & PFD Mini -->
-            <div class="mock-card">
-              <div class="mock-card-title">Live Telemetry</div>
-              <div class="gauge-grid">
-                <div class="gauge-box">
-                  <div class="gauge-val">12.4</div>
-                  <div class="gauge-lbl">Altitude (m)</div>
-                </div>
-                <div class="gauge-box">
-                  <div class="gauge-val">3.8</div>
-                  <div class="gauge-lbl">Speed (m/s)</div>
-                </div>
-                <div class="gauge-box">
-                  <div class="gauge-val" style="color: var(--accent-green);">86%</div>
-                  <div class="gauge-lbl">Battery</div>
-                </div>
-                <div class="gauge-box">
-                  <div class="gauge-val">14</div>
-                  <div class="gauge-lbl">GPS Sats</div>
-                </div>
-              </div>
-              <div class="mock-card-title">Attitude Metrics</div>
-              <div style="font-family: var(--font-mono); font-size: 0.8rem; display: flex; justify-content: space-between; color: var(--text-muted); line-height: 1.8;">
-                <span>Roll: 1.2°</span>
-                <span>Pitch: -2.4°</span>
-                <span>Yaw: 045°</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Tab Content 2: Aviation PFD (Hidden by default) -->
-          <div id="content-pfd" class="pfd-container">
-            <div class="pfd-horizon">
-              <div class="pfd-sky"></div>
-              <div class="pfd-ground"></div>
-            </div>
-            <div class="pfd-reticle"></div>
-            <div style="position: absolute; top: 12px; left: 20px; font-family: var(--font-mono); color: #38bdf8; font-size: 14px; font-weight: bold;">
-              SPEED: 3.8 m/s
-            </div>
-            <div style="position: absolute; top: 12px; right: 20px; font-family: var(--font-mono); color: #38bdf8; font-size: 14px; font-weight: bold;">
-              ALT: 12.4 m
-            </div>
-            <div style="position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-family: var(--font-mono); color: #fbbf24; font-size: 13px; font-weight: bold;">
-              HDG: 045° NE
-            </div>
-          </div>
-
-          <!-- Tab Content 3: Plan & Survey -->
-          <div id="content-plan" style="display: none;" class="mock-card">
-            <div class="mock-card-title">Aerial Survey Grid & Waypoint Plan</div>
-            <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 14px;">
-              Auto-generated serpentine lawnmower pattern for 80m x 80m survey area at 15m cruising altitude.
-            </p>
-            <div style="font-family: var(--font-mono); font-size: 0.82rem; background: rgba(0,0,0,0.4); padding: 12px; border-radius: 6px; line-height: 1.8;">
-              <div>TAKEOFF: 32.715700, -117.161100 (Alt: 15.0m)</div>
-              <div>WP 1: 32.715900, -117.161400 (Lane 1 West)</div>
-              <div>WP 2: 32.715900, -117.160800 (Lane 1 East)</div>
-              <div>WP 3: 32.716100, -117.160800 (Lane 2 East)</div>
-              <div>WP 4: 32.716100, -117.161400 (Lane 2 West)</div>
-              <div>LAND: 32.715700, -117.161100 (Home)</div>
-              <div style="color: var(--primary-bright); margin-top: 8px;">Total Planned Distance: 342.5m | Est. Duration: 01m 08s</div>
-            </div>
-          </div>
-
-          <!-- Tab Content 4: Console Log -->
-          <div id="content-console" style="display: none;" class="mock-card">
-            <div class="mock-card-title">Live Engineering Acknowledgement Stream</div>
-            <div style="font-family: var(--font-mono); font-size: 0.8rem; background: rgba(0,0,0,0.5); padding: 14px; border-radius: 6px; line-height: 1.8; color: #cbd5e1;">
-              <div>[12:04:12] MAVLink connection established over udpin:0.0.0.0:14540</div>
-              <div>[12:04:13] <span style="color: #38bdf8;">FCU: PX4 Autopilot v1.16.1 (Gazebo gz_x500)</span></div>
-              <div>[12:04:14] Command 511 (SET_MESSAGE_INTERVAL) ACK: <span style="color: #10b981;">ACCEPTED</span></div>
-              <div>[12:04:18] Parameter sync: Received 482 parameters from vehicle.</div>
-              <div>[12:04:22] Pre-flight 6-point checklist: <span style="color: #10b981;">ALL SYSTEMS GO</span></div>
-              <div>[12:04:25] <span style="color: #a855f7;">ARM initiated by pilot</span> -> MAV_CMD_COMPONENT_ARM_DISARM ACK: <span style="color: #10b981;">ACCEPTED</span></div>
-              <div>[12:04:28] Mode change: <span style="color: #38bdf8;">POSCTL</span> set successfully.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Core Features Section (6 Pillars) -->
-  <section id="features">
-    <div class="container">
-      <span class="section-tag">Capabilities</span>
-      <h2 class="section-title">Everything you need to command your flight.</h2>
-      <p class="section-desc">Designed from the ground up for PX4 drones, combining aerospace-grade instruments with the speed and flexibility of modern software.</p>
-
-      <div class="features-grid">
-        <!-- Feature 1 -->
-        <div class="feature-card">
-          <div class="feature-icon-wrap">🧭</div>
-          <h3>Primary Flight Display (PFD)</h3>
-          <p>Toggle seamlessly between an authentic aviation artificial horizon (pitch ladder, compass tape, airspeed/alt tapes) and an interactive 3D procedural quadcopter model.</p>
-        </div>
-
-        <!-- Feature 2 -->
-        <div class="feature-card">
-          <div class="feature-icon-wrap">🎯</div>
-          <h3>Guided "Fly to Here" Repositioning</h3>
-          <p>Click anywhere on the satellite map to dispatch instantaneous guided reposition setpoints (<code>MAV_CMD_DO_REPOSITION</code>) with target pulse markers and altitude safeguards.</p>
-        </div>
-
-        <!-- Feature 3 -->
-        <div class="feature-card">
-          <div class="feature-icon-wrap">🗺️</div>
-          <h3>Aerial Survey Grid Generator</h3>
-          <p>Automatically plan serpentine lawnmower grid patterns for aerial photogrammetry, surveying, or search & rescue missions with configurable lane spacing and altitude.</p>
-        </div>
-
-        <!-- Feature 4 -->
-        <div class="feature-card">
-          <div class="feature-icon-wrap">📋</div>
-          <h3>6-Point Pre-Flight Health Checklist</h3>
-          <p>Comprehensive pre-arm verification modal auditing telemetry rates, GNSS 3D fix, battery power thresholds, IMU horizon levelness, and autopilot prearm readiness.</p>
-        </div>
-
-        <!-- Feature 5 -->
-        <div class="feature-card">
-          <div class="feature-icon-wrap">🌐</div>
-          <h3>3D KML & GeoJSON Trail Export</h3>
-          <p>Record flight paths and export them with a single click to Google Earth 3D extruded ribbons (<code>.kml</code>) or standard GeoJSON for GIS spatial analysis.</p>
-        </div>
-
-        <!-- Feature 6 -->
-        <div class="feature-card">
-          <div class="feature-icon-wrap">💾</div>
-          <h3>Full MAVLink Parameter Engine</h3>
-          <p>Real-time parameter search, double-click inline value editing with automatic type-checking, and one-click <code>.param</code> backup and restore.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Hardware Target Section -->
-  <section id="hardware" style="background: rgba(15, 23, 42, 0.4);">
-    <div class="container">
-      <div class="specs-grid">
-        <div>
-          <span class="section-tag">Tested Hardware</span>
-          <h2 class="section-title">Built for Real Airframes & SITL Simulators.</h2>
-          <p style="color: var(--text-muted); margin-bottom: 24px;">
-            Targeted specifically at the Holybro S500 quadcopter with a Pixhawk 6C flight controller, perfectly matched against PX4 SITL Gazebo simulation.
-          </p>
-
-          <table class="spec-table">
-            <tr>
-              <td class="label">Airframe Target</td>
-              <td class="val">Holybro S500 / X500 Multirotor</td>
-            </tr>
-            <tr>
-              <td class="label">Flight Controller</td>
-              <td class="val">Holybro Pixhawk 6C / 6X</td>
-            </tr>
-            <tr>
-              <td class="label">Autopilot Firmware</td>
-              <td class="val">PX4 Autopilot (v1.14+)</td>
-            </tr>
-            <tr>
-              <td class="label">MAVLink Port</td>
-              <td class="val">UDP 14540 (API/Offboard)</td>
-            </tr>
-            <tr>
-              <td class="label">Simulator Airframe</td>
-              <td class="val">Gazebo Harmonic / SITL <code>gz_x500</code></td>
-            </tr>
-          </table>
-        </div>
-
-        <div>
-          <div class="mock-card-title" style="margin-bottom: 8px;">Run PX4 SITL Simulator</div>
-          <div class="code-block">
-            <span class="comment"># In PX4-Autopilot directory:</span><br />
-            make px4_sitl gz_x500<br /><br />
-            <span class="comment"># Or run headless in Docker (Windows/Mac/Linux):</span><br />
-            docker run --rm -it -p 14540:14540/udp \<br />
-            &nbsp;&nbsp;jonasvautherin/px4-gazebo-headless:1.16.1
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Quickstart Section -->
-  <section id="quickstart">
-    <div class="container">
-      <span class="section-tag">Fast Setup</span>
-      <h2 class="section-title">Take off in less than 3 minutes.</h2>
-      <p class="section-desc">Zero complex dependencies. Run the standalone Windows binary directly, or run from Python source.</p>
-
-      <div class="steps-grid">
-        <div class="step-box">
-          <div class="step-num">1</div>
-          <h3 style="font-size: 1.15rem; margin-bottom: 8px;">Download or Clone</h3>
-          <p style="color: var(--text-muted); font-size: 0.92rem;">
-            Grab the standalone <code>PythonGCS.exe</code> bundle, or clone the repository and run <code>pip install -r requirements.txt</code>.
-          </p>
-        </div>
-
-        <div class="step-box">
-          <div class="step-num">2</div>
-          <h3 style="font-size: 1.15rem; margin-bottom: 8px;">Start SITL or FCU</h3>
-          <p style="color: var(--text-muted); font-size: 0.92rem;">
-            Power up your Pixhawk 6C telemetry radio or launch PX4 SITL Gazebo. The default port is <code>udpin:0.0.0.0:14540</code>.
-          </p>
-        </div>
-
-        <div class="step-box">
-          <div class="step-num">3</div>
-          <h3 style="font-size: 1.15rem; margin-bottom: 8px;">Connect & Fly</h3>
-          <p style="color: var(--text-muted); font-size: 0.92rem;">
-            Click <strong>CONNECT</strong>. Telemetry, maps, and instruments will populate within seconds. Run your pre-flight checklist and fly!
-          </p>
-        </div>
-      </div>
-
-      <!-- Call to Action Banner -->
-      <div class="cta-banner">
-        <h2 style="font-size: 2.2rem; font-weight: 800; margin-bottom: 16px;">Ready for your next flight?</h2>
-        <p style="color: var(--text-muted); max-width: 600px; margin: 0 auto 30px;">
-          Download the latest standalone Windows build or inspect the source on GitHub.
+    </header>
+    <main id="main">
+      <section class="hero wrap">
+        <p class="eyebrow">Open source · Python · PX4</p>
+        <h1>A clearer view<br />of every flight.</h1>
+        <p>
+          A desktop ground station with a focused flight screen and dedicated
+          space for planning, vehicle settings, and diagnostics.
         </p>
-        <div style="display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;">
-          <a href="dist/PythonGCS/PythonGCS.exe" class="btn btn-primary" download>Download Windows Package (.exe)</a>
-          <a href="https://github.com/HarryZ0305/python-gcs" target="_blank" class="btn btn-secondary">Star on GitHub</a>
+        <div class="actions">
+          <a class="button primary" href="web_gcs.html">Try the browser demo</a
+          ><a class="button" href="#start">Install the desktop app</a>
         </div>
+        <figure>
+          <img
+            class="hero-image"
+            src="design/fly-workspace.png"
+            width="2049"
+            height="1152"
+            alt="The actual PythonGCS desktop Fly workspace with a large map area and a compact instrument and flight-action rail"
+          />
+          <figcaption>
+            Actual desktop interface, shown disconnected. Ivory, warm gray, and
+            sage keep the workspace calm.
+          </figcaption>
+        </figure>
+      </section>
+      <section class="section" id="workspaces">
+        <div class="wrap">
+          <div class="section-intro">
+            <h2>The right tools.<br />In the right place.</h2>
+            <p>
+              Fly stays focused. Open a dedicated view when you need to plan a
+              mission, inspect a parameter, or look more closely at the data.
+            </p>
+          </div>
+          <div
+            class="view-picker"
+            aria-label="Explore desktop workspaces"
+            id="workspace-picker"
+          >
+            <button type="button" data-workspace="fly" aria-pressed="true">
+              Fly</button
+            ><button type="button" data-workspace="plan" aria-pressed="false">
+              Plan</button
+            ><button
+              type="button"
+              data-workspace="vehicle"
+              aria-pressed="false"
+            >
+              Vehicle</button
+            ><button
+              type="button"
+              data-workspace="analyze"
+              aria-pressed="false"
+            >
+              Analyze</button
+            ><button
+              type="button"
+              data-workspace="settings"
+              aria-pressed="false"
+            >
+              Settings</button
+            ><button
+              type="button"
+              data-workspace="diagnostics"
+              aria-pressed="false"
+            >
+              Diagnostics
+            </button>
+          </div>
+          <figure class="gallery-card">
+            <img
+              id="workspace-image"
+              src="design/fly-workspace.png"
+              alt="Actual disconnected Fly workspace"
+              loading="lazy"
+            />
+            <figcaption class="gallery-copy">
+              <div>
+                <h3 id="workspace-title">Fly with fewer distractions</h3>
+                <p id="workspace-description">
+                  Attitude, key telemetry, map, and essential flight actions.
+                  Additional controls and video open only when you need them.
+                </p>
+              </div>
+              <a href="guide/" class="button">See labeled screens</a>
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+      <section class="section">
+        <div class="wrap">
+          <h2>One simple workflow.</h2>
+          <div class="steps">
+            <div>
+              <span class="step-number">01 / CONNECT</span>
+              <h3>Choose your connection.</h3>
+              <p>
+                Use a PX4 simulator or a supported MAVLink transport. Connection
+                details live in their own panel.
+              </p>
+            </div>
+            <div>
+              <span class="step-number">02 / PREPARE</span>
+              <h3>Review before you fly.</h3>
+              <p>
+                Build a mission, verify its readback, and inspect the preflight
+                evidence. Missing telemetry stays clearly marked.
+              </p>
+            </div>
+            <div>
+              <span class="step-number">03 / MONITOR</span>
+              <h3>Keep the map in view.</h3>
+              <p>
+                Fly with essential controls nearby. Move diagnostics to another
+                window when you need detailed monitoring.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="section" id="start">
+        <div class="wrap start-layout">
+          <div>
+            <p class="eyebrow">Run it locally</p>
+            <h2>Start with the simulator.</h2>
+            <p class="muted">
+              Python 3.9+ and a PX4 SITL instance are required for the desktop
+              workflow. Once it is running, open <strong>Connection…</strong>,
+              select your profile, and connect.
+            </p>
+            <div class="actions">
+              <a
+                class="button"
+                href="https://github.com/HarryZ0305/python-gcs#readme"
+                >Full setup instructions</a
+              ><a href="https://github.com/HarryZ0305/python-gcs" class="button"
+                >Source on GitHub</a
+              >
+            </div>
+          </div>
+          <pre><code>git clone https://github.com/HarryZ0305/python-gcs.git
+cd python-gcs
+python -m pip install -r requirements.txt
+python main.py</code></pre>
+        </div>
+      </section>
+      <section class="section">
+        <div class="wrap">
+          <h2>A few useful distinctions.</h2>
+          <details>
+            <summary>Is the browser demo connected to an aircraft?</summary>
+            <p>
+              No. It is a local browser simulation for exploring the interface.
+              Its flight motion, readings, video illustration, and event log are
+              generated in your browser. PX4 / Gazebo flight simulation and real
+              MAVLink connections use the desktop app.
+            </p>
+          </details>
+          <details>
+            <summary>What mission formats are supported?</summary>
+            <p>
+              The desktop editor supports the documented home-relative takeoff,
+              waypoint, and landing subset of QGroundControl .plan files. It
+              rejects unsupported mission semantics rather than silently
+              changing them.
+            </p>
+          </details>
+          <details>
+            <summary>Where are the charts, logs, and camera controls?</summary>
+            <p>
+              Charts and event analysis have an Analyze view. Stream health and
+              command messages are in Diagnostics, which can detach to a second
+              window. Camera sources are configured in Settings, and video
+              appears on demand in Fly.
+            </p>
+          </details>
+          <details>
+            <summary>Where can I see every screen?</summary>
+            <p>
+              The <a href="guide/">illustrated screen guide</a> includes all six
+              workspaces, principal dialogs, and viewing modes, with bold labels
+              showing where each feature is.
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+    <footer>
+      <div class="wrap footer-inner">
+        <span>PythonGCS · MIT license · Built for PX4 workflows</span
+        ><span
+          ><a href="guide/">Screen guide</a> ·
+          <a
+            href="https://github.com/HarryZ0305/python-gcs/blob/main/docs/desktop-upgrade.md"
+            >Scope & validation notes</a
+          ></span
+        >
       </div>
-    </div>
-  </section>
-
-  <!-- Footer -->
-  <footer>
-    <div class="container footer-inner">
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <span style="font-weight: 700; color: var(--text-main);">PythonGCS</span>
-        <span>— Released under the MIT License.</span>
-      </div>
-      <div>
-        Targeting Holybro S500 + Pixhawk 6C & PX4 Autopilot.
-      </div>
-    </div>
-  </footer>
-
-  <!-- Interactive Demo Logic -->
-  <script>
-    function switchPreview(mode) {
-      const tabs = document.querySelectorAll('.tab-btn');
-      tabs.forEach(t => t.classList.remove('active'));
-
-      const fly = document.getElementById('content-fly');
-      const pfd = document.getElementById('content-pfd');
-      const plan = document.getElementById('content-plan');
-      const con = document.getElementById('content-console');
-
-      fly.style.display = 'none';
-      pfd.style.display = 'none';
-      plan.style.display = 'none';
-      con.style.display = 'none';
-
-      if (mode === 'fly') {
-        fly.style.display = 'grid';
-        tabs[0].classList.add('active');
-      } else if (mode === 'pfd') {
-        pfd.style.display = 'block';
-        tabs[1].classList.add('active');
-      } else if (mode === 'plan') {
-        plan.style.display = 'block';
-        tabs[2].classList.add('active');
-      } else if (mode === 'console') {
-        con.style.display = 'block';
-        tabs[3].classList.add('active');
-      }
-    }
-  </script>
-</body>
+    </footer>
+    <script type="module" src="assets/site.js?v=3"></script>
+  </body>
 </html>

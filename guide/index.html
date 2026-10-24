@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="Explore PythonGCS desktop screens and dialogs with labeled feature locations."
+    />
+    <meta name="gcs-web-version" content="focused-workspaces-1" />
+    <title>PythonGCS — Screen guide</title>
+    <link rel="stylesheet" href="../assets/site.css?v=3" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="wrap header-inner">
+        <a class="brand" href="../">PythonGCS</a>
+        <nav class="header-links" aria-label="Main navigation">
+          <a href="../">Overview</a>
+          <a href="https://github.com/HarryZ0305/python-gcs#readme"
+            >Desktop setup</a
+          >
+          <a class="button primary" href="../web_gcs.html">Try the demo</a>
+        </nav>
+      </div>
+    </header>
+    <main id="main" class="wrap">
+      <div class="guide-top">
+        <p class="eyebrow">Desktop interface / 17 views</p>
+        <h1>Find your way around.</h1>
+        <p class="muted">
+          Actual desktop screenshots with bold feature labels. Choose a
+          workspace, dialog, or viewing mode below. Captions identify
+          disconnected states and illustrative data.
+        </p>
+        <div class="guide-controls">
+          <label for="screen-select">Screen</label
+          ><select id="screen-select" aria-label="Choose a screen"></select>
+          <button id="previous-screen">← Previous</button
+          ><span id="screen-count" class="tiny"></span
+          ><button id="next-screen">Next →</button>
+        </div>
+      </div>
+      <section aria-labelledby="screen-title">
+        <h2 id="screen-title" style="font-size: 24px">Loading screen guide…</h2>
+        <p id="screen-path" class="muted"></p>
+        <img
+          id="screen-image"
+          class="guide-image"
+          alt="Labeled PythonGCS desktop screen"
+        />
+        <p id="screen-note" class="guide-note"></p>
+        <ul id="screen-features" class="guide-feature-list"></ul>
+      </section>
+      <noscript
+        >Enable JavaScript to browse the guide, or download the screenshot pack
+        below.</noscript
+      >
+      <p>
+        <a class="button" href="PythonGCS-feature-guide.zip" download
+          >Download all labeled screenshots</a
+        >
+      </p>
+    </main>
+    <footer>
+      <div class="wrap footer-inner">
+        <span>PythonGCS · Desktop screen guide</span
+        ><a href="../web_gcs.html">Explore the browser simulation →</a>
+      </div>
+    </footer>
+    <script type="module" src="../assets/guide.js?v=3"></script>
+  </body>
+</html>
